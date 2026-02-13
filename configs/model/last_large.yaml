@@ -1,0 +1,47 @@
+# LAST Model Configuration - Large Variant
+
+# High-accuracy variant for server/GPU deployment
+
+model:
+  name: "LAST-Large"
+  num_classes: 120
+  num_joints: 25
+  in_channels: 3
+  
+  # Larger channel progression
+  channels: [128, 128, 256, 256, 512]
+  
+  attention:
+    num_heads: 8
+    dropout: 0.1
+    kernel_fn: "elu"
+  
+  tsm:
+    enabled: true
+    shift_ratio: 0.125
+  
+  agcn:
+    use_learned_adjacency: true
+    use_dynamic_adjacency: true
+    num_subsets: 3
+  
+  dropout: 0.1
+  fc_dropout: 0.5
+
+ablation:
+  use_tsm: true
+  use_attention: true
+  use_learned_adj: true
+  use_dynamic_adj: true
+
+input:
+  max_frames: 300
+  max_bodies: 2
+  coord_channels: 3
+
+output:
+  logits_dim: 120
+
+targets:
+  max_parameters: 3000000  # ~3M
+  max_gflops: 3.0

@@ -1,0 +1,55 @@
+# LAST Model Configuration - Base Variant
+
+# Model Architecture
+model:
+  name: "LAST-Base"
+  num_classes: 120
+  num_joints: 25
+  in_channels: 3  # x, y, z coordinates
+  
+  # Channel progression through blocks
+  channels: [64, 64, 128, 128, 256]  # 4 blocks: 64→64, 64→128, 128→128, 128→256
+  
+  # Attention configuration
+  attention:
+    num_heads: 8
+    dropout: 0.1
+    kernel_fn: "elu"  # elu or relu
+  
+  # Temporal Shift Module
+  tsm:
+    enabled: true
+    shift_ratio: 0.125  # 1/8 channels forward, 1/8 backward
+  
+  # Adaptive GCN configuration
+  agcn:
+    use_learned_adjacency: true
+    use_dynamic_adjacency: true
+    num_subsets: 3  # physical, learned, dynamic
+  
+  # Regularization
+  dropout: 0.1  # Within blocks
+  fc_dropout: 0.5  # Before classifier
+
+# Ablation Study Configurations
+# (Set to false to disable specific components)
+ablation:
+  use_tsm: true
+  use_attention: true
+  use_learned_adj: true
+  use_dynamic_adj: true
+
+# Input specifications
+input:
+  max_frames: 300
+  max_bodies: 2
+  coord_channels: 3  # x, y, z
+
+# Expected output
+output:
+  logits_dim: 120  # NTU RGB+D 120 action classes
+
+# Model complexity targets
+targets:
+  max_parameters: 1000000  # <1M for "lightweight"
+  max_gflops: 1.0  # <1 GFLOP for real-time

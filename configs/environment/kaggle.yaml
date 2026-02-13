@@ -1,0 +1,27 @@
+# Kaggle Environment Configuration
+# For running on Kaggle notebooks
+
+environment:
+  name: "kaggle" 
+  type: "kaggle"
+  
+paths:
+  # Dataset paths (Kaggle input - read-only)
+  data_root: "/kaggle/input/ntu-rgbd-120-skeletons"
+  processed_data: "/kaggle/input/ntu-rgbd-120-processed"
+  
+  # Output paths (Kaggle working directory - read-write)
+  output_root: "/kaggle/working"
+  checkpoints: "/kaggle/working/checkpoints"
+  logs: "/kaggle/working/logs"
+  
+hardware:
+  device: "cuda"  # Kaggle provides GPU
+  num_workers: 2  # Kaggle constraint
+  pin_memory: true
+  
+# Kaggle-specific constraints
+kaggle:
+  max_memory_gb: 13
+  max_gpu_memory_gb: 16
+  time_limit_hours: 9

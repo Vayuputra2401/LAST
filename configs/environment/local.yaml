@@ -1,0 +1,21 @@
+# Local Environment Configuration
+# For development on local machine with Windows
+
+environment:
+  name: "local"
+  type: "local"
+  
+paths:
+  # Dataset paths
+  data_root: "E:\\nturgbd_skeletons_s001_to_s017\\nturgb+d_skeletons"
+  processed_data: "E:\\LAST\\data\\processed"
+  
+  # Output paths
+  output_root: "E:\\LAST\\outputs"
+  checkpoints: "E:\\LAST\\outputs\\checkpoints"
+  logs: "E:\\LAST\\outputs\\logs"
+  
+hardware:
+  device: "cuda"  # Will auto-detect, fallback to cpu
+  num_workers: 4
+  pin_memory: true

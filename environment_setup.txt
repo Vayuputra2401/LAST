@@ -1,0 +1,40 @@
+# Minimal AI/ML Environment - YAGNI Principle
+# Only essential packages needed for LAST project NOW
+
+# ==============================================================================
+# CORE DEEP LEARNING (Essential)
+# ==============================================================================
+# PyTorch will be installed separately with CUDA support
+
+# ==============================================================================
+# DATA PROCESSING (Essential)
+# ==============================================================================
+numpy
+
+# ==============================================================================
+# VISUALIZATION (Essential for data validation)
+# ==============================================================================
+matplotlib
+
+# ==============================================================================
+# VIDEO/IMAGE PROCESSING (Essential for skeleton data)
+# ==============================================================================
+opencv-python
+Pillow
+
+# ==============================================================================
+# UTILITIES (Essential)
+# ==============================================================================
+pyyaml
+tqdm
+
+# ==============================================================================
+# THAT'S IT! Following YAGNI - We'll add more when actually needed
+# ==============================================================================
+# Not adding now (will add when we actually need them):
+# - pandas, scipy, scikit-learn (not needed for data loading)
+# - seaborn, plotly (matplotlib is enough for now)
+# - albumentations, imgaug (no augmentation yet)
+# - tensorboard, wandb (no training yet)
+# - timm, einops (no model yet)
+# - decord, av (not processing videos yet, just skeletons)
