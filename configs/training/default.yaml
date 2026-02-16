@@ -1,0 +1,42 @@
+# LAST Training Configuration — Default
+# All hyperparameters for the training pipeline
+
+training:
+  # Optimizer
+  optimizer: "sgd"
+  lr: 0.01
+  momentum: 0.9
+  nesterov: true
+  weight_decay: 0.0001
+
+  # LR Schedule: cosine annealing with linear warmup
+  scheduler: "cosine_warmup"
+  warmup_epochs: 5
+  warmup_start_lr: 0.0001
+  min_lr: 0.00001
+
+  # Training loop
+  epochs: 70
+  batch_size: 64
+  gradient_clip: 5.0
+
+  # Loss
+  label_smoothing: 0.1
+
+  # Input
+  input_frames: 64  # temporal crop during training
+
+  # Logging
+  log_interval: 20   # print summary every N batches (internal, not tqdm)
+  eval_interval: 1   # validate every N epochs
+  save_interval: 10  # checkpoint every N epochs
+
+  # Reproducibility
+  seed: 42
+
+  # Mixed precision
+  use_amp: false
+
+# Output
+output:
+  runs_root: "/kaggle/working/LAST-runs"  # Each run: run-YYYY-MM-DD_HH-MM-SS

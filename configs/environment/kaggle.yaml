@@ -6,18 +6,21 @@ environment:
   type: "kaggle"
   
 paths:
-  # Dataset paths (Kaggle input - read-only)
-  data_root: "/kaggle/input/ntu-rgbd-120-skeletons"
-  processed_data: "/kaggle/input/ntu-rgbd-120-processed"
+  # data_base: train.py builds path as {data_base}/LAST-60/data/processed/{split_type}
+  # We symlink the actual Kaggle dataset to match this structure (see notebook setup below)
+  data_base: "/tmp"
   
-  # Output paths (Kaggle working directory - read-write)
+  # Raw data (not used for training, only for reference)  
+  data_root: "/kaggle/input/datasets/pathikreet/last-ntu60-preprocessed"
+  
+  # Output paths
   output_root: "/kaggle/working"
   checkpoints: "/kaggle/working/checkpoints"
   logs: "/kaggle/working/logs"
   
 hardware:
-  device: "cuda"  # Kaggle provides GPU
-  num_workers: 2  # Kaggle constraint
+  device: "cuda"
+  num_workers: 2  # Kaggle has 2 CPU cores
   pin_memory: true
   
 # Kaggle-specific constraints
@@ -25,3 +28,8 @@ kaggle:
   max_memory_gb: 13
   max_gpu_memory_gb: 16
   time_limit_hours: 9
+
+# ── Notebook Setup (run this cell before training) ──
+# !mkdir -p /tmp/LAST-60/data/processed
+# !ln -s /kaggle/input/datasets/pathikreet/last-ntu60-preprocessed/xsub /tmp/LAST-60/data/processed/xsub
+

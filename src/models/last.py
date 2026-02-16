@@ -55,7 +55,7 @@ class LAST(nn.Module):
         num_heads: int = 8,
         tsm_ratio: float = 0.125,
         dropout: float = 0.1,
-        fc_dropout: float = 0.5
+        fc_dropout: float = 0.3
     ):
         super().__init__()
         
@@ -178,7 +178,7 @@ class LAST(nn.Module):
             'num_heads': 8,  # From blocks
             'tsm_ratio': 0.125,
             'dropout': 0.1,
-            'fc_dropout': 0.5
+            'fc_dropout': 0.3
         }
 
 
@@ -200,7 +200,7 @@ def create_last_base(num_classes=120, num_joints=25):
         num_heads=8,
         tsm_ratio=0.125,
         dropout=0.1,
-        fc_dropout=0.5
+        fc_dropout=0.3
     )
 
 
@@ -217,7 +217,7 @@ def create_last_small(num_classes=120, num_joints=25):
         num_heads=4,
         tsm_ratio=0.125,
         dropout=0.1,
-        fc_dropout=0.5
+        fc_dropout=0.3
     )
 
 
@@ -234,7 +234,7 @@ def create_last_large(num_classes=120, num_joints=25):
         num_heads=8,
         tsm_ratio=0.125,
         dropout=0.1,
-        fc_dropout=0.5
+        fc_dropout=0.3
     )
 
 

@@ -1,0 +1,51 @@
+# Data Loading Configuration for NTU RGB+D 60
+# Parameters for skeleton dataset loading
+
+dataset:
+  name: "NTU_RGBD_60"
+  num_classes: 60  # 60 action classes (A1-A60)
+  
+  # Data format
+  data_type: "skeleton"  # 'skeleton' for raw .skeleton files, 'npy' for preprocessed
+  
+  # Skeleton parameters
+  num_joints: 25
+  max_frames: 300
+  max_bodies: 2
+  
+  # Split configuration - FIXED splits for reproducibility
+  # NTU RGB+D 60 has 40 subjects (not 106!)
+  splits:
+    # Cross-Subject (xsub) - Standard benchmark split for NTU 60
+    xsub:
+      train_subjects: [1, 2, 4, 5, 8, 9, 13, 14, 15, 16, 17, 18, 19, 25, 27, 28, 31, 34, 35, 38]
+      val_subjects: [3, 6, 7, 10, 11, 12, 20, 21, 22, 23, 24, 26, 29, 30, 32, 33, 36, 37, 39, 40]
+    
+    # Cross-View (xview) - Standard benchmark split for NTU 60
+    xview:
+      train_cameras: [2, 3]  # Camera 2 and 3 for training
+      val_cameras: [1]       # Camera 1 for validation
+  
+  # Default split type
+  split_type: "xsub"  # 'xsub' (cross-subject) or 'xview' (cross-view)
+  
+  # Preprocessing & Normalization
+  preprocessing:
+    normalize: true
+    normalization_method: "center_spine"  # 'center_spine', 'first_frame', or 'none'
+    center_joint: 0  # SpineBase for NTU RGB+D
+    scale_by_torso: true
+    
+  # Data augmentation (for training only)
+  augmentation:
+    enabled: true  # Will enable after baseline works
+    rotation_range: [-15, 15]   # degrees
+    scale_range: [0.9, 1.1]
+    shear_range: [-0.1, 0.1]
+    noise_std: 0.001
+
+dataloader:
+  batch_size: 32
+  shuffle: true  # Only for train, val will be false
+  drop_last: true  # Only for train
+  num_workers: 4  # From environment config

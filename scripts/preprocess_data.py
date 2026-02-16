@@ -12,8 +12,9 @@ This script:
 Run once, train fast forever!
 
 Usage:
-    python scripts/preprocess_data.py
-    python scripts/preprocess_data.py --split_type xset
+    python scripts/preprocess_data.py --dataset ntu60
+    python scripts/preprocess_data.py --dataset ntu60 --split_type xview
+    python scripts/preprocess_data.py --dataset ntu120 --split_type xset
     python scripts/preprocess_data.py --max_samples 1000  # For testing
 """
 
@@ -126,6 +127,16 @@ def collect_files_for_split(data_path, split, split_type, split_config, parser):
             if split == 'train' and setup in train_setups:
                 should_include = True
             elif split == 'val' and setup in val_setups:
+                should_include = True
+        
+        elif split_type == 'xview':
+            train_cameras = set(split_config['xview']['train_cameras'])
+            val_cameras = set(split_config['xview']['val_cameras'])
+            camera = metadata['camera']
+            
+            if split == 'train' and camera in train_cameras:
+                should_include = True
+            elif split == 'val' and camera in val_cameras:
                 should_include = True
         
         if should_include:
@@ -247,9 +258,10 @@ def preprocess_split(config, split='train', split_type='xsub', max_samples=None)
 def main():
     parser = argparse.ArgumentParser(description='Preprocess skeleton data for faster training')
     parser.add_argument('--env', type=str, default=None, help='Environment (auto-detect if not specified)')
-    parser.add_argument('--dataset', type=str, default='ntu120', help='Dataset config name')
-    parser.add_argument('--split_type', type=str, default='xsub', choices=['xsub', 'xset'],
-                       help='Split type (xsub or xset)')
+    parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
+                       help='Dataset config name (default: ntu60)')
+    parser.add_argument('--split_type', type=str, default='xsub', choices=['xsub', 'xset', 'xview'],
+                       help='Split type (xsub, xset, or xview)')
     parser.add_argument('--splits', type=str, nargs='+', default=['train', 'val'],
                        choices=['train', 'val'],
                        help='Which splits to preprocess')
@@ -276,7 +288,14 @@ def main():
     
     env_name = config['environment']['environment']['name']
     data_path = config['environment']['paths']['data_root']
-    output_path = config['environment']['paths']['processed_data']
+    
+    # Build output path dynamically: LAST-60 for ntu60, LAST-120 for ntu120
+    data_base = config['environment']['paths']['data_base']
+    folder_name = "LAST-60" if args.dataset == 'ntu60' else "LAST-120"
+    output_path = os.path.join(data_base, folder_name, "data", "processed")
+    
+    # Override in config so preprocess_split uses correct path
+    config['environment']['paths']['processed_data'] = output_path
     
     print(f"✓ Environment: {env_name}")
     print(f"✓ Dataset: {args.dataset}")
@@ -295,7 +314,7 @@ def main():
     print("\n" + "="*60)
     print("🎉 PREPROCESSING COMPLETE!")
     print("="*60)
-    print("\nTo use preprocessed data, update configs/data/ntu120.yaml:")
+    print(f"\nTo use preprocessed data, update configs/data/{args.dataset}.yaml:")
     print("  dataset:")
     print("    data_type: 'npy'  # Change from 'skeleton'")
     print("\nThen training will be 10x faster!")
