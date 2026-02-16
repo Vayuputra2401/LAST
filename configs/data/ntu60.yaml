@@ -38,7 +38,7 @@ dataset:
     
   # Data augmentation (for training only)
   augmentation:
-    enabled: false  # Will enable after baseline works
+    enabled: true  # Will enable after baseline works
     rotation_range: [-15, 15]   # degrees
     scale_range: [0.9, 1.1]
     shear_range: [-0.1, 0.1]
