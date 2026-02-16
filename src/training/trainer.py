@@ -137,13 +137,17 @@ class Trainer:
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
                 self.optimizer.step()
             
+            # Skip NaN losses (from corrupted/empty samples)
+            if not torch.isfinite(loss):
+                continue
+            
             total_loss += loss.item() * batch_data.size(0)
             _, predicted = outputs.max(1)
             total += batch_labels.size(0)
             correct += predicted.eq(batch_labels).sum().item()
         
-        avg_loss = total_loss / total
-        accuracy = 100.0 * correct / total
+        avg_loss = total_loss / max(total, 1)
+        accuracy = 100.0 * correct / max(total, 1)
         return {'loss': avg_loss, 'accuracy': accuracy}
     
     @torch.no_grad()
@@ -171,13 +175,17 @@ class Trainer:
                 outputs = self.model(batch_data)
                 loss = self.criterion(outputs, batch_labels)
             
+            # Skip NaN losses (from corrupted/empty samples)
+            if not torch.isfinite(loss):
+                continue
+            
             total_loss += loss.item() * batch_data.size(0)
             _, predicted = outputs.max(1)
             total += batch_labels.size(0)
             correct += predicted.eq(batch_labels).sum().item()
         
-        avg_loss = total_loss / total
-        accuracy = 100.0 * correct / total
+        avg_loss = total_loss / max(total, 1)
+        accuracy = 100.0 * correct / max(total, 1)
         return {'loss': avg_loss, 'accuracy': accuracy}
     
     def train(self, train_loader, val_loader):

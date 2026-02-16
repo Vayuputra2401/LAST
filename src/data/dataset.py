@@ -112,6 +112,23 @@ class SkeletonDataset(Dataset):
         with open(label_file, 'rb') as f:
             self.labels = pickle.load(f)
         
+        # Filter out corrupted/empty skeletons (302 known bad samples in NTU RGB+D)
+        valid_indices = []
+        num_filtered = 0
+        for i in range(len(self.labels)):
+            # Check if sample is all zeros (missing skeleton data)
+            sample_sum = np.abs(self.data[i]).sum()
+            if sample_sum > 0:
+                valid_indices.append(i)
+            else:
+                num_filtered += 1
+        
+        if num_filtered > 0:
+            print(f"  Filtered {num_filtered} empty/corrupted samples from {self.split} split")
+        
+        # Remap to valid indices only
+        self._valid_indices = valid_indices
+        self.labels = [self.labels[i] for i in valid_indices]
         self.samples = list(range(len(self.labels)))
     
     def _should_include_sample(self, metadata: dict) -> bool:
@@ -187,11 +204,12 @@ class SkeletonDataset(Dataset):
             data = skeleton_data.transpose(2, 0, 1, 3)
             
         else:  # npy
-            # Load from memory-mapped array
-            data = self.data[idx]  # Already shape (C, T, V, M)
+            # Map through valid indices (filtered during init)
+            data_idx = self._valid_indices[idx] if hasattr(self, '_valid_indices') else idx
+            data = self.data[data_idx]  # Already shape (C, T, V, M)
         
         # Convert to tensor
-        data = torch.from_numpy(data).float()
+        data = torch.from_numpy(np.array(data)).float()
         label = torch.tensor(label, dtype=torch.long)
         
         # Apply transforms if provided

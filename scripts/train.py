@@ -43,8 +43,8 @@ def set_seed(seed):
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = False
+        torch.backends.cudnn.benchmark = True  # Auto-tune convolutions for speed
 
 
 def count_flops(model, input_shape, device):
@@ -267,6 +267,8 @@ def main():
         num_workers=num_workers,
         pin_memory=pin_memory,
         drop_last=True,
+        persistent_workers=num_workers > 0,  # Keep workers alive between epochs
+        prefetch_factor=2 if num_workers > 0 else None,  # Pre-load next batches
     )
     
     val_loader = DataLoader(
@@ -275,6 +277,8 @@ def main():
         shuffle=False,
         num_workers=num_workers,
         pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
+        prefetch_factor=2 if num_workers > 0 else None,
     )
     
     print(f"  Train: {len(train_dataset)} samples, {len(train_loader)} batches")
