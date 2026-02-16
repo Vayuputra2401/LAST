@@ -224,6 +224,12 @@ def main():
         'dataset': config['data']['dataset'],
         'training': config['training'],
     }
+    
+    # IMPORTANT: Preprocessed .npy files are ALREADY normalized by preprocess_data.py
+    # (center_spine + scale_by_torso). Applying Normalize again would double-normalize.
+    # Only enable runtime normalization for raw .skeleton files.
+    merged_transform_config['dataset']['preprocessing']['normalize'] = False
+    
     train_transform = get_train_transform(merged_transform_config)
     val_transform = get_val_transform(merged_transform_config)
     
@@ -286,6 +292,36 @@ def main():
     
     # ── 6. Train ────────────────────────────────────────────────────────
     trainer = Trainer(model, config, run_dir)
+    
+    # ── Pre-training diagnostics ─────────────────────────────────────
+    print(f"\n  --- Pre-training diagnostics ---")
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model.eval()
+    
+    # Check one train batch
+    train_batch_data, train_batch_labels = next(iter(train_loader))
+    print(f"  Train batch: data={train_batch_data.shape}, labels={train_batch_labels.shape}")
+    print(f"  Train data stats: mean={train_batch_data.mean():.4f}, std={train_batch_data.std():.4f}")
+    print(f"  Train labels: {train_batch_labels[:10].tolist()}")
+    
+    # Check one val batch
+    val_batch_data, val_batch_labels = next(iter(val_loader))
+    print(f"  Val   batch: data={val_batch_data.shape}, labels={val_batch_labels.shape}")
+    print(f"  Val   data stats: mean={val_batch_data.mean():.4f}, std={val_batch_data.std():.4f}")
+    print(f"  Val   labels: {val_batch_labels[:10].tolist()}")
+    
+    # Check model output on val batch
+    with torch.no_grad():
+        val_out = model(val_batch_data.to(device))
+        _, val_preds = val_out.max(1)
+        unique_preds = val_preds.unique()
+        print(f"  Val predictions (1 batch): {val_preds[:10].tolist()}")
+        print(f"  Val unique predictions: {unique_preds.tolist()} ({len(unique_preds)} classes)")
+        val_correct = val_preds.eq(val_batch_labels.to(device)).sum().item()
+        print(f"  Val batch accuracy: {val_correct}/{len(val_batch_labels)} = {100*val_correct/len(val_batch_labels):.1f}%")
+    
+    model.train()
+    print(f"  --- End diagnostics ---\n")
     
     # Resume if specified
     if args.resume:
