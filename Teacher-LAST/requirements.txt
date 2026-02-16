@@ -1,0 +1,26 @@
+# Teacher-LAST Dependencies (No Versions)
+
+# Core
+torch
+torchvision
+transformers
+
+# Video
+decord
+opencv-python
+
+# Data
+numpy
+pandas
+pillow
+
+# Utils
+timm
+tensorboard
+pyyaml
+scikit-learn
+tqdm
+matplotlib
+seaborn
+plotly
+huggingface_hub

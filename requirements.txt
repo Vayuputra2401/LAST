@@ -1,18 +1,17 @@
-# Core Dependencies
-numpy>=1.21.0
-torch>=2.0.0
-torchvision>=0.15.0
+# Global ML Environment Dependencies
 
-# Data Processing
-matplotlib>=3.5.0
-seaborn>=0.11.0
-opencv-python>=4.5.0
-Pillow>=9.0.0
-
-# Utilities
-pyyaml>=6.0
-tqdm>=4.65.0
-scikit-learn>=1.0.0
-
-# Visualization
-plotly>=5.0.0
+numpy
+torch
+torchvision
+matplotlib
+seaborn
+opencv-python
+Pillow
+pyyaml
+tqdm
+scikit-learn
+plotly
+transformers
+decord
+tensorboard
+huggingface_hub

@@ -1,0 +1,77 @@
+# =============================================================================
+# Teacher-LAST: VideoMAE-2 Fine-tuning Configuration
+# Dataset: NTU RGB+D 60  |  Model: VideoMAE-2 Large (ViT-L)
+# Based on official MCG-NJU/VideoMAE repository best practices
+# =============================================================================
+
+# --- Dataset ---
+data:
+  dataset_name: "NTU-RGBD-60"
+  num_classes: 60
+  data_root: "E:\\teacher-last\\annotations"
+  train_csv: "E:\\teacher-last\\annotations\\train.csv"
+  val_csv: "E:\\teacher-last\\annotations\\val.csv"
+
+  # Video sampling (official VideoMAE defaults)
+  num_frames: 16                 # Temporal clip length (fixed by model architecture)
+  sampling_rate: 4               # Frame skip rate → 16*4=64 frame span
+  input_size: 224                # Spatial resolution after crop
+  short_side_size: 224           # Short side resize target
+
+  # Data loading
+  num_workers: 10
+  pin_memory: true
+
+# --- Model ---
+model:
+  name: "vit_large_patch16_224"
+  pretrained_path: "MCG-NJU/videomae-large-finetuned-kinetics"
+  tubelet_size: 2                # Temporal patch size
+  drop_path_rate: 0.2            # Stochastic depth rate
+  fc_drop_rate: 0.5              # Classifier head dropout
+  use_mean_pooling: true         # Mean pool features (no CLS token)
+  init_scale: 0.001              # Head weight init scale
+
+# --- Training ---
+training:
+  epochs: 80
+  batch_size: 8                  # Per-GPU batch size
+  update_freq: 4                 # Gradient accumulation steps (effective batch = 8*4=32)
+
+  # Learning rate (standard linear scaling rule)
+  # actual_lr = base_lr * (batch_size * num_gpus * update_freq) / 256
+  base_lr: 0.001
+  min_lr: 1.0e-6
+  warmup_epochs: 5
+  warmup_lr: 1.0e-6
+
+  # Optimizer: AdamW
+  optimizer: "adamw"
+  weight_decay: 0.05
+  layer_decay: 0.75              # Layer-wise LR decay for ViT
+  opt_betas: [0.9, 0.999]
+  opt_eps: 1.0e-8
+  clip_grad: 5.0                 # Max gradient norm
+
+  # Regularization
+  label_smoothing: 0.1
+  mixup: 0.8                     # Mixup alpha (0 to disable)
+  cutmix: 1.0                    # Cutmix alpha (0 to disable)
+  mixup_prob: 1.0                # Probability of applying mixup/cutmix
+  mixup_switch_prob: 0.5         # Probability of switching to cutmix
+
+  # Multi-clip testing
+  test_num_segment: 5            # Number of temporal clips
+  test_num_crop: 3               # Number of spatial crops
+
+# --- Checkpointing ---
+checkpoint:
+  output_dir: "E:\\teacher-last\\checkpoints"
+  log_dir: "E:\\teacher-last\\logs"
+  save_freq: 10                  # Save checkpoint every N epochs
+  auto_resume: true              # Resume from latest checkpoint if exists
+
+# --- Hardware ---
+hardware:
+  device: "cuda"
+  mixed_precision: true          # Use PyTorch AMP
