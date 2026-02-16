@@ -4,7 +4,7 @@
 training:
   # Optimizer
   optimizer: "sgd"
-  lr: 0.1
+  lr: 0.01
   momentum: 0.9
   nesterov: true
   weight_decay: 0.0001
@@ -12,7 +12,7 @@ training:
   # LR Schedule: cosine annealing with linear warmup
   scheduler: "cosine_warmup"
   warmup_epochs: 5
-  warmup_start_lr: 0.001
+  warmup_start_lr: 0.0001
   min_lr: 0.00001
 
   # Training loop
