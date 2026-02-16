@@ -41,13 +41,24 @@ class Trainer:
         self.model = model.to(self.device)
         
         # Optimizer: SGD + Nesterov
-        self.optimizer = torch.optim.SGD(
-            self.model.parameters(),
-            lr=self.train_cfg['lr'],
-            momentum=self.train_cfg['momentum'],
-            nesterov=self.train_cfg['nesterov'],
-            weight_decay=self.train_cfg['weight_decay']
-        )
+        # Optimizer
+        opt_name = self.train_cfg.get('optimizer', 'sgd').lower()
+        if opt_name == 'adamw':
+            self.optimizer = torch.optim.AdamW(
+                self.model.parameters(),
+                lr=self.train_cfg['lr'],
+                weight_decay=self.train_cfg['weight_decay']
+            )
+        elif opt_name == 'sgd':
+            self.optimizer = torch.optim.SGD(
+                self.model.parameters(),
+                lr=self.train_cfg['lr'],
+                momentum=self.train_cfg['momentum'],
+                nesterov=self.train_cfg['nesterov'],
+                weight_decay=self.train_cfg['weight_decay']
+            )
+        else:
+            raise ValueError(f"Unsupported optimizer: {opt_name}")
         
         # LR Scheduler
         warmup_epochs = self.train_cfg['warmup_epochs']

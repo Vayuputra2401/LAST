@@ -43,6 +43,31 @@ NTU_SKELETON_BONES = [
 ]
 
 
+class DepthwiseSeparableConv(nn.Module):
+    """
+    Depthwise Separable Convolution.
+    
+    Consists of:
+    1. Depthwise convolution (spatial/temporal filtering, separate per channel)
+    2. Pointwise convolution (1x1, channel mixing)
+    """
+    def __init__(self, in_channels, out_channels, kernel_size=1, stride=1, bias=False):
+        super().__init__()
+        padding = (kernel_size - 1) // 2
+        self.depthwise = nn.Conv2d(
+            in_channels, in_channels, kernel_size, stride, padding, 
+            groups=in_channels, bias=bias
+        )
+        self.pointwise = nn.Conv2d(
+            in_channels, out_channels, 1, 1, 0, bias=bias
+        )
+    
+    def forward(self, x):
+        x = self.depthwise(x)
+        x = self.pointwise(x)
+        return x
+
+
 class AdaptiveGCN(nn.Module):
     """
     Adaptive Graph Convolution Network block.
@@ -102,14 +127,16 @@ class AdaptiveGCN(nn.Module):
             )
         
         # Graph convolution for each subset
+        # Using Depthwise Separable Convolution instead of standard Conv2d
         self.conv = nn.ModuleList([
-            nn.Conv2d(in_channels, out_channels, kernel_size=1)
+            DepthwiseSeparableConv(in_channels, out_channels, kernel_size=1)
             for _ in range(num_subsets)
         ])
         
         # Residual connection
         if self.residual and in_channels != out_channels:
-            self.residual_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+            # Also use separable conv for residual projection
+            self.residual_conv = DepthwiseSeparableConv(in_channels, out_channels, kernel_size=1)
         elif self.residual:
             self.residual_conv = nn.Identity()
         
@@ -244,7 +271,7 @@ class AdaptiveGCN(nn.Module):
             x_conv = x_conv.view(B, T, V, C)  # (B, T, V, C)
             x_conv = x_conv.permute(0, 3, 1, 2).contiguous()  # (B, C, T, V)
             
-            # Apply 1x1 convolution
+            # Apply separable convolution
             out += conv(x_conv)
         
         # Batch norm + activation
@@ -252,7 +279,7 @@ class AdaptiveGCN(nn.Module):
         
         # Residual connection
         if self.residual:
-            residual = self.residual_conv(x) if isinstance(self.residual_conv, nn.Conv2d) else x
+            residual = self.residual_conv(x) if isinstance(self.residual_conv, (nn.Conv2d, DepthwiseSeparableConv)) else x
             out += residual
         
         out = self.relu(out)

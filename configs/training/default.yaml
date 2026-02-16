@@ -3,11 +3,11 @@
 
 training:
   # Optimizer
-  optimizer: "sgd"
-  lr: 0.01
-  momentum: 0.9
-  nesterov: true
-  weight_decay: 0.0001
+  optimizer: "adamw"
+  lr: 0.001
+  momentum: 0.9  # Ignored by AdamW
+  nesterov: true # Ignored by AdamW
+  weight_decay: 0.01
 
   # LR Schedule: cosine annealing with linear warmup
   scheduler: "cosine_warmup"
