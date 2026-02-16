@@ -46,12 +46,12 @@ class ConfigLoader:
         
         return self.load_yaml(env_path)
     
-    def load_data_config(self, dataset_name: str = 'ntu120') -> Dict[str, Any]:
+    def load_data_config(self, dataset_name: str = 'ntu60') -> Dict[str, Any]:
         """
         Load data configuration.
         
         Args:
-            dataset_name: Dataset config name (e.g., 'ntu120')
+            dataset_name: Dataset config name (e.g., 'ntu60', 'ntu120')
             
         Returns:
             Data config dict
@@ -63,7 +63,7 @@ class ConfigLoader:
         
         return self.load_yaml(data_path)
     
-    def load_full_config(self, env_name: str = 'local', dataset_name: str = 'ntu120') -> Dict[str, Any]:
+    def load_full_config(self, env_name: str = 'local', dataset_name: str = 'ntu60') -> Dict[str, Any]:
         """
         Load and merge environment and data configs.
         
@@ -99,13 +99,13 @@ class ConfigLoader:
         return 'local'
 
 
-def load_config(env: str = None, dataset: str = 'ntu120') -> Dict[str, Any]:
+def load_config(env: str = None, dataset: str = 'ntu60') -> Dict[str, Any]:
     """
     Convenience function to load config.
     
     Args:
         env: Environment name ('local', 'kaggle', or None for auto-detect)
-        dataset: Dataset name
+        dataset: Dataset name ('ntu60' or 'ntu120')
         
     Returns:
         Config dict

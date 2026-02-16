@@ -1,7 +1,8 @@
 """
-NTU RGB+D 120 Action Class Mapping
+NTU RGB+D Action Class Mapping (60 and 120)
 
-Provides utilities to convert between action labels (0-119) and action names.
+Provides unified utilities to convert between action labels and names
+for both NTU RGB+D 60 (60 classes) and NTU RGB+D 120 (120 classes).
 """
 
 # NTU RGB+D 120 has 120 action classes (0-indexed: 0-119)

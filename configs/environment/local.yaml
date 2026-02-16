@@ -8,12 +8,12 @@ environment:
 paths:
   # Dataset paths
   data_root: "E:\\nturgbd_skeletons_s001_to_s017\\nturgb+d_skeletons"
-  processed_data: "E:\\LAST\\data\\processed"
+  data_base: "E:\\"  # Base path - script builds LAST-60 or LAST-120 from this
   
-  # Output paths
-  output_root: "E:\\LAST\\outputs"
-  checkpoints: "E:\\LAST\\outputs\\checkpoints"
-  logs: "E:\\LAST\\outputs\\logs"
+  # Output paths (default for LAST-60, overridden by --dataset flag)
+  output_root: "E:\\LAST-60\\outputs"
+  checkpoints: "E:\\LAST-60\\outputs\\checkpoints"
+  logs: "E:\\LAST-60\\outputs\\logs"
   
 hardware:
   device: "cuda"  # Will auto-detect, fallback to cpu

@@ -225,6 +225,70 @@ class GaussianNoise:
         return f"{self.__class__.__name__}(std={self.std})"
 
 
+class TemporalCrop:
+    """Random temporal crop and resize to target number of frames."""
+    
+    def __init__(self, target_frames: int = 64):
+        """
+        Args:
+            target_frames: Number of frames to crop/resize to
+        """
+        self.target_frames = target_frames
+    
+    def __call__(self, skeleton: torch.Tensor) -> torch.Tensor:
+        """
+        Random temporal crop.
+        
+        Args:
+            skeleton: Tensor of shape (C, T, V, M)
+            
+        Returns:
+            Cropped skeleton of shape (C, target_frames, V, M)
+        """
+        C, T, V, M = skeleton.shape
+        
+        if T <= self.target_frames:
+            # Pad with zeros if too short
+            padded = torch.zeros(C, self.target_frames, V, M, dtype=skeleton.dtype)
+            padded[:, :T, :, :] = skeleton
+            return padded
+        
+        # Random start point
+        start = np.random.randint(0, T - self.target_frames)
+        return skeleton[:, start:start + self.target_frames, :, :]
+    
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(target_frames={self.target_frames})"
+
+
+class RandomTemporalFlip:
+    """Reverse frame order with given probability."""
+    
+    def __init__(self, p: float = 0.5):
+        """
+        Args:
+            p: Probability of flipping
+        """
+        self.p = p
+    
+    def __call__(self, skeleton: torch.Tensor) -> torch.Tensor:
+        """
+        Randomly reverse temporal order.
+        
+        Args:
+            skeleton: Tensor of shape (C, T, V, M)
+            
+        Returns:
+            Possibly flipped skeleton
+        """
+        if np.random.random() < self.p:
+            return skeleton.flip(dims=[1])  # Flip along T dimension
+        return skeleton
+    
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(p={self.p})"
+
+
 def get_train_transform(config: dict):
     """
     Create training transform pipeline from config.
@@ -237,24 +301,75 @@ def get_train_transform(config: dict):
     """
     transforms = []
     
-    # Always normalize
-    if config['dataset']['preprocessing']['normalize']:
+    # Always normalize (if not using preprocessed npy which is already normalized)
+    preproc = config.get('dataset', {}).get('preprocessing', {})
+    if preproc.get('normalize', False):
         transforms.append(Normalize(
-            method=config['dataset']['preprocessing']['normalization_method'],
-            center_joint=config['dataset']['preprocessing']['center_joint'],
-            scale_by_torso=config['dataset']['preprocessing']['scale_by_torso']
+            method=preproc.get('normalization_method', 'center_spine'),
+            center_joint=preproc.get('center_joint', 0),
+            scale_by_torso=preproc.get('scale_by_torso', True)
         ))
     
-    # Add augmentation if enabled
-    if config['dataset']['augmentation']['enabled']:
+    # Temporal crop
+    training = config.get('training', {})
+    input_frames = training.get('input_frames', 64)
+    transforms.append(TemporalCrop(target_frames=input_frames))
+    
+    # Spatial augmentations
+    aug = config.get('dataset', {}).get('augmentation', {})
+    if aug.get('enabled', True):
         transforms.extend([
-            RandomRotation(config['dataset']['augmentation']['rotation_range']),
-            RandomScale(config['dataset']['augmentation']['scale_range']),
-            RandomShear(config['dataset']['augmentation']['shear_range']),
-            GaussianNoise(config['dataset']['augmentation']['noise_std'])
+            RandomRotation(aug.get('rotation_range', (-15, 15))),
+            RandomScale(aug.get('scale_range', (0.9, 1.1))),
+            RandomShear(aug.get('shear_range', (-0.1, 0.1))),
+            GaussianNoise(aug.get('noise_std', 0.01)),
+            RandomTemporalFlip(p=aug.get('temporal_flip_p', 0.5)),
         ])
     
     return Compose(transforms) if transforms else None
+
+
+class UniformTemporalSample:
+    """
+    Uniformly sample frames across the full sequence.
+    
+    Used during validation/testing to cover the entire temporal span
+    at lower resolution, ensuring no part of the action is missed.
+    This is the standard evaluation protocol used by EfficientGCN,
+    CTR-GCN, and InfoGCN.
+    """
+    
+    def __init__(self, target_frames: int = 64):
+        """
+        Args:
+            target_frames: Number of frames to sample
+        """
+        self.target_frames = target_frames
+    
+    def __call__(self, skeleton: torch.Tensor) -> torch.Tensor:
+        """
+        Uniformly sample frames.
+        
+        Args:
+            skeleton: Tensor of shape (C, T, V, M)
+            
+        Returns:
+            Sampled skeleton of shape (C, target_frames, V, M)
+        """
+        C, T, V, M = skeleton.shape
+        
+        if T <= self.target_frames:
+            # Pad with zeros if too short
+            padded = torch.zeros(C, self.target_frames, V, M, dtype=skeleton.dtype)
+            padded[:, :T, :, :] = skeleton
+            return padded
+        
+        # Uniformly spaced indices across the full sequence
+        indices = np.linspace(0, T - 1, self.target_frames, dtype=int)
+        return skeleton[:, indices, :, :]
+    
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(target_frames={self.target_frames})"
 
 
 def get_val_transform(config: dict):
@@ -265,16 +380,23 @@ def get_val_transform(config: dict):
         config: Data configuration dict
         
     Returns:
-        Compose transform (only normalization, no augmentation)
+        Compose transform (normalization + uniform temporal sampling, no augmentation)
     """
     transforms = []
     
-    # Only normalize for validation
-    if config['dataset']['preprocessing']['normalize']:
+    # Only normalize for validation (if not already preprocessed)
+    preproc = config.get('dataset', {}).get('preprocessing', {})
+    if preproc.get('normalize', False):
         transforms.append(Normalize(
-            method=config['dataset']['preprocessing']['normalization_method'],
-            center_joint=config['dataset']['preprocessing']['center_joint'],
-            scale_by_torso=config['dataset']['preprocessing']['scale_by_torso']
+            method=preproc.get('normalization_method', 'center_spine'),
+            center_joint=preproc.get('center_joint', 0),
+            scale_by_torso=preproc.get('scale_by_torso', True)
         ))
     
+    # Uniform temporal sampling for validation (covers full action)
+    training = config.get('training', {})
+    input_frames = training.get('input_frames', 64)
+    transforms.append(UniformTemporalSample(target_frames=input_frames))
+    
     return Compose(transforms) if transforms else None
+
