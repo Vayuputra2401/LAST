@@ -114,8 +114,18 @@ class Trainer:
         total_loss = 0.0
         correct = 0
         total = 0
+        num_batches = len(train_loader)
         
-        for batch_data, batch_labels in train_loader:
+        # Batch-level progress bar
+        pbar = tqdm(
+            train_loader,
+            desc=f"  Epoch {epoch+1} [Train]",
+            ncols=120,
+            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]',
+            leave=False,
+        )
+        
+        for batch_idx, (batch_data, batch_labels) in enumerate(pbar):
             batch_data = batch_data.to(self.device, non_blocking=True)
             batch_labels = batch_labels.to(self.device, non_blocking=True)
             
@@ -145,7 +155,17 @@ class Trainer:
             _, predicted = outputs.max(1)
             total += batch_labels.size(0)
             correct += predicted.eq(batch_labels).sum().item()
+            
+            # Update progress bar with running metrics
+            if total > 0:
+                running_loss = total_loss / total
+                running_acc = 100.0 * correct / total
+                pbar.set_postfix_str(
+                    f"loss={running_loss:.3f} acc={running_acc:.1f}% "
+                    f"[{total}/{len(train_loader.dataset)}]"
+                )
         
+        pbar.close()
         avg_loss = total_loss / max(total, 1)
         accuracy = 100.0 * correct / max(total, 1)
         return {'loss': avg_loss, 'accuracy': accuracy}
@@ -163,7 +183,15 @@ class Trainer:
         correct = 0
         total = 0
         
-        for batch_data, batch_labels in val_loader:
+        pbar = tqdm(
+            val_loader,
+            desc=f"          [Val  ]",
+            ncols=120,
+            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]',
+            leave=False,
+        )
+        
+        for batch_data, batch_labels in pbar:
             batch_data = batch_data.to(self.device, non_blocking=True)
             batch_labels = batch_labels.to(self.device, non_blocking=True)
             
@@ -183,14 +211,20 @@ class Trainer:
             _, predicted = outputs.max(1)
             total += batch_labels.size(0)
             correct += predicted.eq(batch_labels).sum().item()
+            
+            if total > 0:
+                pbar.set_postfix_str(
+                    f"loss={total_loss/total:.3f} acc={100.0*correct/total:.1f}%"
+                )
         
+        pbar.close()
         avg_loss = total_loss / max(total, 1)
         accuracy = 100.0 * correct / max(total, 1)
         return {'loss': avg_loss, 'accuracy': accuracy}
     
     def train(self, train_loader, val_loader):
         """
-        Full training loop with epoch-level tqdm progress bar.
+        Full training loop with batch-level tqdm progress bars.
         
         Args:
             train_loader: Training DataLoader
@@ -205,29 +239,20 @@ class Trainer:
         print(f"  Output: {self.run_dir}")
         print(f"{'='*70}\n")
         
-        # Epoch-level progress bar
-        epoch_bar = tqdm(
-            range(self.start_epoch, total_epochs),
-            desc="Training",
-            unit="epoch",
-            ncols=120,
-            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]'
-        )
-        
-        for epoch in epoch_bar:
+        for epoch in range(self.start_epoch, total_epochs):
             epoch_start = time.time()
             
             # Warmup LR
             self._warmup_lr(epoch)
             
-            # Train
+            # Train (with batch progress bar)
             train_metrics = self.train_one_epoch(train_loader, epoch)
             
             # Step scheduler (after warmup phase)
             if epoch >= self.train_cfg['warmup_epochs']:
                 self.scheduler.step()
             
-            # Validate
+            # Validate (with batch progress bar)
             val_metrics = self.validate(val_loader)
             
             # Current LR
@@ -249,20 +274,11 @@ class Trainer:
             # Save metrics JSON after every epoch
             self._save_metrics()
             
-            # Terminal output: compact epoch summary
+            # Epoch summary line (persistent, stays on screen)
             is_best = val_metrics['accuracy'] > self.best_val_acc
             best_marker = " ★" if is_best else ""
             
-            epoch_bar.set_postfix_str(
-                f"TrL={epoch_data['train_loss']:.3f} "
-                f"TrA={epoch_data['train_acc']:.1f}% "
-                f"VaL={epoch_data['val_loss']:.3f} "
-                f"VaA={epoch_data['val_acc']:.1f}% "
-                f"LR={current_lr:.5f}"
-            )
-            
-            # Print detailed line below progress bar
-            tqdm.write(
+            print(
                 f"  Epoch {epoch+1:3d}/{total_epochs} │ "
                 f"Train: {epoch_data['train_loss']:.4f} / {epoch_data['train_acc']:.2f}% │ "
                 f"Val: {epoch_data['val_loss']:.4f} / {epoch_data['val_acc']:.2f}% │ "
