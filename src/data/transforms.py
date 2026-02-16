@@ -331,12 +331,15 @@ def get_train_transform(config: dict):
 
 class UniformTemporalSample:
     """
-    Uniformly sample frames across the full sequence.
+    Deterministic center temporal crop for validation/testing.
     
-    Used during validation/testing to cover the entire temporal span
-    at lower resolution, ensuring no part of the action is missed.
-    This is the standard evaluation protocol used by EfficientGCN,
-    CTR-GCN, and InfoGCN.
+    Takes a contiguous window of target_frames from the center of the sequence.
+    This matches the distribution of TemporalCrop (training) but is deterministic,
+    ensuring consistent, reproducible validation results.
+    
+    Note: We take contiguous frames (not subsampled) because the model learns
+    temporal patterns from contiguous motion sequences during training.
+    Subsampling every Nth frame destroys these patterns.
     """
     
     def __init__(self, target_frames: int = 64):
@@ -348,13 +351,13 @@ class UniformTemporalSample:
     
     def __call__(self, skeleton: torch.Tensor) -> torch.Tensor:
         """
-        Uniformly sample frames.
+        Center crop frames.
         
         Args:
             skeleton: Tensor of shape (C, T, V, M)
             
         Returns:
-            Sampled skeleton of shape (C, target_frames, V, M)
+            Cropped skeleton of shape (C, target_frames, V, M)
         """
         C, T, V, M = skeleton.shape
         
@@ -364,9 +367,9 @@ class UniformTemporalSample:
             padded[:, :T, :, :] = skeleton
             return padded
         
-        # Uniformly spaced indices across the full sequence
-        indices = np.linspace(0, T - 1, self.target_frames, dtype=int)
-        return skeleton[:, indices, :, :]
+        # Deterministic center crop
+        start = (T - self.target_frames) // 2
+        return skeleton[:, start:start + self.target_frames, :, :]
     
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(target_frames={self.target_frames})"
