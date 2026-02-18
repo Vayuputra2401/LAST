@@ -1,55 +1,25 @@
-# LAST Model Configuration - Base Variant
+# LAST Model Configuration - Base Variant (V2)
 
-# Model Architecture
 model:
-  name: "LAST-Base"
-  num_classes: 120
-  num_joints: 25
-  in_channels: 3  # x, y, z coordinates
+  name: "LAST-v2-Base"
+  version: "v2"      # Activates LAST_v2 class in train.py
+  variant: "base"    # Maps to internal MODEL_VARIANTS['base']
   
-  # Channel progression through blocks
-  channels: [64, 64, 128, 128, 256]  # 4 blocks: 64→64, 64→128, 128→128, 128→256
+  num_classes: 60    # Overridden by dataset config usually
+  in_channels: 3     # x, y, z
   
-  # Attention configuration
-  attention:
-    num_heads: 8
-    dropout: 0.1
-    kernel_fn: "elu"  # elu or relu
-  
-  # Temporal Shift Module
-  tsm:
-    enabled: true
-    shift_ratio: 0.125  # 1/8 channels forward, 1/8 backward
-  
-  # Adaptive GCN configuration
-  agcn:
-    use_learned_adjacency: true
-    use_dynamic_adjacency: true
-    num_subsets: 3  # physical, learned, dynamic
+  # The following are internal params for LAST v2 'base' variant (for reference)
+  # Channels: [96, 192, 384]
+  # Blocks:   [4, 5, 5]
+  # Heads:    4 (Linear Attention)
   
   # Regularization
-  dropout: 0.1  # Within blocks
-  fc_dropout: 0.5  # Before classifier
+  dropout: 0.1 
+  
+  # MIB
+  input_streams: ["joint", "velocity", "bone"]
 
-# Ablation Study Configurations
-# (Set to false to disable specific components)
-ablation:
-  use_tsm: true
-  use_attention: true
-  use_learned_adj: true
-  use_dynamic_adj: true
-
-# Input specifications
-input:
-  max_frames: 300
-  max_bodies: 2
-  coord_channels: 3  # x, y, z
-
-# Expected output
-output:
-  logits_dim: 120  # NTU RGB+D 120 action classes
-
-# Model complexity targets
+# Targets
 targets:
-  max_parameters: 1000000  # <1M for "lightweight"
-  max_gflops: 1.0  # <1 GFLOP for real-time
+  max_parameters: 1500000 
+  max_gflops: 1.5

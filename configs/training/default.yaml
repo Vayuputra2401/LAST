@@ -2,21 +2,21 @@
 # All hyperparameters for the training pipeline
 
 training:
-  # Optimizer
-  optimizer: "adamw"
-  lr: 0.0005
-  momentum: 0.9  # Ignored by AdamW
-  nesterov: true # Ignored by AdamW
-  weight_decay: 0.01
+  # Optimizer (SGD + Nesterov is SOTA for GCNs like CTR-GCN)
+  optimizer: "sgd"
+  lr: 0.1          # Standard base LR for SGD
+  momentum: 0.9    # Standard momentum
+  nesterov: true   # Essential for convergence
+  weight_decay: 0.0004 # Tuned for GCNs (filters bias/BN automatically in trainer.py)
 
   # LR Schedule: cosine annealing with linear warmup
   scheduler: "cosine_warmup"
-  warmup_epochs: 5
-  warmup_start_lr: 0.00005
-  min_lr: 0.000005
-
+  warmup_epochs: 5      # Crucial for stable start with high LR
+  warmup_start_lr: 0.01 # 10x smaller than base LR
+  min_lr: 0.0001
+  
   # Training loop
-  epochs: 70
+  epochs: 70       # SOTA usually 65-80 epochs
   batch_size: 64
   gradient_clip: 5.0
 
@@ -25,6 +25,18 @@ training:
 
   # Input
   input_frames: 64  # temporal crop during training
+
+# Model Configuration
+model:
+  version: "v2"      # "v1" (Original AGCN) or "v2" (LAST-v2 Hybrid)
+  variant: "small"   # Options: small, base, large
+  num_classes: 60    # 60 or 120 (Overridden by CLI if needed)
+
+# Data Configuration
+data:
+  dataset:
+    data_type: "mib" # "skeleton" (raw), "npy" (v1 single stream), "mib" (v2 multi-stream)
+
 
   # Logging
   log_interval: 20   # print summary every N batches (internal, not tqdm)

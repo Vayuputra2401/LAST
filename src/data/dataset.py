@@ -52,9 +52,13 @@ class SkeletonDataset(Dataset):
         self.transform = transform
         self.split = split
         self.split_type = split_type
-        self._split_config = split_config  # Store for _should_include_sample
+        self._split_config = split_config
         
-        # Initialize parser for .skeleton files
+        # MIB Support
+        # If 'mib', we load 3 streams: joint, velocity, bone
+        self.streams = None
+        
+        # Initialize parser
         if data_type == 'skeleton':
             self.parser = SkeletonFileParser(num_joints=num_joints, max_bodies=max_bodies)
         
@@ -71,6 +75,8 @@ class SkeletonDataset(Dataset):
             self._load_skeleton_files()
         elif self.data_type == 'npy':
             self._load_npy_files()
+        elif self.data_type == 'mib':
+            self._load_mib_files()
         else:
             raise ValueError(f"Unknown data_type: {self.data_type}")
     
@@ -161,6 +167,62 @@ class SkeletonDataset(Dataset):
         self._valid_indices = valid_indices
         self.labels = [self.labels[i] for i in valid_indices]
         self.samples = list(range(len(self.labels)))
+
+    def _load_mib_files(self):
+        """Load 3-stream .npy files."""
+        # Expected: split_joint.npy, split_velocity.npy, split_bone.npy
+        import pickle
+        
+        # Folder for v2 processed data
+        # data_path/xsub/
+        # Check if folder exists, if not maybe it's in data_path directly
+        
+        self.streams = {}
+        stream_names = ['joint', 'velocity', 'bone']
+        
+        # Load Labels first (from joint stream logic usually or shared label file)
+        label_file = os.path.join(self.data_path, self.split_type, f'{self.split}_label.pkl')
+        if not os.path.exists(label_file):
+             # Try without split_type subfolder (if user put them together)
+             label_file = os.path.join(self.data_path, f'{self.split}_label.pkl')
+             
+        if not os.path.exists(label_file):
+             raise FileNotFoundError(f"Label file not found: {label_file}")
+             
+        with open(label_file, 'rb') as f:
+            self.labels = pickle.load(f)
+            if isinstance(self.labels, tuple): self.labels = list(self.labels[1])
+            
+        print(f"  [{self.split}] Found {len(self.labels)} labels")
+
+        # Load Streams
+        for s in stream_names:
+            fpath = os.path.join(self.data_path, self.split_type, f'{self.split}_{s}.npy')
+            if not os.path.exists(fpath):
+                 # Try without subfolder
+                 fpath = os.path.join(self.data_path, f'{self.split}_{s}.npy')
+            
+            if not os.path.exists(fpath):
+                raise FileNotFoundError(f"Stream file not found: {fpath}")
+                
+            print(f"  [{self.split}] Loading {s} stream...")
+            self.streams[s] = np.load(fpath, mmap_mode='r')
+            
+        # Basic validation
+        N = len(self.labels)
+        for s in stream_names:
+            assert self.streams[s].shape[0] == N, f"Stream {s} has {self.streams[s].shape[0]} samples, labels have {N}"
+            
+        # Filter empty samples (check Joint stream)
+        valid_indices = []
+        for i in range(N):
+            if np.abs(self.streams['joint'][i]).sum() > 0:
+                valid_indices.append(i)
+                
+        self._valid_indices = valid_indices
+        self.labels = [self.labels[i] for i in valid_indices]
+        self.samples = list(range(len(self.labels)))
+        print(f"  [{self.split}] Valid samples: {len(self.labels)} (Filtered {N - len(self.labels)})")
     
     def _should_include_sample(self, metadata: dict) -> bool:
         """Determine if sample should be included based on split."""
@@ -222,7 +284,37 @@ class SkeletonDataset(Dataset):
         """
         label = self.labels[idx]
         
-        if self.data_type == 'skeleton':
+        if self.data_type == 'mib':
+            # Data is dict: {'joint': ..., 'velocity': ..., 'bone': ...}
+            # Map valid idx
+            data_idx = self._valid_indices[idx] if hasattr(self, '_valid_indices') else idx
+            
+            # Prepare output dict
+            out_data = {}
+            for stream_name, stream_data in self.streams.items():
+                 d = stream_data[data_idx] # (C, T, V, M)
+                 d = torch.from_numpy(np.array(d)).float()
+                 if self.transform is not None:
+                     d = self.transform(d)
+                 out_data[stream_name] = d
+            
+            return out_data, label
+            
+        elif self.data_type == 'npy':
+            # Map through valid indices (filtered during init)
+            data_idx = self._valid_indices[idx] if hasattr(self, '_valid_indices') else idx
+            data = self.data[data_idx]  # Already shape (C, T, V, M)
+            
+            # Convert to tensor
+            data = torch.from_numpy(np.array(data)).float()
+            
+            # Apply transforms if provided
+            if self.transform is not None:
+                data = self.transform(data)
+                
+            return data, label
+            
+        else:  # skeleton
             # Parse skeleton file
             file_path = self.samples[idx]
             skeleton_data, _ = self.parser.parse_file(file_path)
@@ -233,21 +325,12 @@ class SkeletonDataset(Dataset):
             
             # Transpose to (C, T, V, M)
             data = skeleton_data.transpose(2, 0, 1, 3)
+            data = torch.from_numpy(np.array(data)).float()
             
-        else:  # npy
-            # Map through valid indices (filtered during init)
-            data_idx = self._valid_indices[idx] if hasattr(self, '_valid_indices') else idx
-            data = self.data[data_idx]  # Already shape (C, T, V, M)
-        
-        # Convert to tensor
-        data = torch.from_numpy(np.array(data)).float()
-        label = torch.tensor(label, dtype=torch.long)
-        
-        # Apply transforms if provided
-        if self.transform is not None:
-            data = self.transform(data)
-        
-        return data, label
+            if self.transform is not None:
+                data = self.transform(data)
+                
+            return data, label
     
     def _temporal_transform(self, skeleton_data: np.ndarray) -> np.ndarray:
         """

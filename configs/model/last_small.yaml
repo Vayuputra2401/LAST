@@ -1,47 +1,20 @@
-# LAST Model Configuration - Small Variant
-
-# Lightweight variant for mobile/embedded devices
+# LAST Model Configuration - Small Variant (V2)
 
 model:
-  name: "LAST-Small"
-  num_classes: 120
-  num_joints: 25
+  name: "LAST-v2-Small"
+  version: "v2"      # Activates LAST_v2 class in train.py
+  variant: "small"   # Maps to internal MODEL_VARIANTS['small']
+  
+  num_classes: 60
   in_channels: 3
   
-  # Smaller channel progression
-  channels: [32, 32, 64, 64, 128]
-  
-  attention:
-    num_heads: 4  # Reduced from 8
-    dropout: 0.1
-    kernel_fn: "elu"
-  
-  tsm:
-    enabled: true
-    shift_ratio: 0.125
-  
-  agcn:
-    use_learned_adjacency: true
-    use_dynamic_adjacency: true
-    num_subsets: 3
-  
+  # Internal Params Ref:
+  # Channels: [64, 128, 256]
+  # Blocks:   [3, 3, 4]
+
   dropout: 0.1
-  fc_dropout: 0.5
-
-ablation:
-  use_tsm: true
-  use_attention: true
-  use_learned_adj: true
-  use_dynamic_adj: true
-
-input:
-  max_frames: 300
-  max_bodies: 2
-  coord_channels: 3
-
-output:
-  logits_dim: 120
+  input_streams: ["joint", "velocity", "bone"]
 
 targets:
-  max_parameters: 300000  # ~300K
+  max_parameters: 500000 
   max_gflops: 0.5

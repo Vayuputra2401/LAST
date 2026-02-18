@@ -10,8 +10,8 @@ paths:
   # We symlink the actual Kaggle dataset to match this structure (see notebook setup below)
   data_base: "/tmp"
   
-  # Raw data (not used for training, only for reference)  
-  data_root: "/kaggle/input/datasets/pathikreet/last-ntu60-preprocessed"
+  # Raw data (V2 - MIB Preprocessed)
+  data_root: "/kaggle/input/datasets/pathikreet/last-research-preprocessed-v2/xsub"
   
   # Output paths
   output_root: "/kaggle/working"
@@ -30,6 +30,7 @@ kaggle:
   time_limit_hours: 9
 
 # ── Notebook Setup (run this cell before training) ──
-# !mkdir -p /tmp/LAST-60/data/processed
-# !ln -s /kaggle/input/datasets/pathikreet/last-ntu60-preprocessed/xsub /tmp/LAST-60/data/processed/xsub
+# ── Notebook Setup (run this cell before training) ──
+# !mkdir -p /tmp/LAST-60-v2/data/processed_v2
+# !ln -s /kaggle/input/datasets/pathikreet/last-research-preprocessed-v2/xsub /tmp/LAST-60-v2/data/processed_v2/xsub
 

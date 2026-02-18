@@ -117,10 +117,18 @@ def main():
         if i >= args.show_samples:
             break
         
-        print(f"\nBatch {i+1}:")
-        print(f"  Data shape: {data.shape} (B, C, T, V, M)")
+        if isinstance(data, dict):
+            # MIB Data (Dict)
+            print(f"\nBatch {i+1} (MIB - Multi-Stream):")
+            for stream_name, stream_tensor in data.items():
+                print(f"  [{stream_name}] shape: {stream_tensor.shape} Range: [{stream_tensor.min():.3f}, {stream_tensor.max():.3f}]")
+        else:
+            # Standard Tensor
+            print(f"\nBatch {i+1}:")
+            print(f"  Data shape: {data.shape} (B, C, T, V, M)")
+            print(f"  Data range: [{data.min():.3f}, {data.max():.3f}]")
+            
         print(f"  Labels shape: {labels.shape}")
-        print(f"  Data range: [{data.min():.3f}, {data.max():.3f}]")
         print(f"  Labels: {labels.tolist()[:5]}..." if len(labels) > 5 else f"  Labels: {labels.tolist()}")
     
     print("\n" + "="*60)

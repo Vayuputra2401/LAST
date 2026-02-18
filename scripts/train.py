@@ -123,16 +123,19 @@ def main():
     args = parser.parse_args()
 
     # ── 1. Load & merge config ──────────────────────────────────────────
-    config = load_config(dataset=args.dataset)
-    
-    # Load training config
+    # Load training config (Defaults)
     training_config_path = os.path.join(
         os.path.dirname(__file__), '..', 'configs', 'training', 'default.yaml'
     )
     with open(training_config_path, 'r') as f:
-        train_cfg = yaml.safe_load(f)
+        default_cfg = yaml.safe_load(f)
+        
+    # Load specifics (Env, Data, Model)
+    specific_config = load_config(dataset=args.dataset, model=args.model)
     
-    config.update(train_cfg)
+    # Merge: Specifics override Defaults
+    config = default_cfg
+    config.update(specific_config)
     
     # CLI overrides
     if args.epochs is not None:
@@ -188,22 +191,47 @@ def main():
     num_classes = config['data']['dataset'].get('num_classes', 60 if args.dataset == 'ntu60' else 120)
     num_joints = config['data']['dataset']['num_joints']
     
-    create_fn = MODEL_CREATORS[args.model]
-    model = create_fn(num_classes=num_classes, num_joints=num_joints)
+    model_version = config.get('model', {}).get('version', 'v1')
     
-    print(f"\n  Model created: {model.count_parameters():,} parameters")
+    if model_version == 'v2':
+        print(f"\n  Creating LAST v2 model (Variant: {args.model})...")
+        from src.models.last_v2 import LAST_v2
+        # LAST v2 doesn't need num_joints arg usually (fixed to 25/layout), but we can pass if needed
+        model = LAST_v2(num_classes=num_classes, variant=args.model)
+    else:
+        print(f"\n  Creating LAST v1 model (Variant: {args.model})...")
+        create_fn = MODEL_CREATORS[args.model]
+        model = create_fn(num_classes=num_classes, num_joints=num_joints)
+    
+    print(f"  Model created: {sum(p.numel() for p in model.parameters()):,} parameters")
     
     # ── 4. Measure FLOPs & memory ───────────────────────────────────────
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     input_frames = config['training']['input_frames']
-    input_shape = (3, input_frames, num_joints, 2)
+    
+    # Check if MIB or standard input
+    data_type = config['data']['dataset'].get('data_type', 'npy')
+    
+    if data_type == 'mib':
+        # MIB input is a dict of 3 streams, each (N, C, T, V, M)
+        # FLOPs counter might need adjustment or just test with one stream x 3?
+        # Let's mock a single stream for FLOPs first or update count_flops
+        # For simplicity, we just use one stream shape to check backbone size * 3? 
+        # Actually LAST v2 shares backbone. But inference runs backbone 3 times.
+        # So FLOPs = 3 * Backbone + Head.
+        # We'll rely on the simple FLOPs estimator handling a standard input, 
+        # ensuring the model can handle a single tensor if passed (LAST_v2 supports both).
+        input_shape = (3, input_frames, num_joints, 2)
+    else:
+        input_shape = (3, input_frames, num_joints, 2)
     
     print(f"  Measuring FLOPs on input {input_shape}...")
+    # For V2, passing a single tensor works (internal helper).
     model_stats = count_flops(model, input_shape, device)
     
     print(f"  Parameters:  {model_stats['total_params']:,}")
     print(f"  Model Size:  {model_stats['total_model_size_mb']} MB")
-    print(f"  FLOPs:       {model_stats['gflops']} GFLOPs")
+    print(f"  FLOPs:       {model_stats['gflops']} GFLOPs (Single Stream Estimate)")
     if model_stats['gpu_memory_mb'] > 0:
         print(f"  GPU Memory:  {model_stats['gpu_memory_mb']} MB (inference)")
     
@@ -214,10 +242,11 @@ def main():
     # ── 5. Data ─────────────────────────────────────────────────────────
     # Build data path
     data_base = config['environment']['paths']['data_base']
-    folder_name = "LAST-60" if args.dataset == 'ntu60' else "LAST-120"
-    processed_data_path = os.path.join(data_base, folder_name, "data", "processed")
+    folder_name = "LAST-60-v2" if args.dataset == 'ntu60' else "LAST-120-v2"
+    processed_data_path = os.path.join(data_base, folder_name, "data", "processed_v2")
     
     print(f"\n  Loading data from: {processed_data_path}")
+    print(f"  Data Type: {data_type}")
     
     # Transforms (config needs training.input_frames for TemporalCrop)
     merged_transform_config = {
@@ -227,7 +256,7 @@ def main():
     
     # IMPORTANT: Preprocessed .npy files are ALREADY normalized by preprocess_data.py
     # (center_spine + scale_by_torso). Applying Normalize again would double-normalize.
-    # Only enable runtime normalization for raw .skeleton files.
+    # For 'mib', preprocess_v2.py also normalizes.
     merged_transform_config['dataset']['preprocessing']['normalize'] = False
     
     train_transform = get_train_transform(merged_transform_config)
@@ -241,8 +270,8 @@ def main():
     
     train_dataset = SkeletonDataset(
         data_path=processed_data_path,
-        data_type='npy',
-        max_frames=300,
+        data_type=data_type,
+        max_frames=300, # Load full, crop in transform
         num_joints=num_joints,
         transform=train_transform,
         split='train',
@@ -252,7 +281,7 @@ def main():
     
     val_dataset = SkeletonDataset(
         data_path=processed_data_path,
-        data_type='npy',
+        data_type=data_type,
         max_frames=300,
         num_joints=num_joints,
         transform=val_transform,

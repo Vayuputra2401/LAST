@@ -40,22 +40,38 @@ class Trainer:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = model.to(self.device)
         
-        # Optimizer: SGD + Nesterov
-        # Optimizer
+        # Optimizer: SGD + Nesterov (Standard for GCN) or AdamW
+        # SOTA Best Practice: Separate params for weight decay
+        # decay: weights of conv/linear
+        # no_decay: biases, bn weights/bias
+        
+        decay = []
+        no_decay = []
+        for name, param in self.model.named_parameters():
+            if not param.requires_grad:
+                continue
+            if 'bias' in name or 'bn' in name or 'norm' in name:
+                no_decay.append(param)
+            else:
+                decay.append(param)
+                
+        optim_params = [
+            {'params': decay, 'weight_decay': self.train_cfg['weight_decay']},
+            {'params': no_decay, 'weight_decay': 0.0}
+        ]
+        
         opt_name = self.train_cfg.get('optimizer', 'sgd').lower()
         if opt_name == 'adamw':
             self.optimizer = torch.optim.AdamW(
-                self.model.parameters(),
-                lr=self.train_cfg['lr'],
-                weight_decay=self.train_cfg['weight_decay']
+                optim_params,
+                lr=self.train_cfg['lr']
             )
         elif opt_name == 'sgd':
             self.optimizer = torch.optim.SGD(
-                self.model.parameters(),
+                optim_params,
                 lr=self.train_cfg['lr'],
                 momentum=self.train_cfg['momentum'],
-                nesterov=self.train_cfg['nesterov'],
-                weight_decay=self.train_cfg['weight_decay']
+                nesterov=self.train_cfg['nesterov']
             )
         else:
             raise ValueError(f"Unsupported optimizer: {opt_name}")

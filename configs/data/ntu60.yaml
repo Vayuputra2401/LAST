@@ -6,7 +6,7 @@ dataset:
   num_classes: 60  # 60 action classes (A1-A60)
   
   # Data format
-  data_type: "skeleton"  # 'skeleton' for raw .skeleton files, 'npy' for preprocessed
+  data_type: "mib"  # 'skeleton' for raw .skeleton files, 'npy' for preprocessed, 'mib' for V2 Multi-Stream
   
   # Skeleton parameters
   num_joints: 25
