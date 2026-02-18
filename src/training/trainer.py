@@ -153,7 +153,14 @@ class Trainer:
         )
         
         for batch_idx, (batch_data, batch_labels) in enumerate(pbar):
-            batch_data = batch_data.to(self.device, non_blocking=True)
+            if isinstance(batch_data, dict):
+                batch_data = {k: v.to(self.device, non_blocking=True) for k, v in batch_data.items()}
+                # Get batch size from first value
+                B = next(iter(batch_data.values())).size(0)
+            else:
+                batch_data = batch_data.to(self.device, non_blocking=True)
+                B = batch_data.size(0)
+                
             batch_labels = batch_labels.to(self.device, non_blocking=True)
             
             self.optimizer.zero_grad()
@@ -178,7 +185,7 @@ class Trainer:
             if not torch.isfinite(loss):
                 continue
             
-            total_loss += loss.item() * batch_data.size(0)
+            total_loss += loss.item() * B
             _, predicted = outputs.max(1)
             total += batch_labels.size(0)
             correct += predicted.eq(batch_labels).sum().item()
@@ -219,7 +226,13 @@ class Trainer:
         )
         
         for batch_data, batch_labels in pbar:
-            batch_data = batch_data.to(self.device, non_blocking=True)
+            if isinstance(batch_data, dict):
+                batch_data = {k: v.to(self.device, non_blocking=True) for k, v in batch_data.items()}
+                B = next(iter(batch_data.values())).size(0)
+            else:
+                batch_data = batch_data.to(self.device, non_blocking=True)
+                B = batch_data.size(0)
+                
             batch_labels = batch_labels.to(self.device, non_blocking=True)
             
             if self.use_amp:
@@ -234,7 +247,7 @@ class Trainer:
             if not torch.isfinite(loss):
                 continue
             
-            total_loss += loss.item() * batch_data.size(0)
+            total_loss += loss.item() * B
             _, predicted = outputs.max(1)
             total += batch_labels.size(0)
             correct += predicted.eq(batch_labels).sum().item()
