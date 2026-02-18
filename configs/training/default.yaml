@@ -25,6 +25,9 @@ training:
 
   # Input
   input_frames: 64  # temporal crop during training
+  
+  # Reproducibility
+  seed: 42
 
 # Model Configuration
 model:
@@ -42,9 +45,6 @@ data:
   log_interval: 20   # print summary every N batches (internal, not tqdm)
   eval_interval: 1   # validate every N epochs
   save_interval: 10  # checkpoint every N epochs
-
-  # Reproducibility
-  seed: 42
 
   # Mixed precision
   use_amp: false
