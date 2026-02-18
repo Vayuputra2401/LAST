@@ -329,19 +329,33 @@ def main():
     
     # Check one train batch
     train_batch_data, train_batch_labels = next(iter(train_loader))
-    print(f"  Train batch: data={train_batch_data.shape}, labels={train_batch_labels.shape}")
-    print(f"  Train data stats: mean={train_batch_data.mean():.4f}, std={train_batch_data.std():.4f}")
+    if isinstance(train_batch_data, dict):
+        print(f"  Train batch (Dict): keys={list(train_batch_data.keys())}, labels={train_batch_labels.shape}")
+        for k, v in train_batch_data.items():
+            print(f"    {k}: {v.shape}, mean={v.mean():.4f}, std={v.std():.4f}")
+    else:
+        print(f"  Train batch: data={train_batch_data.shape}, labels={train_batch_labels.shape}")
+        print(f"  Train data stats: mean={train_batch_data.mean():.4f}, std={train_batch_data.std():.4f}")
     print(f"  Train labels: {train_batch_labels[:10].tolist()}")
     
     # Check one val batch
     val_batch_data, val_batch_labels = next(iter(val_loader))
-    print(f"  Val   batch: data={val_batch_data.shape}, labels={val_batch_labels.shape}")
-    print(f"  Val   data stats: mean={val_batch_data.mean():.4f}, std={val_batch_data.std():.4f}")
+    if isinstance(val_batch_data, dict):
+        print(f"  Val   batch (Dict): keys={list(val_batch_data.keys())}, labels={val_batch_labels.shape}")
+        for k, v in val_batch_data.items():
+            print(f"    {k}: {v.shape}, mean={v.mean():.4f}, std={v.std():.4f}")
+        # Move dict to device for forward pass
+        val_input = {k: v.to(device) for k, v in val_batch_data.items()}
+    else:
+        print(f"  Val   batch: data={val_batch_data.shape}, labels={val_batch_labels.shape}")
+        print(f"  Val   data stats: mean={val_batch_data.mean():.4f}, std={val_batch_data.std():.4f}")
+        val_input = val_batch_data.to(device)
+
     print(f"  Val   labels: {val_batch_labels[:10].tolist()}")
     
     # Check model output on val batch
     with torch.no_grad():
-        val_out = model(val_batch_data.to(device))
+        val_out = model(val_input)
         _, val_preds = val_out.max(1)
         unique_preds = val_preds.unique()
         print(f"  Val predictions (1 batch): {val_preds[:10].tolist()}")
