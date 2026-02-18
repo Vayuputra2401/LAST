@@ -32,6 +32,11 @@ training:
   # Mixed precision
   use_amp: true    # Enabled to save memory
 
+  # Logging
+  log_interval: 20   # print summary every N batches (internal, not tqdm)
+  eval_interval: 1   # validate every N epochs
+  save_interval: 10  # checkpoint every N epochs
+
 # Model Configuration
 model:
   version: "v2"      # "v1" (Original AGCN) or "v2" (LAST-v2 Hybrid)
@@ -44,13 +49,7 @@ data:
     data_type: "mib" # "skeleton" (raw), "npy" (v1 single stream), "mib" (v2 multi-stream)
 
 
-  # Logging
-  log_interval: 20   # print summary every N batches (internal, not tqdm)
-  eval_interval: 1   # validate every N epochs
-  save_interval: 10  # checkpoint every N epochs
 
-  # Mixed precision
-  use_amp: false
 
 # Output
 output:
