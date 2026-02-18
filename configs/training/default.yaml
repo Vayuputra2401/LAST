@@ -17,7 +17,7 @@ training:
   
   # Training loop
   epochs: 70       # SOTA usually 65-80 epochs
-  batch_size: 16   # Reduced from 64 to fit MIB (3 streams) in 16GB VRAM
+  batch_size: 4   # Reduced from 64 to fit MIB (3 streams) in 16GB VRAM
   gradient_clip: 5.0
 
   # Loss
