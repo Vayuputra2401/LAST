@@ -17,7 +17,7 @@ training:
   
   # Training loop
   epochs: 70       # SOTA usually 65-80 epochs
-  batch_size: 64
+  batch_size: 32   # Reduced from 64 to fit MIB (3 streams) in 16GB VRAM
   gradient_clip: 5.0
 
   # Loss
@@ -28,6 +28,9 @@ training:
   
   # Reproducibility
   seed: 42
+
+  # Mixed precision
+  use_amp: true    # Enabled to save memory
 
 # Model Configuration
 model:
