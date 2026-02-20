@@ -238,7 +238,7 @@ class Trainer:
 
             # ── Forward ──────────────────────────────────────────────────
             if self.use_amp:
-                with autocast():
+                with autocast(device_type='cuda'):
                     outputs = self.model(batch_data)
                     loss    = self.criterion(outputs, batch_labels)
             else:
@@ -338,7 +338,7 @@ class Trainer:
             batch_labels = batch_labels.to(self.device, non_blocking=True)
 
             if self.use_amp:
-                with autocast():
+                with autocast(device_type='cuda'):
                     outputs = self.model(batch_data)
                     loss    = self.criterion(outputs, batch_labels)
             else:

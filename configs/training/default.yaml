@@ -1,10 +1,10 @@
 # LAST Training Configuration -- Default
 # All hyperparameters for the training pipeline
 #
-# Batch size guidance for Kaggle T4 (16GB VRAM) with AMP:
-#   small:  batch_size: 32, gradient_accumulation_steps: 1  → effective 32
-#   base:   batch_size: 32, gradient_accumulation_steps: 1  → effective 32
-#   large:  batch_size: 16, gradient_accumulation_steps: 2  → effective 32
+# Batch size guidance for Kaggle T4 (16GB VRAM) with AMP + adaptive graph:
+#   small:  batch_size: 8, gradient_accumulation_steps: 3  → effective 24
+#   base:   batch_size: 8, gradient_accumulation_steps: 4  → effective 32
+#   large:  batch_size: 8, gradient_accumulation_steps: 4  → effective 32
 
 training:
   # Optimizer (SGD + Nesterov is SOTA for GCNs like CTR-GCN)
@@ -23,13 +23,13 @@ training:
 
   # Training loop
   epochs: 70        # SOTA usually 65-80 epochs
-  batch_size: 32    # Effective batch per optimizer step (before accumulation)
+  batch_size: 8     # Safe for Kaggle T4 16GB with adaptive graph
   gradient_clip: 5.0
 
   # Gradient accumulation
   # effective_batch = batch_size × gradient_accumulation_steps
-  # Use accum_steps > 1 when VRAM limits batch_size for large models
-  gradient_accumulation_steps: 1
+  # Default: 8 × 4 = 32 effective batch for Base/Large on Kaggle
+  gradient_accumulation_steps: 4
 
   # Loss
   label_smoothing: 0.1
