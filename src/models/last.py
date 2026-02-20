@@ -67,6 +67,11 @@ class LAST(nn.Module):
         self.num_joints = num_joints
         self.in_channels = in_channels
         self.channels = channels
+        # Store hyperparameters for get_config() to read from instance attributes
+        self._num_heads = num_heads
+        self._tsm_ratio = tsm_ratio
+        self._dropout = dropout
+        self._fc_dropout = fc_dropout
         
         # Stem: Project input features to first hidden dimension
         self.stem = nn.Sequential(
@@ -169,16 +174,21 @@ class LAST(nn.Module):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
     
     def get_config(self):
-        """Get model configuration."""
+        """Get model configuration from stored instance attributes.
+        
+        FIX: Previously hardcoded num_heads=8, tsm_ratio=0.125, dropout=0.1,
+        fc_dropout=0.3 regardless of actual construction args. Now reads from
+        self._* attributes set during __init__.
+        """
         return {
             'num_classes': self.num_classes,
             'num_joints': self.num_joints,
             'in_channels': self.in_channels,
             'channels': self.channels,
-            'num_heads': 8,  # From blocks
-            'tsm_ratio': 0.125,
-            'dropout': 0.1,
-            'fc_dropout': 0.3
+            'num_heads': self._num_heads,
+            'tsm_ratio': self._tsm_ratio,
+            'dropout': self._dropout,
+            'fc_dropout': self._fc_dropout
         }
 
 

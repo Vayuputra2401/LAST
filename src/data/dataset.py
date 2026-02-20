@@ -239,13 +239,13 @@ class SkeletonDataset(Dataset):
                 train_subjects = set(split_config['xsub']['train_subjects'])
                 val_subjects = set(split_config['xsub']['val_subjects'])
             else:
-                # Fallback hardcoded
-                train_subjects = {1, 2, 4, 5, 8, 9, 13, 14, 15, 16, 17, 18, 19, 25, 27, 28, 31, 34, 35, 38,
-                                45, 46, 47, 49, 50, 52, 53, 54, 55, 56, 57, 58, 59, 70, 74, 78, 80, 81,
-                                82, 83, 84, 85, 86, 89, 91, 92, 93, 94, 95, 97, 98, 100, 103}
-                val_subjects = {3, 6, 7, 10, 11, 12, 20, 21, 22, 23, 24, 26, 29, 30, 32, 33, 36, 37, 39, 40,
-                              41, 42, 43, 44, 48, 51, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 71, 72, 73,
-                              75, 76, 77, 79, 87, 88, 90, 96, 99, 101, 102, 104, 105, 106}
+                # FIX (Bug High): Fallback now uses correct NTU RGB+D 60 subject IDs.
+                # NTU-60 has 40 subjects (IDs 1-40). The previous fallback included
+                # IDs up to 106 (NTU-120 split), which would contaminate the val set
+                # with training subjects when split_config is not provided.
+                # Official NTU-60 cross-subject split (from Liu et al. CVPR 2016):
+                train_subjects = {1, 2, 4, 5, 8, 9, 13, 14, 15, 16, 17, 18, 19, 25, 27, 28, 31, 34, 35, 38}
+                val_subjects = {3, 6, 7, 10, 11, 12, 20, 21, 22, 23, 24, 26, 29, 30, 32, 33, 36, 37, 39, 40}
             
             person = metadata['person']
             if self.split == 'train':
@@ -288,16 +288,21 @@ class SkeletonDataset(Dataset):
             # Data is dict: {'joint': ..., 'velocity': ..., 'bone': ...}
             # Map valid idx
             data_idx = self._valid_indices[idx] if hasattr(self, '_valid_indices') else idx
-            
-            # Prepare output dict
-            out_data = {}
-            for stream_name, stream_data in self.streams.items():
-                 d = stream_data[data_idx] # (C, T, V, M)
-                 d = torch.from_numpy(np.array(d)).float()
-                 if self.transform is not None:
-                     d = self.transform(d)
-                 out_data[stream_name] = d
-            
+
+            # FIX (Observation B): Collect ALL streams into a dict FIRST, then apply
+            # the transform ONCE. MIBTransform samples one set of shared random
+            # parameters (rotation angle, scale, temporal crop start, flip decision)
+            # and applies them identically to every stream, ensuring geometric
+            # consistency across joint/velocity/bone. Previously, self.transform(d)
+            # was called once per stream in a loop, generating a different random
+            # seed each time and producing physically inconsistent augmentations.
+            out_data = {
+                name: torch.from_numpy(np.array(stream_data[data_idx])).float()
+                for name, stream_data in self.streams.items()
+            }
+            if self.transform is not None:
+                out_data = self.transform(out_data)  # MIBTransform(dict) -> dict
+
             return out_data, label
             
         elif self.data_type == 'npy':

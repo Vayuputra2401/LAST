@@ -136,11 +136,19 @@ def convert_official_to_numpy(bodymat, max_frames=300, max_bodies=2):
                  pass
                  
     # Temporal Processing (Crop/Pad)
+    # FIX: Use repeat-padding (replicate last real frame) instead of zero-padding.
+    # Zero-padding bakes an artificial "zero pose" into the saved .npy files.
+    # The velocity stream then has a large spike at the real-last-frame boundary:
+    #   v[T-1] = J[T] - J[T-1] = 0 - J[T-1] = -J[T-1]
+    # This corrupts the velocity stream for all short sequences.
+    # Repeat-padding keeps v[t] ≈ 0 in the padded region (last frame repeated →
+    # finite difference ≈ 0), which is semantically neutral (subject frozen).
     T = nframe
     if T < max_frames:
-        padded = np.zeros((max_frames, njoints, 3, max_bodies), dtype=np.float32)
-        padded[:T] = data
-        data = padded
+        last_frame = data[T - 1:T]          # (1, V, 3, M)
+        repeats = max_frames - T
+        pad = np.repeat(last_frame, repeats, axis=0)  # (repeats, V, 3, M)
+        data = np.concatenate([data, pad], axis=0)    # (max_frames, V, 3, M)
     elif T > max_frames:
         indices = np.linspace(0, T - 1, max_frames, dtype=int)
         data = data[indices]

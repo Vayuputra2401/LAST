@@ -1,5 +1,10 @@
-# LAST Training Configuration — Default
+# LAST Training Configuration -- Default
 # All hyperparameters for the training pipeline
+#
+# Batch size guidance for Kaggle T4 (16GB VRAM) with AMP:
+#   small:  batch_size: 32, gradient_accumulation_steps: 1  → effective 32
+#   base:   batch_size: 32, gradient_accumulation_steps: 1  → effective 32
+#   large:  batch_size: 16, gradient_accumulation_steps: 2  → effective 32
 
 training:
   # Optimizer (SGD + Nesterov is SOTA for GCNs like CTR-GCN)
@@ -7,33 +12,47 @@ training:
   lr: 0.1          # Standard base LR for SGD
   momentum: 0.9    # Standard momentum
   nesterov: true   # Essential for convergence
-  weight_decay: 0.0004 # Tuned for GCNs (filters bias/BN automatically in trainer.py)
+  weight_decay: 0.0004  # Applied only to conv/linear weights (bias/BN/alpha/A_learned excluded)
 
-  # LR Schedule: cosine annealing with linear warmup
+  # LR Schedule: LinearLR warmup → CosineAnnealingLR via SequentialLR
+  # Fully serialized into checkpoint — safe to resume at any epoch
   scheduler: "cosine_warmup"
-  warmup_epochs: 5      # Crucial for stable start with high LR
-  warmup_start_lr: 0.01 # 10x smaller than base LR
-  min_lr: 0.0001
-  
+  warmup_epochs: 5       # Linear ramp: warmup_start_lr → lr over 5 epochs
+  warmup_start_lr: 0.01  # Start at lr/10
+  min_lr: 0.0001         # Cosine floor
+
   # Training loop
-  epochs: 70       # SOTA usually 65-80 epochs
-  batch_size: 2   # Reduced from 64 to fit MIB (3 streams) in 16GB VRAM
+  epochs: 70        # SOTA usually 65-80 epochs
+  batch_size: 32    # Effective batch per optimizer step (before accumulation)
   gradient_clip: 5.0
+
+  # Gradient accumulation
+  # effective_batch = batch_size × gradient_accumulation_steps
+  # Use accum_steps > 1 when VRAM limits batch_size for large models
+  gradient_accumulation_steps: 1
 
   # Loss
   label_smoothing: 0.1
 
   # Input
   input_frames: 64  # temporal crop during training
-  
+
   # Reproducibility
   seed: 42
 
-  # Mixed precision
-  use_amp: true    # Enabled to save memory
+  # Mixed precision (saves ~40% VRAM, ~20% throughput gain)
+  use_amp: true
+
+  # torch.compile (PyTorch 2.0+, opt-in)
+  # 10-40% throughput gain from op fusion. Disable if seeing compile errors.
+  use_compile: false
+
+  # DataLoader
+  num_workers: 4
+  pin_memory: true
 
   # Logging
-  log_interval: 20   # print summary every N batches (internal, not tqdm)
+  log_interval: 20   # unused by tqdm trainer, kept for reference
   eval_interval: 1   # validate every N epochs
   save_interval: 10  # checkpoint every N epochs
 

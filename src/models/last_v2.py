@@ -23,19 +23,19 @@ MODEL_VARIANTS = {
         'channels': [128, 256, 512],
         'blocks': [6, 6, 6],     # Total 18 blocks
         'strides': [1, 2, 2],
-        'use_attn': [False, True, True] 
+        'use_attn': [False, True, True]
     }
 }
 
 class LAST_v2(nn.Module):
     """
     LAST v2: Latent Action-Space Transformer (Efficient Version).
-    
+
     Features:
     - Shared Backbone for Multi-Input Streams (Joint, Velocity, Bone).
     - EfficientGCN Blocks with Hybrid Temporal Modeling.
     - Scalable Architecture (Small, Base, Large).
-    
+
     Args:
         num_classes: Number of action classes.
         variant: 'small', 'base', 'large'.
@@ -43,69 +43,72 @@ class LAST_v2(nn.Module):
         graph_layout: 'ntu-rgb+d'.
         graph_strategy: 'spatial'.
     """
-    def __init__(self, num_classes=60, variant='base', in_channels=3, 
+    def __init__(self, num_classes=60, variant='base', in_channels=3,
                  graph_layout='ntu-rgb+d', graph_strategy='spatial'):
         super().__init__()
-        
+
         if variant not in MODEL_VARIANTS:
             raise ValueError(f"Unknown variant {variant}. Choose from {list(MODEL_VARIANTS.keys())}")
-            
+
         config = MODEL_VARIANTS[variant]
         self.variant = variant
-        
+
         # 1. Graph & Adjacency
+        # FIX (Bug 1): Preserve all K subsets as (K, V, V). Do NOT sum them.
+        # The 'spatial' strategy produces 3 directionally distinct matrices:
+        #   A[0]: self-connections (same hop-distance joints)
+        #   A[1]: centripetal edges (joint->parent, toward body center joint 20)
+        #   A[2]: centrifugal edges (joint->child, away from center)
+        # Summing collapses these into one undirected matrix, destroying the
+        # directional inductive bias that gives ST-GCN its spatial power.
+        # EffGCNBlock now sums per-subset weighted messages internally.
         self.graph = Graph(layout=graph_layout, strategy=graph_strategy)
         A = torch.tensor(self.graph.A, dtype=torch.float32, requires_grad=False)
-        
-        # EffGCNBlock expects (V, V). If strategy returns (K, V, V), sum them.
-        if A.dim() == 3:
-            A = A.sum(dim=0)
-            # Clamp to binary or normalize? 
-            # Usually ST-GCN uses normalized A. Summing might break normalization.
-            # But for "Efficient" message passing, we just want connectivity.
-            # Let's trust that the learned weights will handle the scale.
-            
+        # A.shape: (K, V, V) for 'spatial', (1, V, V) for 'uniform'
         self.register_buffer('A', A)
-        
-        # 2. Input BN (Data Normalization Layer)
-        # Input: (N, C, T, V) -> (N, C, T, V) normalized
-        self.data_bn = nn.BatchNorm1d(in_channels * 25) # Standard trick: BN over V*C?
-        # Actually standard SOTA (CTR-GCN) does BN on (N, C, T, V).
-        # Let's use BatchNorm2d on (N, C, T, V) or manually.
-        # "CTR-GCN uses scalar BN on (N, C*V, T) then reshape". 
-        # Simpler: nn.BatchNorm2d(C) treating T*V as spatial?
-        # We will use BN on 'C' dimension.
-        self.data_bn = nn.BatchNorm2d(in_channels)
-        
+
+        # 2. Per-stream Input BatchNorm.
+        # FIX: A single shared data_bn was used across all 3 MIB streams.
+        # Joint (XYZ positions, std≈1), velocity (finite diffs, std≈0.02-0.05),
+        # and bone (child-parent vectors, std≈0.3-1) have very different scales.
+        # A shared BN's running mean/variance is the mixture of all 3 modalities,
+        # meaning no individual stream is correctly normalized — velocity in
+        # particular was severely under-normalized, explaining the plateau at 3-5%.
+        # Fix: 3 independent BN modules indexed by MIB stream order
+        # (0=joint, 1=velocity, 2=bone). Each learns its own mean/variance.
+        # For single-stream (non-MIB) inference, stream_idx=0 (joint) is used.
+        # Parameter cost: 3 × 2 × in_channels = 3 × 6 = 18 scalars — negligible.
+        self.stream_names = ['joint', 'velocity', 'bone']
+        self.data_bn = nn.ModuleList([
+            nn.BatchNorm2d(in_channels) for _ in range(3)
+        ])
+
         # 3. Backbone Construction
         layers = []
         c_in = in_channels
-        
+
         for stage_idx, (c_out, num_blocks, stride, use_attn) in enumerate(zip(
             config['channels'], config['blocks'], config['strides'], config['use_attn']
         )):
             for i in range(num_blocks):
                 # Stride only on first block of stage
                 s = stride if i == 0 else 1
-                
-                # Residual connection logic handled inside block
-                # but we need to ensure channel match for identity
-                
+
                 layers.append(EffGCNBlock(
                     in_channels=c_in,
                     out_channels=c_out,
-                    A=self.A,
+                    A=self.A,       # Pass full (K, V, V) tensor
                     stride=s,
                     residual=True,
                     use_linear_attn=use_attn
                 ))
                 c_in = c_out
-                
+
         self.backbone = nn.Sequential(*layers)
-        
+
         # 4. Classification Head
         self.fc = nn.Linear(c_in, num_classes)
-        
+
         # Initialization
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -126,48 +129,67 @@ class LAST_v2(nn.Module):
     def forward(self, x):
         """
         Forward pass.
-        
+
         Args:
             x: Input tensor (N, C, T, V, M) or Dictionary of streams.
                If Dict: {'joint': ..., 'velocity': ..., 'bone': ...}
-               
+
         Returns:
             logits: (N, num_classes)
         """
-        # Handle MIB (Multi-Input Branch)
+        # Handle MIB (Multi-Input Branch): sum logits across all streams.
+        # Each stream is passed with its own stream_idx so the correct
+        # per-stream data_bn is applied.
         if isinstance(x, dict):
-            # Sum scores from all available streams
             score_sum = 0
             for stream_name, stream_input in x.items():
-                score_sum += self._forward_single_stream(stream_input)
+                # Map stream name to BN index; default to 0 for unknown names
+                stream_idx = self.stream_names.index(stream_name) \
+                    if stream_name in self.stream_names else 0
+                score_sum = score_sum + self._forward_single_stream(
+                    stream_input, stream_idx=stream_idx
+                )
             return score_sum
         else:
-            # Single stream
-            return self._forward_single_stream(x)
+            # Single-stream inference: use joint BN (idx=0)
+            return self._forward_single_stream(x, stream_idx=0)
 
-    def _forward_single_stream(self, x):
+    def _forward_single_stream(self, x, stream_idx: int = 0):
+        """
+        Process a single skeleton stream.
+
+        Args:
+            x:          Tensor of shape (N, C, T, V, M) or (N, C, T, V).
+            stream_idx: Index into self.data_bn for per-stream normalization.
+                        0=joint, 1=velocity, 2=bone.
+
+        Returns:
+            logits: (N, num_classes)
+        """
+        # Accept both 4D and 5D inputs.
+        if x.dim() == 4:
+            x = x.unsqueeze(-1)  # (N, C, T, V) -> (N, C, T, V, 1)
+
         N, C, T, V, M = x.shape
-        
-        # Permute to (N*M, C, T, V) to process bodies together
+
+        # Rearrange: (N, C, T, V, M) -> (N*M, C, T, V)
         x = x.permute(0, 4, 1, 2, 3).contiguous().view(N * M, C, T, V)
-        
-        # Data BN
-        x = self.data_bn(x)
-        
+
+        # Per-stream BatchNorm: each modality (joint/velocity/bone) normalizes
+        # independently so the backbone sees correctly scaled inputs for all 3.
+        x = self.data_bn[stream_idx](x)
+
         # Backbone
         x = self.backbone(x)
-        
-        # Global Pooling
-        # x shape: (NM, C_out, T_out, V)
-        # Pool over T, V
-        x = F.adaptive_avg_pool2d(x, (1, 1)) # (NM, C, 1, 1)
-        x = x.view(N * M, -1) # (NM, C)
-        
-        # FC
-        x = self.fc(x) # (NM, num_classes)
-        
-        # Reshape back to (N, M, num_classes) and mean over bodies
-        x = x.view(N, M, -1)
-        x = x.mean(dim=1) # (N, num_classes)
-        
+
+        # Global Average Pooling: (N*M, C_out, T_out, V) -> (N*M, C_out)
+        x = F.adaptive_avg_pool2d(x, (1, 1))
+        x = x.view(N * M, -1)
+
+        # Classifier
+        x = self.fc(x)  # (N*M, num_classes)
+
+        # Merge body dimension: mean over M bodies -> (N, num_classes)
+        x = x.view(N, M, -1).mean(dim=1)
+
         return x

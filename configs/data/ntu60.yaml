@@ -30,8 +30,11 @@ dataset:
   split_type: "xsub"  # 'xsub' (cross-subject) or 'xview' (cross-view)
   
   # Preprocessing & Normalization
+  # NOTE: normalize is set to false for MIB data_type because preprocess_v2.py
+  # already applies spine-centering, front-rotation, and mean-torso scaling offline.
+  # Applying Normalize again here would double-normalize pre-normalized streams.
   preprocessing:
-    normalize: true
+    normalize: false
     normalization_method: "center_spine"  # 'center_spine', 'first_frame', or 'none'
     center_joint: 0  # SpineBase for NTU RGB+D
     scale_by_torso: true
@@ -42,7 +45,8 @@ dataset:
     rotation_range: [-15, 15]   # degrees
     scale_range: [0.9, 1.1]
     shear_range: [-0.1, 0.1]
-    noise_std: 0.001
+    noise_std: 0.01   # Consistent with transforms.py GaussianNoise default
+    temporal_flip_p: 0.5  # RandomTemporalFlip probability
 
 dataloader:
   batch_size: 32

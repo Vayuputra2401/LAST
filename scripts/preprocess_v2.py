@@ -12,45 +12,17 @@ import multiprocessing as mp
 from src.utils.config import load_config
 from src.data.skeleton_loader import SkeletonFileParser
 from src.data.official_loader import read_skeleton_official, convert_official_to_numpy
-from src.data.normalization import align_to_spine_base, rotate_to_front
+from src.data.normalization import align_to_spine_base, rotate_to_front, normalize_skeleton_scale
 
-# NTU RGB+D Bone Pairs (0-based indices)
-# Source: Standard NTU Graph
-ntu_pairs = (
-    (1, 20), (2, 20), (3, 2), (4, 20), (5, 4), (6, 5), (7, 6), (8, 20), (9, 8),
-    (10, 9), (11, 10), (12, 0), (13, 12), (14, 13), (15, 14), (16, 0), (17, 16),
-    (18, 17), (19, 18), (21, 22), (22, 7), (23, 24), (24, 11)
-)
-# Note: This list seems incomplete or uses a specific indexing. 
-# Let's use the standard neighbor list typically found in GCN repos.
-# 0-base:
-# 0: base of spine
-# 1: mid spine
-# 2. neck
-# 3. head
-# 4. left shoulder
-# 5. left elbow
-# 6. left wrist
-# 7. left hand
-# 8. right shoulder
-# 9. right elbow
-# 10. right wrist
-# 11. right hand
-# 12. left hip
-# 13. left knee
-# 14. left ankle
-# 15. left foot
-# 16. right hip
-# 17. right knee
-# 18. right ankle
-# 19. right foot
-# 20. spine shoulder
-# 21. tip of left hand
-# 22. left thumb
-# 23. tip of right hand
-# 24. right thumb
+# NTU RGB+D Joint Labels (0-based):
+# 0: base of spine   1: mid spine     2: neck           3: head
+# 4: left shoulder   5: left elbow    6: left wrist     7: left hand
+# 8: right shoulder  9: right elbow  10: right wrist   11: right hand
+# 12: left hip      13: left knee    14: left ankle    15: left foot
+# 16: right hip     17: right knee   18: right ankle   19: right foot
+# 20: spine shoulder 21: left hand tip 22: left thumb  23: right hand tip  24: right thumb
 
-# Pairs (Child, Parent):
+# Pairs (Child, Parent) -- used for bone vector generation:
 ntu_pairs_0_based = [
     (1, 0), (20, 1), (2, 20), (3, 2), # Spine
     (4, 20), (5, 4), (6, 5), (7, 6), (21, 7), (22, 6), # Left Arm
@@ -74,10 +46,10 @@ def data_generator(file_list, parser, config, max_frames=300):
             
             # Data is already (C, T, V, M) from converter
             
-            # 1. Normalization (View Invariant)
             # Apply Normalization
             data = align_to_spine_base(data)
-            # data = rotate_to_front(data) # Can be buggy without careful implementation, maybe skip for V1 or ensure output shape 
+            data = rotate_to_front(data)
+            data = normalize_skeleton_scale(data) 
             
             yield data, label
         except Exception as e:
@@ -130,6 +102,12 @@ def collect_files(data_path, split_config, split_type, split):
     # ... (Logic from preprocess_data.py) ...
     # This part is verbose. Let's trust preprocess_data.py logic and maybe import `collect_files_for_split`?
     # Yes, from scripts.preprocess_data import collect_files_for_split
+    # FIX: Use absolute import path instead of relative scripts.* import
+    # which fails when the script is run from a different working directory.
+    import importlib, sys, os as _os
+    _root = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..'))
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
     from scripts.preprocess_data import collect_files_for_split
     return collect_files_for_split(data_path, split, split_type, split_config, SkeletonFileParser(25, 2))
 

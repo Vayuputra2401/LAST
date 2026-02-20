@@ -46,11 +46,18 @@ def normalize_skeleton_by_center(
             # Torso = distance from SpineBase (0) to Neck (2)
             spine_to_neck = skeleton[:, :, 2, :] - skeleton[:, :, 0, :]  # (C, T, M)
             torso_length = np.linalg.norm(spine_to_neck, axis=0, keepdims=True)  # (1, T, M)
-            
+
+            # FIX (Observation C): Use MEAN torso length across all frames, not per-frame.
+            # Per-frame torso length is unstable: during bending/crouching poses, the
+            # measured spine-to-neck distance shrinks, causing that frame to be scaled up
+            # anomalously. Mean-frame torso length provides a stable global reference,
+            # consistent with normalization.py's normalize_skeleton_scale approach.
+            torso_length = np.mean(torso_length, axis=1, keepdims=True)  # (1, 1, M)
+
             # Avoid division by zero
             torso_length = np.maximum(torso_length, 1e-6)
-            
-            # Scale: (C, T, V, M) / (1, T, 1, M)
+
+            # Scale: (C, T, V, M) / (1, 1, 1, M) — broadcast over T dimension
             skeleton = skeleton / torso_length[:, :, np.newaxis, :]
             
     else:  # (T, V, C, M) format
@@ -67,11 +74,14 @@ def normalize_skeleton_by_center(
             # Torso = distance from SpineBase (0) to Neck (2)
             spine_to_neck = skeleton[:, 2, :, :] - skeleton[:, 0, :, :]  # (T, C, M)
             torso_length = np.linalg.norm(spine_to_neck, axis=1, keepdims=True)  # (T, 1, M)
-            
+
+            # FIX (Observation C): Use MEAN torso length across all frames (same as C,T,V,M branch).
+            torso_length = np.mean(torso_length, axis=0, keepdims=True)  # (1, 1, M)
+
             # Avoid division by zero
             torso_length = np.maximum(torso_length, 1e-6)
-            
-            # Scale: (T, V, C, M) / (T, 1, 1, M)
+
+            # Scale: (T, V, C, M) / (1, 1, 1, M) — broadcast over T dimension
             skeleton = skeleton / torso_length[:, np.newaxis, :, :]
     
     return skeleton

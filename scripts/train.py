@@ -225,8 +225,10 @@ def main():
     else:
         input_shape = (3, input_frames, num_joints, 2)
     
-    print(f"  Measuring FLOPs on input {input_shape}...")
-    # For V2, passing a single tensor works (internal helper).
+    # FIX (Bug High): For V2 models, _forward_single_stream now handles 4D
+    # inputs via unsqueeze, so a standard 4D input_shape works correctly.
+    # count_flops wraps the model forward pass; V2 will internally add M=1.
+    print(f"  Measuring FLOPs on input {input_shape} (M=1 inferred by V2 forward)...")
     model_stats = count_flops(model, input_shape, device)
     
     print(f"  Parameters:  {model_stats['total_params']:,}")
@@ -361,7 +363,10 @@ def main():
         print(f"  Val predictions (1 batch): {val_preds[:10].tolist()}")
         print(f"  Val unique predictions: {unique_preds.tolist()} ({len(unique_preds)} classes)")
         val_correct = val_preds.eq(val_batch_labels.to(device)).sum().item()
-        print(f"  Val batch accuracy: {val_correct}/{len(val_batch_labels)} = {100*val_correct/len(val_batch_labels):.1f}%")
+        print(f"  Val batch top-1: {val_correct}/{len(val_batch_labels)} = {100*val_correct/len(val_batch_labels):.1f}%")
+        # Sanity: random chance = 1/num_classes
+        num_classes_diag = config['data']['dataset'].get('num_classes', 60)
+        print(f"  (Random chance baseline: {100.0/num_classes_diag:.2f}%)")
     
     model.train()
     print(f"  --- End diagnostics ---\n")
