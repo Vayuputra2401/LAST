@@ -190,9 +190,15 @@ class SkeletonDataset(Dataset):
              raise FileNotFoundError(f"Label file not found: {label_file}")
              
         with open(label_file, 'rb') as f:
-            self.labels = pickle.load(f)
-            if isinstance(self.labels, tuple): self.labels = list(self.labels[1])
-            
+            raw = pickle.load(f)
+
+        if isinstance(raw, tuple):
+            sample_names    = list(raw[0])   # e.g. ['S001C001P001R001A001', ...]
+            self.labels     = list(raw[1])
+        else:
+            sample_names    = None
+            self.labels     = list(raw)
+
         print(f"  [{self.split}] Found {len(self.labels)} labels")
 
         # Load Streams
@@ -213,16 +219,34 @@ class SkeletonDataset(Dataset):
         for s in stream_names:
             assert self.streams[s].shape[0] == N, f"Stream {s} has {self.streams[s].shape[0]} samples, labels have {N}"
             
-        # Filter empty samples (check Joint stream)
+        # Load officially missing/corrupt skeleton exclusion list
+        _txt = os.path.join(
+            os.path.dirname(__file__), '..', '..', 'configs', 'data', 'ntu_missing_skeletons.txt'
+        )
+        missing = set()
+        if os.path.exists(_txt):
+            with open(_txt) as f:
+                missing = {ln.strip() for ln in f if ln.strip()}
+            print(f"  [{self.split}] Loaded {len(missing)} missing-skeleton IDs from txt")
+
+        # Filter: skip officially missing samples (by name) and all-zero skeletons
         valid_indices = []
+        n_missing_filtered = 0
         for i in range(N):
-            if np.abs(self.streams['joint'][i]).sum() > 0:
-                valid_indices.append(i)
-                
+            if sample_names and sample_names[i] in missing:
+                n_missing_filtered += 1
+                continue
+            if np.abs(self.streams['joint'][i]).sum() == 0:
+                continue
+            valid_indices.append(i)
+
+        if n_missing_filtered:
+            print(f"  [{self.split}] Filtered {n_missing_filtered} missing-skeleton samples")
+
         self._valid_indices = valid_indices
         self.labels = [self.labels[i] for i in valid_indices]
         self.samples = list(range(len(self.labels)))
-        print(f"  [{self.split}] Valid samples: {len(self.labels)} (Filtered {N - len(self.labels)})")
+        print(f"  [{self.split}] Valid samples: {len(self.labels)} (Filtered {N - len(self.labels)} total)")
     
     def _should_include_sample(self, metadata: dict) -> bool:
         """Determine if sample should be included based on split."""

@@ -434,7 +434,7 @@ class MIBTransform:
             # Determine temporal length from first stream
             first = next(iter(streams.values()))
             T = first.shape[1]
-            crop_start = int(np.random.randint(0, max(1, T - self.target_frames))) \
+            crop_start = int(np.random.randint(0, max(1, T - self.target_frames + 1))) \
                 if T > self.target_frames else 0
 
             angle  = float(np.random.uniform(self.rotation_range[0], self.rotation_range[1]))

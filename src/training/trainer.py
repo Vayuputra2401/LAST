@@ -175,7 +175,7 @@ class Trainer:
 
         # ── Mixed Precision ─────────────────────────────────────────────────
         self.use_amp = self.train_cfg.get('use_amp', False)
-        self.scaler  = GradScaler() if self.use_amp else None
+        self.scaler  = GradScaler(init_scale=4096) if self.use_amp else None
 
         # ── Gradient Clipping ───────────────────────────────────────────────
         self.grad_clip = self.train_cfg['gradient_clip']
@@ -236,6 +236,20 @@ class Trainer:
                 B = batch_data.size(0)
             batch_labels = batch_labels.to(self.device, non_blocking=True)
 
+            # ── Pre-forward NaN/Inf input guard ──────────────────────────
+            # Skip the forward pass entirely so BN running stats are never
+            # touched by garbage data (body-swap / tracking glitch frames).
+            if isinstance(batch_data, dict):
+                has_bad_input = any(
+                    not torch.isfinite(v).all() for v in batch_data.values()
+                )
+            else:
+                has_bad_input = not torch.isfinite(batch_data).all()
+            if has_bad_input:
+                print(f"\n  WARNING: non-finite input at epoch {epoch+1} "
+                      f"batch {batch_idx} — skipping")
+                continue
+
             # ── Forward ──────────────────────────────────────────────────
             if self.use_amp:
                 with torch.cuda.amp.autocast():
@@ -251,6 +265,13 @@ class Trainer:
             if not torch.isfinite(loss):
                 print(f"\n  WARNING: non-finite loss at epoch {epoch+1} "
                       f"batch {batch_idx} — skipping")
+                # Reset BN running stats so eval() doesn't produce all-NaN
+                # outputs after a bad forward pass corrupts them.
+                # running_mean=0, running_var=1 are neutral; stats recover
+                # within 1-2 subsequent normal batches.
+                for m in self.model.modules():
+                    if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
+                        m.reset_running_stats()
                 self.optimizer.zero_grad(set_to_none=True)
                 continue
 

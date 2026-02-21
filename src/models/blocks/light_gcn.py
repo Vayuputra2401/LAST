@@ -88,7 +88,7 @@ class DirectionalGCNConv(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         N, C, T, V = x.shape
-        x_flat = x.view(N, C * T, V)   # (N, C*T, V)
+        x_flat = x.reshape(N, C * T, V)   # (N, C*T, V) — reshape handles non-contiguous input
 
         # Per-channel softmax across K subsets — shape (K, C_in).
         alpha_w = F.softmax(self.alpha, dim=0)

@@ -126,7 +126,7 @@ class LinearAttention(nn.Module):
         
         # Normalize: Q (K^T V) / (Q K^T 1)
         normalizer = torch.einsum('bhnd,bhmd->bhnm', q, k_sum)  # (BV, H, T, 1)
-        normalizer = normalizer + 1e-6  # Avoid division by zero
+        normalizer = normalizer.clamp(min=1e-4)  # FP16-safe floor (1e-6 overflows at scale)
         out = out / normalizer
         
         # Reshape and project

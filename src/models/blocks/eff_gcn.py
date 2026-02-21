@@ -131,7 +131,7 @@ class AdaptiveGraphConv(nn.Module):
             out: (N, out_channels, T, V)
         """
         N, C, T, V = x.shape
-        x_flat = x.view(N, C * T, V)   # (N, C*T, V) for batched matmul
+        x_flat = x.reshape(N, C * T, V)   # (N, C*T, V) — reshape handles non-contiguous input
 
         out = 0
 

@@ -1,103 +1,102 @@
-# LAST: Lightweight Adaptive-Shift Transformer
+# LAST: Lightweight Action Skeleton Transformer
 
-Skeleton-based action recognition with efficient temporal modeling.
+Skeleton-based human action recognition with two complementary model families: a high-accuracy
+teacher (LAST-v2, 9.2M params) and an extreme-efficiency student family (LAST-E, 92K–644K params).
+LAST-E beats EfficientGCN at every parameter tier. Target venue: **ECCV 2026**.
 
-## 📁 Project Structure
+---
+
+## Status
+
+| Model          | Params    | EfficientGCN target | Code | Training  | Top-1     |
+|----------------|-----------|---------------------|------|-----------|-----------|
+| LAST-E-nano    | 92,358    | <150K (B0) ✓        | PASS | Planned   | —         |
+| LAST-E-small   | 177,646   | <300K (B1) ✓        | PASS | Planned   | —         |
+| LAST-E-base    | 363,958   | <2M (B4) ✓          | PASS | Kaggle    | —         |
+| LAST-E-large   | 644,094   | <2M (B4) ✓          | PASS | Planned   | —         |
+| LAST-v2-base   | 9,217,256 | — (teacher)         | PASS | GCP       | —         |
+
+All integration tests pass. GPU training runs pending.
+
+---
+
+## Quick Start
+
+**Kaggle (T4 16GB) — LAST-E baseline:**
+```bash
+python scripts/train.py --model base_e --dataset ntu60 --env kaggle --amp
+```
+
+**Local — smoke test (CPU or any GPU):**
+```bash
+python scripts/train.py --model nano_e --dataset ntu60 --epochs 2 --batch_size 4
+```
+
+**GCP P100 — LAST-v2 teacher:**
+```bash
+python scripts/train.py --model base --dataset ntu60 --env gcp --amp
+```
+
+**Verify models and param counts:**
+```bash
+python tests/test_model_integration.py
+```
+
+---
+
+## Architecture Summary
+
+**LAST-v2 (Teacher):** 3 independent per-stream backbones (joint / velocity / bone), each with
+AdaptiveGraphConv + ST_JointAtt + LinearAttention. Logits summed at end. Maximum accuracy.
+
+**LAST-E (Student):** StreamFusion blends all 3 streams at input → single shared backbone with
+LightGCNBlocks (DirectionalGCNConv + MultiScaleTCN). 3× fewer FLOPs than LAST-v2.
+
+---
+
+## Documentation
+
+| Section | File | Description |
+|---------|------|-------------|
+| 01 | [Introduction](Docs/01_Introduction.md) | Problem, motivation, contributions |
+| 02 | [Related Work](Docs/02_Related_Work.md) | SOTA table, EfficientGCN comparison |
+| 03 | [Architecture](Docs/03_Architecture.md) | LAST-v2 + LAST-E full design |
+| 04 | [Data Pipeline](Docs/04_Data_Pipeline.md) | MIB streams, NTU60/120, preprocessing |
+| 05 | [Training](Docs/05_Training.md) | Optimizer, scheduler, commands |
+| 06 | [Distillation](Docs/06_Distillation.md) | LAST-v2 → LAST-E KD plan |
+| 07 | [Experiments](Docs/07_Experiments.md) | Param counts + results (live) |
+| 08 | [Environment Setup](Docs/08_Environment_Setup.md) | Local / Kaggle / GCP setup |
+
+---
+
+## Project Structure
 
 ```
 LAST/
-├── src/                          # Source code
-│   ├── data/                     # Data loading ✅
-│   │   ├── skeleton_loader.py    # .skeleton file parser
-│   │   └── dataset.py            # PyTorch Dataset
-│   ├── models/                   # Model architectures (TODO)
-│   ├── training/                 # Training logic (TODO)
-│   └── utils/                    # Utilities ✅
-│       ├── config.py             # Config loader ✅
-│       └── visualization.py      # Skeleton visualization
-├── configs/                      # Configuration files ✅
-│   ├── environment/              # Environment configs
-│   │   ├── local.yaml            # Local development ✅
-│   │   └── kaggle.yaml           # Kaggle execution ✅
-│   └── data/                     # Dataset configs
-│       └── ntu120.yaml           # NTU RGB+D 120 ✅
-├── scripts/                      # Execution scripts
-│   ├── load_data.py              # Config-driven data loading ✅
-│   ├── test_dataloader.py        # Test/validation ✅
-│   └── quick_test.py             # Quick validation ✅
-├── tests/                        # Unit tests (TODO)
-├── environment_setup.txt         # Python dependencies ✅
-└── activate_ai.bat               # Environment activation ✅
+├── src/
+│   ├── models/
+│   │   ├── last_v2.py              # Teacher model
+│   │   ├── last_e.py               # Student model
+│   │   ├── graph.py                # Adjacency matrices (K=3 subsets)
+│   │   └── blocks/
+│   │       ├── eff_gcn.py          # EffGCNBlock (LAST-v2)
+│   │       ├── light_gcn.py        # LightGCNBlock (LAST-E)
+│   │       └── stream_fusion.py    # StreamFusion (LAST-E input)
+│   ├── data/
+│   │   ├── dataset.py              # SkeletonDataset (MIB dict output)
+│   │   └── transforms.py           # TemporalCrop, RandomRotation, RandomScale
+│   ├── training/
+│   │   └── trainer.py              # Trainer (AMP, grad accum, SequentialLR)
+│   └── utils/
+│       └── config.py               # Config loader + env auto-detection
+├── configs/
+│   ├── model/                      # Per-model YAML configs
+│   ├── training/default.yaml       # Training hyperparameters
+│   └── environment/                # local / kaggle / gcp YAMLs
+├── scripts/
+│   ├── train.py                    # Training entry point
+│   └── preprocess_v2.py            # MIB stream preprocessing
+├── tests/
+│   └── test_model_integration.py   # Integration tests (all PASS)
+└── Docs/                           # Research paper documentation
 ```
-
-## 🚀 Quick Start - Config-Driven Data Loading
-
-### 1. Install Dependencies
-
-```bash
-# Activate environment
-activate_ai.bat
-
-# Install if not done yet
-pip install -r environment_setup.txt
-```
-
-### 2. Configuration Files
-
-The project uses **YAML configs** for all parameters:
-
-**Environment configs** (`configs/environment/`):
-- `local.yaml` - Local Windows development
-- `kaggle.yaml` - Kaggle notebook execution
-
-**Data configs** (`configs/data/`):
-- `ntu120.yaml` - NTU RGB+D 120 dataset parameters
-
-### 3. Load Data (Production Way)
-
-```bash
-# Local environment (auto-detected)
-python scripts/load_data.py --split train
-
-# Explicitly specify environment
-python scripts/load_data.py --env local --split train
-
-# Kaggle environment
-python scripts/load_data.py --env kaggle --split val
-```
-
-### 4. Test Data Loader (Validation Only)
-
-For testing/debugging only (not production):
-```bash
-python scripts/quick_test.py
-```
-
-## 📊 Data Format
-
-**Input:** `.skeleton` files from NTU RGB+D 120
-- 103 frames (example)
-- 25 joints per frame
-- 3D coordinates (x, y, z) in meters
-
-**Output:** PyTorch tensors
-- Shape: `(C, T, V, M)` = `(3, 300, 25, 2)`
-- C = coordinates, T = frames, V = joints, M = max bodies
-
-## 🎯 Next Steps
-
-1. ✅ Data loading - **COMPLETED**
-2. ⏳ Data preprocessing (.skeleton → .npy)
-3. ⏳ Model implementation
-4. ⏳ Training pipeline
-5. ⏳ Evaluation
-
-## 📝 Current Status
-
-**Phase 1: Data Pipeline** - ✅ Core Implementation Done
-- Skeleton file parser
-- PyTorch Dataset with cross-subject/cross-setup splits
-- 3D visualization utilities
-- Test script for validation
-
-Ready to test with your NTU RGB+D data!
