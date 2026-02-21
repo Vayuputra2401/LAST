@@ -368,7 +368,8 @@ class Trainer:
         total_epochs = self.train_cfg['epochs']
 
         print(f"\n{'='*70}")
-        print(f"  Training LAST v2 | Device: {self.device} | Epochs: {total_epochs}")
+        model_cls = type(self.model).__name__
+        print(f"  Training {model_cls} | Device: {self.device} | Epochs: {total_epochs}")
         print(f"  Optimizer: {self.train_cfg.get('optimizer','sgd').upper()} | "
               f"LR: {self.train_cfg['lr']} | "
               f"Batch: {self.train_cfg['batch_size']} × accum {self.accum_steps} "

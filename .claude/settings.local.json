@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(dir:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(find C:\\\\Users\\\\pathi\\\\OneDrive\\\\Desktop\\\\LAST:*)",
+      "Bash(cd \"C:/Users/pathi/OneDrive/Desktop/LAST\" && source \"C:/Users/pathi/envs/ai_research/Scripts/activate\" && python tests/test_model_integration.py 2>&1)",
+      "Bash(cd \"C:/Users/pathi/OneDrive/Desktop/LAST\" && source \"C:/Users/pathi/envs/ai_research/Scripts/activate\" && python -c \"\nimport torch\nfrom src.models.last_e import create_last_e_base, create_last_e_small, create_last_e_large\n\n# Param counts\nfor name, fn in [\\('small', create_last_e_small\\), \\('base', create_last_e_base\\), \\('large', create_last_e_large\\)]:\n    m = fn\\(60\\)\n    p = sum\\(x.numel\\(\\) for x in m.parameters\\(\\)\\)\n    print\\(f'LAST-E-{name}: {p:,} params'\\)\n\n# Forward pass\nm = create_last_e_base\\(60\\)\nm.eval\\(\\)\ndata = {\n    'joint':    torch.randn\\(2, 3, 64, 25\\),\n    'velocity': torch.randn\\(2, 3, 64, 25\\),\n    'bone':     torch.randn\\(2, 3, 64, 25\\),\n}\nwith torch.no_grad\\(\\):\n    out = m\\(data\\)\nprint\\(f'Output: {out.shape}'\\)\nassert out.shape == \\(2, 60\\)\nprint\\('All verification checks passed!'\\)\n\" 2>&1)",
+      "Bash(source:*)"
     ],
     "deny": [],
     "ask": []

@@ -4,7 +4,7 @@ Load and inspect a LAST model variant.
 Usage:
     python scripts/load_model.py --model base --dataset ntu60
     python scripts/load_model.py --model small --dataset ntu60
-    python scripts/load_model.py --model large --dataset ntu120
+    python scripts/load_model.py --model base_e --dataset ntu60
 """
 
 import sys
@@ -14,53 +14,44 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import argparse
 import torch
 
-from src.models.last import create_last_base, create_last_small, create_last_large
 from src.utils.config import load_config
-
-
-MODEL_CREATORS = {
-    'base': create_last_base,
-    'small': create_last_small,
-    'large': create_last_large,
-}
 
 
 def main():
     parser = argparse.ArgumentParser(description='Load and inspect a LAST model')
-    parser.add_argument('--model', type=str, default='base', choices=['base', 'small', 'large'],
+    parser.add_argument('--model', type=str, default='base',
+                       choices=['base', 'small', 'large', 'base_e', 'small_e', 'large_e'],
                        help='Model variant (default: base)')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
                        help='Dataset to configure num_classes (default: ntu60)')
     args = parser.parse_args()
 
     # Load full config (including model config)
-    config = load_config(dataset=args.dataset, model=args.model)
-    
+    base_model = args.model.replace('_e', '') if args.model.endswith('_e') else args.model
+    config = load_config(dataset=args.dataset, model=base_model)
+
     # Model Params
     num_classes = config['data']['dataset'].get('num_classes', 60 if args.dataset == 'ntu60' else 120)
-    num_joints = config['data']['dataset']['num_joints']
-    
-    # Create model based on version
-    model_version = config.get('model', {}).get('version', 'v1')
-    
-    if model_version == 'v2':
+
+    # Create model
+    if args.model.endswith('_e'):
+        variant = args.model.replace('_e', '')
+        print(f"Creating LAST-E model (Variant: {variant})...")
+        from src.models.last_e import LAST_E
+        model = LAST_E(num_classes=num_classes, variant=variant)
+        model_label = f"LAST-E-{variant.capitalize()}"
+    else:
         print(f"Creating LAST v2 model (Variant: {args.model})...")
         from src.models.last_v2 import LAST_v2
         model = LAST_v2(num_classes=num_classes, variant=args.model)
-    else:
-        print(f"Creating LAST v1 model (Variant: {args.model})...")
-        create_fn = MODEL_CREATORS[args.model]
-        model = create_fn(num_classes=num_classes, num_joints=num_joints)
+        model_label = f"LAST-v2-{args.model.capitalize()}"
 
     num_params = model.count_parameters()
 
     print("=" * 60)
-    print(f"LAST-{args.model.capitalize()} ({model_version.upper()}) | {args.dataset.upper()}")
+    print(f"{model_label} | {args.dataset.upper()}")
     print("=" * 60)
     print(f"  Classes:    {num_classes}")
-    print(f"  Joints:     {num_joints}")
-    if hasattr(model, 'channels'):
-        print(f"  Channels:   {model.channels}")
     print(f"  Parameters: {num_params:,}")
     print()
 
@@ -69,31 +60,25 @@ def main():
     model = model.to(device)
     model.eval()
 
-    # Prepare input based on version
-    if model_version == 'v2':
-        # MIB Input (Dict)
-        N, C, T, V, M = 2, 3, 64, 25, 2
-        x = {
-            'joint': torch.randn(N, C, T, V, M).to(device),
-            'velocity': torch.randn(N, C, T, V, M).to(device),
-            'bone': torch.randn(N, C, T, V, M).to(device)
-        }
-        print(f"  Input:      MIB Dict (Joint, Vel, Bone) -> Each {tuple(x['joint'].shape)}")
-    else:
-        # Standard Input
-        x = torch.randn(2, 3, 64, num_joints, 2).to(device)
-        print(f"  Input:      {tuple(x.shape)}  (B, C, T, V, M)")
+    # MIB input (dict)
+    N, C, T, V = 2, 3, 64, 25
+    x = {
+        'joint':    torch.randn(N, C, T, V).to(device),
+        'velocity': torch.randn(N, C, T, V).to(device),
+        'bone':     torch.randn(N, C, T, V).to(device),
+    }
+    print(f"  Input:  MIB Dict (joint, velocity, bone) — each {tuple(x['joint'].shape)}")
 
     with torch.no_grad():
         out = model(x)
-        
-    print(f"  Output:     {tuple(out.shape)}  (B, num_classes)")
 
-    assert out.shape == (2, num_classes), f"Shape mismatch: {out.shape}"
+    print(f"  Output: {tuple(out.shape)}  (B, num_classes)")
+
+    assert out.shape == (N, num_classes), f"Shape mismatch: {out.shape}"
     assert not torch.isnan(out).any(), "NaN in output"
 
     print()
-    print("✓ Forward pass OK")
+    print("Forward pass OK")
     print("=" * 60)
 
 

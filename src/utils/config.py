@@ -73,9 +73,15 @@ class ConfigLoader:
         Returns:
             Model config dict
         """
-        # Handle short names 'base' -> 'last_base', 'small' -> 'last_small'
+        # Handle short names:
+        #   'base'    → 'last_base'    → last_base.yaml   (v2 models)
+        #   'base_e'  → 'last_e_base'  → last_e_base.yaml (LAST-E models)
         if not model_name.startswith('last_'):
-            model_name = f'last_{model_name}'
+            if model_name.endswith('_e'):
+                variant = model_name[:-2]               # 'base_e' → 'base'
+                model_name = f'last_e_{variant}'        # → 'last_e_base'
+            else:
+                model_name = f'last_{model_name}'       # → 'last_base'
             
         model_path = os.path.join(self.config_dir, 'model', f'{model_name}.yaml')
         

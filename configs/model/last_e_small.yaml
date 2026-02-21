@@ -1,0 +1,20 @@
+model:
+  name: "LAST-E-Small"
+  version: "e"
+  variant: "small"
+  num_classes: 60
+  in_channels: 3
+  input_streams: ["joint", "velocity", "bone"]
+  dropout: 0.3
+  graph_layout: "ntu-rgb+d"
+  graph_strategy: "spatial"
+
+  # Architecture
+  channels: [32, 64, 128]
+  blocks_per_stage: [2, 3, 3]
+  strides: [1, 2, 2]
+  use_st_att_per_stage: [false, true, true]
+
+  # Targets — beats EfficientGCN-B1 (300K params)
+  target_params: "~207K"
+  target_gflops: "<0.2"

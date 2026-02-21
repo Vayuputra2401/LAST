@@ -9,7 +9,7 @@
 training:
   # Optimizer (SGD + Nesterov is SOTA for GCNs like CTR-GCN)
   optimizer: "sgd"
-  lr: 0.1          # Standard base LR for SGD
+  lr: 0.01         # Safe LR for batch=16 with adaptive graph (80% reduction from 0.05)
   momentum: 0.9    # Standard momentum
   nesterov: true   # Essential for convergence
   weight_decay: 0.0004  # Applied only to conv/linear weights (bias/BN/alpha/A_learned excluded)
@@ -17,19 +17,20 @@ training:
   # LR Schedule: LinearLR warmup → CosineAnnealingLR via SequentialLR
   # Fully serialized into checkpoint — safe to resume at any epoch
   scheduler: "cosine_warmup"
-  warmup_epochs: 5       # Linear ramp: warmup_start_lr → lr over 5 epochs
-  warmup_start_lr: 0.01  # Start at lr/10
+  warmup_epochs: 10      # Extended warmup for adaptive graph stability
+  warmup_start_lr: 0.001 # Start at lr/10
   min_lr: 0.0001         # Cosine floor
 
   # Training loop
   epochs: 70        # SOTA usually 65-80 epochs
-  batch_size: 8     # Safe for Kaggle T4 16GB with adaptive graph
-  gradient_clip: 5.0
+  batch_size: 16    # Stable for P100 16GB with adaptive graph
+  gradient_clip: 1.0  # Tighter clip for adaptive graph (A_learned can accumulate large grads)
 
   # Gradient accumulation
   # effective_batch = batch_size × gradient_accumulation_steps
-  # Default: 8 × 4 = 32 effective batch for Base/Large on Kaggle
-  gradient_accumulation_steps: 4
+  # GCP P100:  batch_size: 16, gradient_accumulation_steps: 1  → effective 16
+  # Kaggle T4: batch_size: 8, gradient_accumulation_steps: 4  → effective 32
+  gradient_accumulation_steps: 1
 
   # Loss
   label_smoothing: 0.1
@@ -58,14 +59,14 @@ training:
 
 # Model Configuration
 model:
-  version: "v2"      # "v1" (Original AGCN) or "v2" (LAST-v2 Hybrid)
+  version: "v2"      # "v2" (LAST-v2) or "e" (LAST-E efficient)
   variant: "small"   # Options: small, base, large
   num_classes: 60    # 60 or 120 (Overridden by CLI if needed)
 
 # Data Configuration
 data:
   dataset:
-    data_type: "mib" # "skeleton" (raw), "npy" (v1 single stream), "mib" (v2 multi-stream)
+    data_type: "mib" # "skeleton" (raw) or "mib" (multi-stream: joint/velocity/bone)
 
 
 

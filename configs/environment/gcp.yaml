@@ -1,0 +1,27 @@
+# GCP Compute Engine Environment Configuration
+# For P100 GPU instance (research-last-v2-base-run1)
+
+environment:
+  name: "gcp"
+  type: "gcp"
+
+paths:
+  # GCS bucket data will be synced to local SSD for training
+  data_base: "/home/g21cs2026/data"
+
+  # Output paths (local instance storage, sync to GCS after training)
+  output_root: "/home/g21cs2026/LAST-runs"
+  checkpoints: "/home/g21cs2026/LAST-runs/checkpoints"
+  logs: "/home/g21cs2026/LAST-runs/logs"
+
+hardware:
+  device: "cuda"
+  num_workers: 8  # n1-standard-8 has 8 vCPUs
+  pin_memory: true
+
+# GCP P100 specs
+gcp:
+  gpu: "nvidia-tesla-p100"  # 16GB HBM2
+  gpu_memory_gb: 16
+  cpus: 8
+  memory_gb: 30

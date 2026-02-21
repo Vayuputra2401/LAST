@@ -14,7 +14,6 @@ from src.utils.config import load_config
 from src.training.trainer import Trainer
 from src.data.dataset import SkeletonDataset
 from src.data.transforms import get_train_transform, get_val_transform
-from src.models.last import create_last_base, create_last_small, create_last_large
 
 def main():
     print("=" * 70)
@@ -49,13 +48,9 @@ def main():
     num_joints = config['data']['dataset']['num_joints']
     model_version = config['model'].get('version', 'v1')
     
-    if model_version == 'v2':
-        from src.models.last_v2 import LAST_v2
-        model = LAST_v2(num_classes=num_classes, variant='base')
-    else:
-        model = create_last_base(num_classes=num_classes, num_joints=num_joints)
-        
-    print(f"[2] Model Created: {model.count_parameters():,} params (Version: {model_version})")
+    from src.models.last_v2 import LAST_v2
+    model = LAST_v2(num_classes=num_classes, variant='base')
+    print(f"[2] Model Created: {model.count_parameters():,} params (v2)")
 
     # ── 3. Transforms ────────────────────────────────────────────────────
     # Update config to disable normalization for MIB (already done in preprocess_v2)

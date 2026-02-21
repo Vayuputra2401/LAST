@@ -21,18 +21,10 @@ import torch
 from torch.utils.data import DataLoader
 from datetime import datetime
 
-from src.models.last import create_last_base, create_last_small, create_last_large
 from src.data.dataset import SkeletonDataset
 from src.data.transforms import get_train_transform, get_val_transform
 from src.training.trainer import Trainer
 from src.utils.config import load_config
-
-
-MODEL_CREATORS = {
-    'base': create_last_base,
-    'small': create_last_small,
-    'large': create_last_large,
-}
 
 
 def set_seed(seed):
@@ -88,10 +80,13 @@ def count_flops(model, input_shape, device):
     # GPU memory usage (if CUDA)
     gpu_memory_mb = 0
     if device.type == 'cuda':
-        torch.cuda.reset_peak_memory_stats()
-        with torch.no_grad():
-            _ = model(x)
-        gpu_memory_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
+        try:
+            torch.cuda.reset_peak_memory_stats()
+            with torch.no_grad():
+                _ = model(x)
+            gpu_memory_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
+        except Exception:
+            pass
     
     return {
         'total_params': total_params,
@@ -107,7 +102,8 @@ def count_flops(model, input_shape, device):
 
 def main():
     parser = argparse.ArgumentParser(description='Train LAST model')
-    parser.add_argument('--model', type=str, default='base', choices=['base', 'small', 'large'],
+    parser.add_argument('--model', type=str, default='base',
+                       choices=['base', 'small', 'large', 'nano_e', 'base_e', 'small_e', 'large_e'],
                        help='Model variant (default: base)')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
                        help='Dataset (default: ntu60)')
@@ -120,6 +116,8 @@ def main():
     parser.add_argument('--seed', type=int, default=None, help='Random seed')
     parser.add_argument('--amp', action='store_true', help='Enable mixed precision')
     parser.add_argument('--workers', type=int, default=None, help='DataLoader workers')
+    parser.add_argument('--env', type=str, default=None, choices=['local', 'kaggle', 'gcp'],
+                       help='Environment (default: auto-detect)')
     args = parser.parse_args()
 
     # ── 1. Load & merge config ──────────────────────────────────────────
@@ -129,9 +127,9 @@ def main():
     )
     with open(training_config_path, 'r') as f:
         default_cfg = yaml.safe_load(f)
-        
+
     # Load specifics (Env, Data, Model)
-    specific_config = load_config(dataset=args.dataset, model=args.model)
+    specific_config = load_config(env=args.env, dataset=args.dataset, model=args.model)
     
     # Merge: Specifics override Defaults
     config = default_cfg
@@ -154,9 +152,13 @@ def main():
     # ── 2. Setup ────────────────────────────────────────────────────────
     seed = config['training']['seed']
     set_seed(seed)
-    
-    # Create run directory: E:\LAST-runs\run-YYYY-MM-DD_HH-MM-SS
-    runs_root = config['output']['runs_root']
+
+    # Create run directory: prioritize environment config over output config
+    if 'environment' in config and 'paths' in config['environment']:
+        runs_root = config['environment']['paths'].get('output_root')
+    else:
+        runs_root = config.get('output', {}).get('runs_root', './LAST-runs')
+
     run_name = f"run-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
     run_dir = os.path.join(runs_root, run_name)
     os.makedirs(run_dir, exist_ok=True)
@@ -191,17 +193,15 @@ def main():
     num_classes = config['data']['dataset'].get('num_classes', 60 if args.dataset == 'ntu60' else 120)
     num_joints = config['data']['dataset']['num_joints']
     
-    model_version = config.get('model', {}).get('version', 'v1')
-    
-    if model_version == 'v2':
+    if args.model.endswith('_e'):
+        variant = args.model.replace('_e', '')
+        print(f"\n  Creating LAST-E model (Variant: {variant})...")
+        from src.models.last_e import LAST_E
+        model = LAST_E(num_classes=num_classes, variant=variant)
+    else:
         print(f"\n  Creating LAST v2 model (Variant: {args.model})...")
         from src.models.last_v2 import LAST_v2
-        # LAST v2 doesn't need num_joints arg usually (fixed to 25/layout), but we can pass if needed
         model = LAST_v2(num_classes=num_classes, variant=args.model)
-    else:
-        print(f"\n  Creating LAST v1 model (Variant: {args.model})...")
-        create_fn = MODEL_CREATORS[args.model]
-        model = create_fn(num_classes=num_classes, num_joints=num_joints)
     
     print(f"  Model created: {sum(p.numel() for p in model.parameters()):,} parameters")
     

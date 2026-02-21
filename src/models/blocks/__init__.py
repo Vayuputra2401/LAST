@@ -1,16 +1,19 @@
 """Block module exports"""
 
-from .agcn import AdaptiveGCN
-from .tsm import TemporalShiftModule, TSMBlock
 from .linear_attn import LinearAttention, LinearAttentionBlock
-from .last_block import LASTBlock, LASTBlockStack
+from .eff_gcn import EffGCNBlock
+from .light_gcn import LightGCNConv, DirectionalGCNConv, MultiScaleTCN, LightGCNBlock
+from .st_joint_att import ST_JointAtt
+from .stream_fusion import StreamFusion
 
 __all__ = [
-    'AdaptiveGCN',
-    'TemporalShiftModule',
-    'TSMBlock',
     'LinearAttention',
     'LinearAttentionBlock',
-    'LASTBlock',
-    'LASTBlockStack',
+    'EffGCNBlock',
+    'LightGCNConv',
+    'DirectionalGCNConv',
+    'MultiScaleTCN',
+    'LightGCNBlock',
+    'ST_JointAtt',
+    'StreamFusion',
 ]
