@@ -1,10 +1,11 @@
 # LAST Training Configuration -- Default
 # All hyperparameters for the training pipeline
 #
-# Batch size guidance for Kaggle T4 (16GB VRAM) with AMP + adaptive graph:
-#   small:  batch_size: 8, gradient_accumulation_steps: 3  → effective 24
-#   base:   batch_size: 8, gradient_accumulation_steps: 4  → effective 32
-#   large:  batch_size: 8, gradient_accumulation_steps: 4  → effective 32
+# Batch size guidance (with AMP + adaptive graph):
+#   Kaggle T4  (16GB): batch_size: 8,  accum: 4  → effective 32
+#   GCP P100   (16GB): batch_size: 16, accum: 1  → effective 16
+#   Lambda A10 (23GB, LAST-v2 base):   batch_size: 64  (3 streams × 9.2M params)
+#   Lambda A10 (23GB, LAST-E any):     batch_size: 128 (tiny model, ample headroom)
 
 training:
   # Optimizer (SGD + Nesterov is SOTA for GCNs like CTR-GCN)

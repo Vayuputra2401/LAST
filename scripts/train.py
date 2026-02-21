@@ -116,7 +116,7 @@ def main():
     parser.add_argument('--seed', type=int, default=None, help='Random seed')
     parser.add_argument('--amp', action='store_true', help='Enable mixed precision')
     parser.add_argument('--workers', type=int, default=None, help='DataLoader workers')
-    parser.add_argument('--env', type=str, default=None, choices=['local', 'kaggle', 'gcp'],
+    parser.add_argument('--env', type=str, default=None, choices=['local', 'kaggle', 'gcp', 'lambda'],
                        help='Environment (default: auto-detect)')
     args = parser.parse_args()
 
@@ -134,7 +134,17 @@ def main():
     # Merge: Specifics override Defaults
     config = default_cfg
     config.update(specific_config)
-    
+
+    # Apply environment hardware settings to training config.
+    # Fixes: hardware.num_workers / pin_memory in env YAMLs were loaded but never
+    # propagated to config['training'] where DataLoader reads them from.
+    # CLI --workers still takes priority (args.workers is None check).
+    _hw = config.get('environment', {}).get('hardware', {})
+    if _hw.get('num_workers') is not None and args.workers is None:
+        config['training']['num_workers'] = _hw['num_workers']
+    if 'pin_memory' in _hw:
+        config['training']['pin_memory'] = _hw['pin_memory']
+
     # CLI overrides
     if args.epochs is not None:
         config['training']['epochs'] = args.epochs
@@ -296,7 +306,9 @@ def main():
     batch_size = config['training']['batch_size']
     num_workers = config['training'].get('num_workers', 4)
     pin_memory = config['training'].get('pin_memory', True)
-    
+    _pf = config.get('environment', {}).get('hardware', {}).get('prefetch_factor', 2)
+    prefetch_factor = _pf if num_workers > 0 else None
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -305,9 +317,9 @@ def main():
         pin_memory=pin_memory,
         drop_last=True,
         persistent_workers=num_workers > 0,  # Keep workers alive between epochs
-        prefetch_factor=2 if num_workers > 0 else None,  # Pre-load next batches
+        prefetch_factor=prefetch_factor,
     )
-    
+
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
@@ -315,7 +327,7 @@ def main():
         num_workers=num_workers,
         pin_memory=pin_memory,
         persistent_workers=num_workers > 0,
-        prefetch_factor=2 if num_workers > 0 else None,
+        prefetch_factor=prefetch_factor,
     )
     
     print(f"  Train: {len(train_dataset)} samples, {len(train_loader)} batches")
