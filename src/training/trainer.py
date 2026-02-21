@@ -175,7 +175,21 @@ class Trainer:
 
         # ── Mixed Precision ─────────────────────────────────────────────────
         self.use_amp = self.train_cfg.get('use_amp', False)
-        self.scaler  = GradScaler(init_scale=4096) if self.use_amp else None
+
+        # amp_dtype is hardware-dependent — read from environment hardware config.
+        # bfloat16 (A10/H100): same exponent range as float32 → no fp16 overflow on
+        #   large velocity/bone spike values; GradScaler not needed.
+        # float16  (T4/P100):  smaller range → needs GradScaler to prevent underflow.
+        _hw_cfg = config.get('environment', {}).get('hardware', {})
+        _dtype_str = _hw_cfg.get('amp_dtype', 'float16')
+        self.amp_dtype = torch.bfloat16 if _dtype_str == 'bfloat16' else torch.float16
+
+        # GradScaler only needed for float16 — for bfloat16 it would be a no-op.
+        self.scaler = (
+            GradScaler(init_scale=4096)
+            if (self.use_amp and self.amp_dtype == torch.float16)
+            else None
+        )
 
         # ── Gradient Clipping ───────────────────────────────────────────────
         self.grad_clip = self.train_cfg['gradient_clip']
@@ -236,6 +250,17 @@ class Trainer:
                 B = batch_data.size(0)
             batch_labels = batch_labels.to(self.device, non_blocking=True)
 
+            # ── Soft input clamp ─────────────────────────────────────────
+            # NTU preprocessed data (spine-centred, torso-scaled): joints ≈ ±3,
+            # velocity ≈ ±2, bone ≈ ±2 under normal motion.
+            # Tracking glitches produce spikes of ±100–300 that are finite (pass
+            # the NaN/Inf guard below) but cause fp16 overflow inside the network.
+            # Clamping at ±30 suppresses glitches while normal motion is untouched.
+            if isinstance(batch_data, dict):
+                batch_data = {k: v.clamp(-30.0, 30.0) for k, v in batch_data.items()}
+            else:
+                batch_data = batch_data.clamp(-30.0, 30.0)
+
             # ── Pre-forward NaN/Inf input guard ──────────────────────────
             # Skip the forward pass entirely so BN running stats are never
             # touched by garbage data (body-swap / tracking glitch frames).
@@ -252,7 +277,7 @@ class Trainer:
 
             # ── Forward ──────────────────────────────────────────────────
             if self.use_amp:
-                with torch.cuda.amp.autocast():
+                with torch.cuda.amp.autocast(dtype=self.amp_dtype):
                     outputs = self.model(batch_data)
                     loss    = self.criterion(outputs, batch_labels)
             else:
@@ -260,18 +285,15 @@ class Trainer:
                 loss    = self.criterion(outputs, batch_labels)
 
             # ── NaN/Inf guard BEFORE backward ────────────────────────────
-            # Checking after backward (original) lets corrupt gradients
-            # propagate into optimizer state. Check here and skip the step.
+            # Checking after backward lets corrupt gradients propagate into
+            # optimizer state. Check here and skip the step instead.
+            # NOTE: BN running stats are NOT reset here. With bfloat16 (A10),
+            # fp16 overflow is impossible so BN stats stay clean. With float16,
+            # a reset to mean=0/var=1 throws away all accumulated history and
+            # causes worse oscillation in validation accuracy than the NaN itself.
             if not torch.isfinite(loss):
                 print(f"\n  WARNING: non-finite loss at epoch {epoch+1} "
                       f"batch {batch_idx} — skipping")
-                # Reset BN running stats so eval() doesn't produce all-NaN
-                # outputs after a bad forward pass corrupts them.
-                # running_mean=0, running_var=1 are neutral; stats recover
-                # within 1-2 subsequent normal batches.
-                for m in self.model.modules():
-                    if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
-                        m.reset_running_stats()
                 self.optimizer.zero_grad(set_to_none=True)
                 continue
 
@@ -279,7 +301,7 @@ class Trainer:
             # Divide loss by accum_steps so gradients average over the
             # accumulation window rather than summing.
             scaled_loss = loss / self.accum_steps
-            if self.use_amp:
+            if self.use_amp and self.scaler is not None:
                 self.scaler.scale(scaled_loss).backward()
             else:
                 scaled_loss.backward()
@@ -289,12 +311,12 @@ class Trainer:
             is_accum_step      = ((batch_idx + 1) % self.accum_steps == 0)
 
             if is_accum_step or is_last_batch:
-                if self.use_amp:
+                if self.use_amp and self.scaler is not None:
                     self.scaler.unscale_(self.optimizer)
                 nn.utils.clip_grad_norm_(
                     self.model.parameters(), self.grad_clip
                 )
-                if self.use_amp:
+                if self.use_amp and self.scaler is not None:
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                 else:
@@ -359,7 +381,7 @@ class Trainer:
             batch_labels = batch_labels.to(self.device, non_blocking=True)
 
             if self.use_amp:
-                with torch.cuda.amp.autocast():
+                with torch.cuda.amp.autocast(dtype=self.amp_dtype):
                     outputs = self.model(batch_data)
                     loss    = self.criterion(outputs, batch_labels)
             else:
@@ -395,9 +417,10 @@ class Trainer:
               f"LR: {self.train_cfg['lr']} | "
               f"Batch: {self.train_cfg['batch_size']} × accum {self.accum_steps} "
               f"= effective {self.train_cfg['batch_size'] * self.accum_steps}")
+        _dtype_label = str(self.amp_dtype).replace('torch.', '') if self.use_amp else 'off'
         print(f"  Scheduler: {self.train_cfg['scheduler']} | "
               f"Warmup: {self.train_cfg['warmup_epochs']} epochs | "
-              f"AMP: {self.use_amp}")
+              f"AMP: {_dtype_label}")
         print(f"  Output: {self.run_dir}")
         print(f"{'='*70}\n")
 

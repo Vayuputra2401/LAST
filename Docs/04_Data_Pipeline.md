@@ -108,8 +108,12 @@ single-person and for two-person actions the primary body carries sufficient sig
 
 Batch size and workers are set per environment (see `configs/environment/`):
 
-| Environment | Batch size | Workers |
-|-------------|-----------|---------|
-| local       | 16        | 4       |
-| kaggle      | 16        | 2       |
-| gcp         | 32        | 8       |
+| Environment  | Batch size (LAST-v2) | Batch size (LAST-E) | Workers | prefetch_factor |
+|--------------|---------------------|---------------------|---------|-----------------|
+| local        | 16                  | 16                  | 4       | 2               |
+| kaggle (T4)  | 16                  | 16                  | 2       | 2               |
+| gcp (P100)   | 16                  | 32                  | 8       | 2               |
+| lambda (A10) | 32                  | 128                 | 12      | 4               |
+
+Batch sizes are set via CLI `--batch_size`; workers and prefetch_factor are read automatically
+from each environment's `hardware:` config block.

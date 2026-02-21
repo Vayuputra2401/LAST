@@ -45,11 +45,13 @@ without requiring epoch offset arithmetic.
 | Parameter        | Value   | Config key            |
 |------------------|---------|-----------------------|
 | Epochs           | 70      | `epochs`              |
-| Batch size       | 16      | `batch_size`          |
+| Batch size       | 16*     | `batch_size`          |
 | Input frames     | 64      | `input_frames`        |
 | Label smoothing  | 0.1     | `label_smoothing`     |
 | Gradient clipping| 1.0     | `grad_clip`           |
 | AMP              | optional| `--amp` flag          |
+
+\* Default. Override per environment: Lambda A10 uses `--batch_size 32` (LAST-v2) or `--batch_size 128` (LAST-E).
 
 **Config file:** `configs/training/default.yaml`
 
@@ -58,27 +60,32 @@ without requiring epoch offset arithmetic.
 ## AMP (Automatic Mixed Precision)
 
 Enable with `--amp` flag. Uses `torch.cuda.amp.GradScaler` for FP16 forward + backward.
-- ~40% VRAM reduction on T4/P100
+- ~40% VRAM reduction on all GPUs
 - No observed accuracy degradation in preliminary tests
-- Required on Kaggle (16GB T4) for batch_size=16 with base_e
+- Required on Kaggle T4 (16GB) for base_e at batch_size=16
+- Recommended on Lambda A10 even though VRAM is larger — faster throughput
 
 ---
 
 ## Training Commands
 
 ```bash
-# Kaggle (T4 16GB) — LAST-E baseline
-python scripts/train.py --model base_e --dataset ntu60 --env kaggle --amp
+# Lambda A10 (primary) — LAST-v2 teacher
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+python scripts/train.py --model base --dataset ntu60 --env lambda --amp --batch_size 32
 
-# GCP P100 — LAST-v2 teacher
-python scripts/train.py --model base --dataset ntu60 --env gcp --amp
+# Lambda A10 — LAST-E student
+python scripts/train.py --model base_e --dataset ntu60 --env lambda --amp --batch_size 128
+
+# Kaggle T4 — LAST-E baseline
+python scripts/train.py --model base_e --dataset ntu60 --env kaggle --amp
 
 # Local — smoke test (2 epochs, small batch)
 python scripts/train.py --model nano_e --dataset ntu60 --epochs 2 --batch_size 4
 
 # Resume from checkpoint
-python scripts/train.py --model base_e --dataset ntu60 --env kaggle --amp \
-  --resume /path/to/best_model.pth
+python scripts/train.py --model base --dataset ntu60 --env lambda --amp --batch_size 32 \
+  --resume /lambda/nfs/research-last/LAST-runs/run-YYYY-MM-DD/checkpoints/best_model.pth
 ```
 
 ### All --model choices
@@ -100,12 +107,18 @@ python scripts/train.py --model base_e --dataset ntu60 --env kaggle --amp \
 **File:** `src/training/trainer.py`
 
 Key features:
-- **NaN guard**: checks loss for NaN before backward; logs and skips batch if NaN detected
-- **GPU-side metric accumulation**: confusion matrix and running accuracy accumulated on GPU,
-  transferred to CPU only at epoch end (reduces PCIe overhead)
-- **Gradient accumulation**: configurable via `grad_accum_steps` (default=1)
-- **Banner**: displays `type(self.model).__name__` at training start (not hardcoded string)
-- **Checkpoint save**: saves model state, optimizer, scheduler, epoch, best_acc to `.pth`
+- **Two-level NaN guard**:
+  1. Pre-forward input check — if any MIB stream contains non-finite values, skip the batch
+     entirely (BN running stats are never touched by garbage data)
+  2. Post-forward loss check — if loss is NaN/Inf, reset all BN running stats to neutral
+     (mean=0, var=1) and skip the backward + optimizer step
+- **AMP GradScaler** — automatically skips optimizer step when gradients overflow; independent
+  layer of protection on top of the explicit NaN checks
+- **GPU-side metric accumulation** — loss and accuracy accumulated as tensors on GPU;
+  `.item()` called once at epoch end to avoid repeated PCIe syncs
+- **Gradient accumulation** — configurable via `gradient_accumulation_steps` (default=1)
+- **Banner** — displays `type(self.model).__name__` at training start (not hardcoded string)
+- **Checkpoint save** — saves model state, optimizer, scheduler, scaler, epoch, best_acc to `.pth`
 
 ---
 
@@ -114,9 +127,13 @@ Key features:
 **File:** `src/utils/config.py`
 
 Environment auto-detection:
+- `--env` flag provided → use that environment
 - `/kaggle` exists in filesystem → uses `configs/environment/kaggle.yaml`
 - Otherwise → uses `configs/environment/local.yaml`
-- `--env` flag overrides auto-detection
+- Lambda requires explicit `--env lambda`
+
+Hardware settings (num_workers, pin_memory, prefetch_factor) in environment YAMLs are
+automatically applied to the DataLoader — no CLI flags needed for these.
 
 Model name mapping:
 ```
@@ -124,15 +141,18 @@ base_e   → configs/model/last_e_base.yaml
 small_e  → configs/model/last_e_small.yaml
 large_e  → configs/model/last_e_large.yaml
 nano_e   → configs/model/last_e_nano.yaml
-base     → configs/model/last_v2_base.yaml
+base     → configs/model/last_base.yaml
 ...
 ```
 
 ---
 
-## Training Sequence (Planned)
+## Training Sequence
 
-1. **Kaggle baseline** — `LAST-E-base`, NTU60 xsub, standalone (no distillation)
-2. **GCP teacher** — `LAST-v2-base`, NTU60 xsub, standalone
-3. **Distillation runs** — LAST-v2-base → LAST-E (all 4 variants)
-4. **NTU120** — repeat on larger dataset after NTU60 results confirmed
+| Step | Model          | Environment | Status   | Target                      |
+|------|----------------|-------------|----------|-----------------------------|
+| 1    | LAST-v2 base   | Lambda A10  | running  | Establish teacher accuracy  |
+| 2    | LAST-E base    | Lambda A10  | pending  | Standalone student baseline |
+| 3    | LAST-E (all 4) | Lambda A10  | pending  | Full variant sweep          |
+| 4    | Distillation   | Lambda A10  | planned  | +2–4% over standalone       |
+| 5    | NTU120         | Lambda A10  | planned  | Generalisation benchmark    |

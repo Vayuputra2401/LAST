@@ -19,6 +19,8 @@ hardware:
   num_workers:     12       # 30 cores available; 12 keeps A10 fed, leaves room for OS
   pin_memory:      true
   prefetch_factor: 4        # Up from default 2; compensates for NFS read latency
+  amp_dtype:       "bfloat16"  # A10 native bf16 tensor cores; same exponent range as
+                                # float32 → eliminates fp16 overflow on velocity/bone spikes
 
 lambda_ai:
   gpu:       "nvidia-a10"
