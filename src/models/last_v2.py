@@ -107,6 +107,9 @@ class LAST_v2(nn.Module):
         self.backbone = nn.Sequential(*layers)
 
         # 4. Classification Head
+        # Dropout before FC: 9.2M params on 40K samples needs head regularization.
+        # Consistent with LAST-E (dropout=0.3) and SOTA (EfficientGCN 0.25, CTR-GCN 0.5).
+        self.drop = nn.Dropout(0.3)
         self.fc = nn.Linear(c_in, num_classes)
 
         # Initialization
@@ -135,23 +138,44 @@ class LAST_v2(nn.Module):
                If Dict: {'joint': ..., 'velocity': ..., 'bone': ...}
 
         Returns:
-            logits: (N, num_classes)
+            log-probabilities: (N, num_classes)
+              For multi-stream input: log(mean_softmax) across streams.
+              For single-stream input: raw logits (CrossEntropyLoss compatible).
+
+        FIX (V0) — Softmax probability averaging replaces raw logit summation.
+
+        Prior design: return sum(logit_joint + logit_velocity + logit_bone).
+        Problem: raw logit sum is scale-dependent. At validation, BN runs in
+        eval mode using running stats from AUGMENTED training data. Velocity
+        is near-zero for slow actions at eval; BN amplifies this using wrong
+        stats, producing a corrupted logit vector that can overrule correct
+        joint+bone predictions. Training hides this via per-batch BN + augmentation.
+        Result: wild per-epoch val accuracy oscillation correlated with which
+        action classes (slow vs. fast) appear in each batch.
+
+        Fix: apply softmax per-stream before combining. Softmax output is
+        invariant to constant offsets (exactly what BN running-stat mismatch
+        produces). A degenerate velocity stream contributes ~1/60 per class
+        (uniform noise) instead of a corrupted spike that corrupts the argmax.
+
+        Returns log(mean_softmax) = log-probabilities → use NLLLoss in trainer.
         """
-        # Handle MIB (Multi-Input Branch): sum logits across all streams.
-        # Each stream is passed with its own stream_idx so the correct
-        # per-stream data_bn is applied.
         if isinstance(x, dict):
-            score_sum = 0
+            # Multi-stream: average softmax probabilities (scale-invariant fusion).
+            # Returns log of mean probability → compatible with nn.NLLLoss.
+            prob_sum = None
+            n_streams = 0
             for stream_name, stream_input in x.items():
-                # Map stream name to BN index; default to 0 for unknown names
                 stream_idx = self.stream_names.index(stream_name) \
                     if stream_name in self.stream_names else 0
-                score_sum = score_sum + self._forward_single_stream(
-                    stream_input, stream_idx=stream_idx
-                )
-            return score_sum
+                logit = self._forward_single_stream(stream_input, stream_idx=stream_idx)
+                p = F.softmax(logit, dim=-1)                       # (N, num_classes)
+                prob_sum = p if prob_sum is None else prob_sum + p
+                n_streams += 1
+            # log of mean probability — NLLLoss-compatible log-probabilities
+            return torch.log(prob_sum / n_streams + 1e-8)
         else:
-            # Single-stream inference: use joint BN (idx=0)
+            # Single-stream inference: raw logits (CrossEntropyLoss compatible)
             return self._forward_single_stream(x, stream_idx=0)
 
     def _forward_single_stream(self, x, stream_idx: int = 0):
@@ -186,7 +210,8 @@ class LAST_v2(nn.Module):
         x = F.adaptive_avg_pool2d(x, (1, 1))
         x = x.view(N * M, -1)
 
-        # Classifier
+        # Classifier (with head dropout for regularization)
+        x = self.drop(x)
         x = self.fc(x)  # (N*M, num_classes)
 
         # Merge body dimension: mean over M bodies -> (N, num_classes)

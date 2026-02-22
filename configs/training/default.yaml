@@ -10,7 +10,7 @@
 training:
   # Optimizer (SGD + Nesterov is SOTA for GCNs like CTR-GCN)
   optimizer: "sgd"
-  lr: 0.01         # Safe LR for batch=16 with adaptive graph (80% reduction from 0.05)
+  lr: 0.02         # sqrt-scaled from 0.01 for batch=64 (sqrt(64/16) × 0.01 ≈ 0.02)
   momentum: 0.9    # Standard momentum
   nesterov: true   # Essential for convergence
   weight_decay: 0.0004  # Applied only to conv/linear weights (bias/BN/alpha/A_learned excluded)
@@ -19,12 +19,12 @@ training:
   # Fully serialized into checkpoint — safe to resume at any epoch
   scheduler: "cosine_warmup"
   warmup_epochs: 10      # Extended warmup for adaptive graph stability
-  warmup_start_lr: 0.001 # Start at lr/10
+  warmup_start_lr: 0.002 # Start at lr/10
   min_lr: 0.0001         # Cosine floor
 
   # Training loop
   epochs: 70        # SOTA usually 65-80 epochs
-  batch_size: 16    # Stable for P100 16GB with adaptive graph
+  batch_size: 64    # Lambda A10 23GB (LAST-v2 base); use 8-16 for Kaggle T4/P100
   gradient_clip: 1.0  # Tighter clip for adaptive graph (A_learned can accumulate large grads)
 
   # Gradient accumulation

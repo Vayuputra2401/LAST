@@ -21,8 +21,9 @@ import json
 import time
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler
 from torch.optim.lr_scheduler import (
     CosineAnnealingLR, MultiStepLR, LinearLR, SequentialLR
 )
@@ -47,6 +48,35 @@ def _accuracy_topk(output, target, topk=(1, 5)):
             correct_k = correct[:k].any(dim=0).sum()  # scalar tensor
             res.append(correct_k)
         return res  # list of scalar tensors, still on GPU
+
+
+class _LabelSmoothedNLLLoss(nn.Module):
+    """
+    NLL loss for log-probability inputs with label smoothing.
+
+    Used for LAST-v2 multi-stream forward() which returns log(mean_softmax)
+    instead of raw logits. nn.NLLLoss has no label_smoothing parameter,
+    so this class replicates CrossEntropyLoss(label_smoothing=s) semantics
+    on log-probability inputs:
+
+        loss = (1-s) * nll + s * smooth
+        where nll    = -log_probs[target]   (standard NLL on correct class)
+              smooth = -mean(log_probs)     (entropy term across all classes)
+
+    This is mathematically identical to CrossEntropyLoss with label_smoothing
+    when applied to log-probabilities, preserving the regularization effect
+    on a 9.2M parameter model trained on 40K samples.
+    """
+
+    def __init__(self, smoothing: float = 0.1):
+        super().__init__()
+        self.smoothing = smoothing
+
+    def forward(self, log_probs: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        nll    = F.nll_loss(log_probs, target, reduction='none')  # -log_probs[target]
+        smooth = -log_probs.mean(dim=-1)                          # avg over all classes
+        loss   = (1.0 - self.smoothing) * nll + self.smoothing * smooth
+        return loss.mean()
 
 
 class Trainer:
@@ -105,12 +135,14 @@ class Trainer:
             #   - BN/LayerNorm scale+bias (bn, norm)
             #   - ST_JointAtt alpha gates (zero-init, WD fights their growth)
             #   - AdaptiveGraphConv A_learned matrices (WD fights edge learning)
+            #   - DirectionalGCNConv node_proj (dynamic adj embedding projection)
             if (
                 'bias' in name
                 or 'bn' in name
                 or 'norm' in name
-                or 'alpha' in name          # ST_JointAtt zero-init gate scalars
-                or 'A_learned' in name      # adaptive graph learnable edges
+                or 'alpha' in name          # ST_JointAtt alpha + alpha_dyn gate scalars
+                or 'A_learned' in name      # adaptive/directional graph learnable edges
+                or 'node_proj' in name      # dynamic adj embedding projection (E1)
             ):
                 no_decay.append(param)
             else:
@@ -169,9 +201,21 @@ class Trainer:
             )
 
         # ── Loss ────────────────────────────────────────────────────────────
-        self.criterion = nn.CrossEntropyLoss(
-            label_smoothing=self.train_cfg['label_smoothing']
-        )
+        # LAST-v2 forward() returns log(mean_softmax) — log-probabilities.
+        # NLLLoss(log_prob, target) = -log_prob[target] — correct for this output.
+        # CrossEntropyLoss would apply log_softmax on top, double-softmax → wrong.
+        # All other models (LAST-E, single-stream) return raw logits → CrossEntropyLoss.
+        if type(self.model).__name__ == 'LAST_v2':
+            # LAST-v2 forward() returns log(mean_softmax) — log-probabilities.
+            # Use label-smoothed NLL so regularization is preserved (nn.NLLLoss
+            # has no label_smoothing parameter).
+            self.criterion = _LabelSmoothedNLLLoss(
+                smoothing=self.train_cfg['label_smoothing']
+            )
+        else:
+            self.criterion = nn.CrossEntropyLoss(
+                label_smoothing=self.train_cfg['label_smoothing']
+            )
 
         # ── Mixed Precision ─────────────────────────────────────────────────
         self.use_amp = self.train_cfg.get('use_amp', False)
@@ -186,7 +230,7 @@ class Trainer:
 
         # GradScaler only needed for float16 — for bfloat16 it would be a no-op.
         self.scaler = (
-            GradScaler(init_scale=4096)
+            GradScaler('cuda', init_scale=4096)
             if (self.use_amp and self.amp_dtype == torch.float16)
             else None
         )
@@ -275,9 +319,18 @@ class Trainer:
                       f"batch {batch_idx} — skipping")
                 continue
 
+            # ── Snapshot BN running stats before forward ─────────────────
+            # If the forward produces NaN (fp16 overflow chain inside network),
+            # BN running_mean/var are already contaminated before we detect it.
+            # Save state here so we can restore if the forward goes bad.
+            _bn_mods = [m for m in self.model.modules()
+                        if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d))]
+            _bn_snapshot = [(m.running_mean.clone(), m.running_var.clone())
+                            for m in _bn_mods]
+
             # ── Forward ──────────────────────────────────────────────────
             if self.use_amp:
-                with torch.cuda.amp.autocast(dtype=self.amp_dtype):
+                with torch.amp.autocast('cuda', dtype=self.amp_dtype):
                     outputs = self.model(batch_data)
                     loss    = self.criterion(outputs, batch_labels)
             else:
@@ -285,15 +338,15 @@ class Trainer:
                 loss    = self.criterion(outputs, batch_labels)
 
             # ── NaN/Inf guard BEFORE backward ────────────────────────────
-            # Checking after backward lets corrupt gradients propagate into
-            # optimizer state. Check here and skip the step instead.
-            # NOTE: BN running stats are NOT reset here. With bfloat16 (A10),
-            # fp16 overflow is impossible so BN stats stay clean. With float16,
-            # a reset to mean=0/var=1 throws away all accumulated history and
-            # causes worse oscillation in validation accuracy than the NaN itself.
-            if not torch.isfinite(loss):
-                print(f"\n  WARNING: non-finite loss at epoch {epoch+1} "
-                      f"batch {batch_idx} — skipping")
+            # Check both outputs and loss — NaN in outputs corrupts BN stats
+            # even if the loss reduction happens to stay finite.
+            # Restore BN snapshot so running stats stay clean for future batches.
+            if not torch.isfinite(outputs).all() or not torch.isfinite(loss):
+                for m, (mean, var) in zip(_bn_mods, _bn_snapshot):
+                    m.running_mean.copy_(mean)
+                    m.running_var.copy_(var)
+                print(f"\n  WARNING: non-finite output/loss at epoch {epoch+1} "
+                      f"batch {batch_idx} — skipping (BN state restored)")
                 self.optimizer.zero_grad(set_to_none=True)
                 continue
 
@@ -356,6 +409,7 @@ class Trainer:
         correct_top1  = torch.tensor(0,   device=self.device)
         correct_top5  = torch.tensor(0,   device=self.device)
         total_samples = 0
+        val_nan_batches = 0
 
         num_classes = self.config['data']['dataset'].get('num_classes', 60)
         topk = (1, 5) if num_classes >= 5 else (1,)
@@ -380,8 +434,15 @@ class Trainer:
                 B = batch_data.size(0)
             batch_labels = batch_labels.to(self.device, non_blocking=True)
 
+            # Same clamp as training — tracking-glitch val samples (±100–300)
+            # cause fp16 overflow inside the network without this guard.
+            if isinstance(batch_data, dict):
+                batch_data = {k: v.clamp(-30.0, 30.0) for k, v in batch_data.items()}
+            else:
+                batch_data = batch_data.clamp(-30.0, 30.0)
+
             if self.use_amp:
-                with torch.cuda.amp.autocast(dtype=self.amp_dtype):
+                with torch.amp.autocast('cuda', dtype=self.amp_dtype):
                     outputs = self.model(batch_data)
                     loss    = self.criterion(outputs, batch_labels)
             else:
@@ -389,6 +450,7 @@ class Trainer:
                 loss    = self.criterion(outputs, batch_labels)
 
             if not torch.isfinite(loss):
+                val_nan_batches += 1
                 continue
 
             running_loss += loss * B
@@ -399,6 +461,9 @@ class Trainer:
             total_samples += B
 
         pbar.close()
+        if val_nan_batches:
+            print(f"  WARNING: {val_nan_batches}/{len(val_loader)} val batches "
+                  f"had non-finite loss and were excluded from metrics")
         avg_loss = (running_loss / max(total_samples, 1)).item()
         top1_acc = 100.0 * correct_top1.item() / max(total_samples, 1)
         top5_acc = 100.0 * correct_top5.item() / max(total_samples, 1)
