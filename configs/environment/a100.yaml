@@ -26,8 +26,8 @@ hardware:
 # lambda.yaml / kaggle.yaml have no training_overrides → this block is A100-only.
 training_overrides:
   batch_size:      128        # A100 40GB: 2× A10's batch=64 → ~1.2GB peak, well within 40GB
-  lr:              0.03       # sqrt(128/64) × 0.02 = 0.0283 → 0.03 (sqrt-scaling rule)
-  warmup_start_lr: 0.003      # lr/10
+  lr:              0.14       # sqrt(128/64) × 0.1 = 0.141 → 0.14 (sqrt-scaled from new base lr=0.1)
+  warmup_start_lr: 0.014      # lr/10
 
 lambda_ai:
   gpu:       "nvidia-a100"
