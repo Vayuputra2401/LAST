@@ -135,6 +135,50 @@ class ConfigLoader:
         return 'local'
 
 
+def set_nested_key(cfg: dict, key_path: str, raw_value: str) -> None:
+    """
+    Navigate a nested config dict via dot-notation and set the leaf to a cast value.
+
+    Auto-casting rules (applied in order):
+      'true' / 'false'        → bool
+      comma-separated numbers → list[int | float]
+      pure integer string     → int
+      numeric string (float)  → float
+      anything else           → str
+
+    Examples:
+        set_nested_key(cfg, 'training.lr', '0.1')          → cfg['training']['lr'] = 0.1
+        set_nested_key(cfg, 'training.milestones', '50,65') → cfg['training']['milestones'] = [50, 65]
+        set_nested_key(cfg, 'training.use_amp', 'true')    → cfg['training']['use_amp'] = True
+        set_nested_key(cfg, 'model.dropout', '0.5')        → cfg['model']['dropout'] = 0.5
+    """
+    def _cast(s: str):
+        s = s.strip()
+        if s.lower() == 'true':
+            return True
+        if s.lower() == 'false':
+            return False
+        if ',' in s:
+            return [_cast(x) for x in s.split(',')]
+        try:
+            int_val = int(s)
+            return int_val
+        except ValueError:
+            pass
+        try:
+            return float(s)
+        except ValueError:
+            return s
+
+    keys = key_path.split('.')
+    node = cfg
+    for key in keys[:-1]:
+        if key not in node or not isinstance(node[key], dict):
+            node[key] = {}
+        node = node[key]
+    node[keys[-1]] = _cast(raw_value)
+
+
 def load_config(env: str = None, dataset: str = 'ntu60', model: str = 'base') -> Dict[str, Any]:
     """
     Convenience function to load config.

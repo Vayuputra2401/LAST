@@ -192,11 +192,34 @@ class Trainer:
                 schedulers=[warmup_scheduler, cosine_scheduler],
                 milestones=[warmup_epochs],
             )
+        elif self.train_cfg['scheduler'] == 'multistep_warmup':
+            # LinearLR warmup → MultiStepLR — de facto standard for skeleton GCN papers
+            # (CTR-GCN, MS-G3D, InfoGCN all use MultiStep with 10x drops).
+            # Milestones in the config are GLOBAL epoch numbers; we subtract warmup_epochs
+            # because SequentialLR hands a fresh counter to MultiStepLR starting at 0.
+            warmup_scheduler = LinearLR(
+                self.optimizer,
+                start_factor=self.train_cfg['warmup_start_lr'] / self.train_cfg['lr'],
+                end_factor=1.0,
+                total_iters=warmup_epochs,
+            )
+            raw_milestones = self.train_cfg.get('milestones', [50, 65])
+            adjusted_milestones = [max(1, m - warmup_epochs) for m in raw_milestones]
+            multistep_scheduler = MultiStepLR(
+                self.optimizer,
+                milestones=adjusted_milestones,
+                gamma=self.train_cfg.get('gamma', 0.1),
+            )
+            self.scheduler = SequentialLR(
+                self.optimizer,
+                schedulers=[warmup_scheduler, multistep_scheduler],
+                milestones=[warmup_epochs],
+            )
         else:
-            # Step decay fallback
+            # Plain MultiStep fallback (no warmup)
             self.scheduler = MultiStepLR(
                 self.optimizer,
-                milestones=self.train_cfg.get('milestones', [35, 55]),
+                milestones=self.train_cfg.get('milestones', [50, 65]),
                 gamma=self.train_cfg.get('gamma', 0.1),
             )
 

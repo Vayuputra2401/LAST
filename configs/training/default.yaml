@@ -10,22 +10,26 @@
 training:
   # Optimizer (SGD + Nesterov is SOTA for GCNs like CTR-GCN)
   optimizer: "sgd"
-  lr: 0.02         # sqrt-scaled from 0.01 for batch=64 (sqrt(64/16) × 0.01 ≈ 0.02)
+  lr: 0.1          # SOTA skeleton GCN papers (CTR-GCN, MS-G3D, InfoGCN) use lr=0.1 with SGD
   momentum: 0.9    # Standard momentum
   nesterov: true   # Essential for convergence
   weight_decay: 0.0004  # Applied only to conv/linear weights (bias/BN/alpha/A_learned excluded)
 
-  # LR Schedule: LinearLR warmup → CosineAnnealingLR via SequentialLR
-  # Fully serialized into checkpoint — safe to resume at any epoch
-  scheduler: "cosine_warmup"
-  warmup_epochs: 10      # Extended warmup for adaptive graph stability
-  warmup_start_lr: 0.002 # Start at lr/10
-  min_lr: 0.0001         # Cosine floor
+  # LR Schedule: LinearLR warmup → MultiStepLR via SequentialLR
+  # multistep_warmup is de facto standard for supervised skeleton GCN (vs cosine for SSL).
+  # milestones are GLOBAL epoch numbers; trainer subtracts warmup_epochs internally.
+  # Fully serialized into checkpoint — safe to resume at any epoch.
+  scheduler: "multistep_warmup"
+  warmup_epochs: 5       # Short warmup; adaptive graph stabilizes quickly at lr=0.1
+  warmup_start_lr: 0.01  # Start at lr/10
+  milestones: [50, 65]   # 10x LR drops at these global epochs (scaled from [60,90]/90)
+  gamma: 0.1             # 10x drop factor
+  min_lr: 0.0001         # Kept for cosine_warmup fallback (unused by multistep_warmup)
 
   # Training loop
-  epochs: 70        # SOTA usually 65-80 epochs
+  epochs: 90        # Papers use 90-120; MultiStep needs room after last milestone (65)
   batch_size: 64    # Lambda A10 23GB (LAST-v2 base); use 8-16 for Kaggle T4/P100
-  gradient_clip: 1.0  # Tighter clip for adaptive graph (A_learned can accumulate large grads)
+  gradient_clip: 2.0  # Relaxed from 1.0 — allows full gradient flow at lr=0.1
 
   # Gradient accumulation
   # effective_batch = batch_size × gradient_accumulation_steps

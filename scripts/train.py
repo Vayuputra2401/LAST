@@ -24,7 +24,7 @@ from datetime import datetime
 from src.data.dataset import SkeletonDataset
 from src.data.transforms import get_train_transform, get_val_transform
 from src.training.trainer import Trainer
-from src.utils.config import load_config
+from src.utils.config import load_config, set_nested_key
 
 
 def set_seed(seed):
@@ -118,6 +118,21 @@ def main():
     parser.add_argument('--workers', type=int, default=None, help='DataLoader workers')
     parser.add_argument('--env', type=str, default=None, choices=['local', 'kaggle', 'gcp', 'lambda', 'a100'],
                        help='Environment (default: auto-detect)')
+    # ── Specific hyperparam shortcuts (avoid editing YAML between runs) ─────
+    parser.add_argument('--weight_decay', type=float, default=None,
+                       help='Override training.weight_decay')
+    parser.add_argument('--dropout',      type=float, default=None,
+                       help='Override model.dropout')
+    parser.add_argument('--scheduler',    type=str,   default=None,
+                       help='Override training.scheduler (cosine_warmup | multistep_warmup | multistep)')
+    parser.add_argument('--min_lr',       type=float, default=None,
+                       help='Override training.min_lr (cosine floor)')
+    parser.add_argument('--milestones',   type=str,   default=None,
+                       help='Override training.milestones as comma-separated: --milestones 50,65')
+    # ── General key=value override (highest priority, applied last) ──────────
+    parser.add_argument('--set', nargs='*', metavar='KEY=VALUE', default=None,
+                       help='Override any config key via dot-notation: '
+                            '--set training.lr=0.1 training.epochs=90 model.dropout=0.5')
     args = parser.parse_args()
 
     # ── 1. Load & merge config ──────────────────────────────────────────
@@ -164,7 +179,23 @@ def main():
         config['training']['use_amp'] = True
     if args.workers is not None:
         config['training']['num_workers'] = args.workers
-    
+    # Specific hyperparam shortcuts
+    if args.weight_decay is not None:
+        config['training']['weight_decay'] = args.weight_decay
+    if args.dropout is not None:
+        config['model']['dropout'] = args.dropout
+    if args.scheduler is not None:
+        config['training']['scheduler'] = args.scheduler
+    if args.min_lr is not None:
+        config['training']['min_lr'] = args.min_lr
+    if args.milestones is not None:
+        config['training']['milestones'] = [int(x) for x in args.milestones.split(',')]
+    # General --set (applied last — highest priority)
+    if args.set:
+        for kv in args.set:
+            key_path, raw_val = kv.split('=', 1)
+            set_nested_key(config, key_path, raw_val)
+
     # ── 2. Setup ────────────────────────────────────────────────────────
     seed = config['training']['seed']
     set_seed(seed)
@@ -213,7 +244,11 @@ def main():
         variant = args.model.replace('_e', '')
         print(f"\n  Creating LAST-E model (Variant: {variant})...")
         from src.models.last_e import LAST_E
-        model = LAST_E(num_classes=num_classes, variant=variant)
+        model = LAST_E(
+            num_classes=num_classes,
+            variant=variant,
+            dropout=config['model'].get('dropout', 0.3),
+        )
     else:
         print(f"\n  Creating LAST v2 model (Variant: {args.model})...")
         from src.models.last_v2 import LAST_v2
