@@ -116,7 +116,7 @@ def main():
     parser.add_argument('--seed', type=int, default=None, help='Random seed')
     parser.add_argument('--amp', action='store_true', help='Enable mixed precision')
     parser.add_argument('--workers', type=int, default=None, help='DataLoader workers')
-    parser.add_argument('--env', type=str, default=None, choices=['local', 'kaggle', 'gcp', 'lambda'],
+    parser.add_argument('--env', type=str, default=None, choices=['local', 'kaggle', 'gcp', 'lambda', 'a100'],
                        help='Environment (default: auto-detect)')
     args = parser.parse_args()
 
@@ -144,6 +144,12 @@ def main():
         config['training']['num_workers'] = _hw['num_workers']
     if 'pin_memory' in _hw:
         config['training']['pin_memory'] = _hw['pin_memory']
+
+    # Apply environment-level training overrides (batch_size, lr, warmup_start_lr, etc.)
+    # Runs BEFORE CLI arg overrides below, so CLI still wins.
+    # Only a100.yaml uses this; lambda.yaml/kaggle.yaml have no training_overrides → no-op.
+    for _k, _v in config.get('environment', {}).get('training_overrides', {}).items():
+        config['training'][_k] = _v
 
     # CLI overrides
     if args.epochs is not None:

@@ -1,0 +1,36 @@
+# Lambda AI Environment — NVIDIA A100 40GB Instance
+# Run from: ~/research-last/LAST/
+# Same NFS mount as A10 instance — all paths are identical to lambda.yaml.
+
+environment:
+  name: "a100"
+  type: "cloud"
+
+paths:
+  # train.py builds: {data_base}/LAST-60-v2/data/processed_v2/{split_type}/
+  data_base:    "/lambda/nfs/research-last/data"
+  data_root:    "/lambda/nfs/research-last/data/LAST-60-v2/data/processed_v2/xsub"
+  output_root:  "/lambda/nfs/research-last/LAST-runs"
+  checkpoints:  "/lambda/nfs/research-last/LAST-runs/checkpoints"
+  logs:         "/lambda/nfs/research-last/LAST-runs/logs"
+
+hardware:
+  device:          "cuda"
+  num_workers:     16        # A100 is 2.5× faster than A10; 16 keeps GPU fed (vs 12 for A10)
+  pin_memory:      true
+  prefetch_factor: 4         # NFS — same latency profile as A10 instance
+  amp_dtype:       "bfloat16"  # A100 native bf16 tensor cores
+
+# Applied on top of configs/training/default.yaml BEFORE CLI args.
+# CLI --batch_size / --lr still override these if provided.
+# lambda.yaml / kaggle.yaml have no training_overrides → this block is A100-only.
+training_overrides:
+  batch_size:      128        # A100 40GB: 2× A10's batch=64 → ~1.2GB peak, well within 40GB
+  lr:              0.03       # sqrt(128/64) × 0.02 = 0.0283 → 0.03 (sqrt-scaling rule)
+  warmup_start_lr: 0.003      # lr/10
+
+lambda_ai:
+  gpu:       "nvidia-a100"
+  memory_gb: 40
+  cpu_cores: 30
+  ram_gb:    null   # varies by Lambda instance type
