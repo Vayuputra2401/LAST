@@ -46,7 +46,9 @@ dataset:
     scale_range: [0.9, 1.1]
     shear_range: [-0.1, 0.1]
     noise_std: 0.01   # Consistent with transforms.py GaussianNoise default
-    temporal_flip_p: 0.5  # RandomTemporalFlip probability
+    temporal_flip_p: 0.0  # Disabled: NTU60 actions are strongly directional
+                          # (stand-up ≠ sit-down, drink ≠ un-drink). p=0.5 mislabels
+                          # ~45/60 classes under temporal reversal → caps train acc at ~52%.
 
 dataloader:
   batch_size: 32

@@ -322,7 +322,8 @@ class MIBTransform:
         scale_range:    (min_scale, max_scale), default (0.9, 1.1).
         shear_range:    (min_shear, max_shear), default (-0.1, 0.1).
         noise_std:      Per-stream Gaussian noise std, default 0.01.
-        temporal_flip_p: Probability of reversing frame order, default 0.5.
+        temporal_flip_p: Probability of reversing frame order, default 0.0.
+                         Keep at 0.0 for NTU60/120 — most actions are directional.
         is_training:    If False, uses deterministic center-crop (no augmentation).
     """
 
@@ -333,7 +334,7 @@ class MIBTransform:
         scale_range: tuple = (0.9, 1.1),
         shear_range: tuple = (-0.1, 0.1),
         noise_std: float = 0.01,
-        temporal_flip_p: float = 0.5,
+        temporal_flip_p: float = 0.0,
         is_training: bool = True,
     ):
         self.target_frames = target_frames
@@ -498,7 +499,7 @@ def get_train_transform(config: dict):
                 scale_range=tuple(aug.get('scale_range', (0.9, 1.1))),
                 shear_range=tuple(aug.get('shear_range', (-0.1, 0.1))),
                 noise_std=aug.get('noise_std', 0.01),
-                temporal_flip_p=aug.get('temporal_flip_p', 0.5),
+                temporal_flip_p=aug.get('temporal_flip_p', 0.0),
                 is_training=True,
             )
         else:
@@ -533,7 +534,7 @@ def get_train_transform(config: dict):
             RandomScale(aug.get('scale_range', (0.9, 1.1))),
             RandomShear(aug.get('shear_range', (-0.1, 0.1))),
             GaussianNoise(aug.get('noise_std', 0.01)),
-            RandomTemporalFlip(p=aug.get('temporal_flip_p', 0.5)),
+            RandomTemporalFlip(p=aug.get('temporal_flip_p', 0.0)),
         ])
 
     return Compose(transforms) if transforms else None
