@@ -45,7 +45,14 @@ dataset:
     rotation_range: [-15, 15]   # degrees
     scale_range: [0.9, 1.1]
     shear_range: [-0.1, 0.1]
-    noise_std: 0.01   # Consistent with transforms.py GaussianNoise default
+    # Per-stream noise std, calibrated for ~6-10% SNR on normalized data.
+    # Joint position std ≈ 0.15 → 0.01/0.15 = 6.7% SNR
+    # Velocity std ≈ 0.02 → 0.002/0.02 = 10% SNR (was 50% with flat 0.01!)
+    # Bone std ≈ 0.12 → 0.005/0.12 = 4.2% SNR
+    noise_std: 0.01             # Legacy scalar (triggers per-stream defaults below)
+    noise_std_joint: 0.01       # Joint position noise
+    noise_std_velocity: 0.002   # Velocity noise (5× less than joint)
+    noise_std_bone: 0.005       # Bone vector noise (2× less than joint)
     temporal_flip_p: 0.0  # Disabled: NTU60 actions are strongly directional
                           # (stand-up ≠ sit-down, drink ≠ un-drink). p=0.5 mislabels
                           # ~45/60 classes under temporal reversal → caps train acc at ~52%.

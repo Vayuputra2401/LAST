@@ -143,6 +143,9 @@ class Trainer:
                 or 'alpha' in name          # ST_JointAtt alpha + alpha_dyn gate scalars
                 or 'A_learned' in name      # adaptive/directional graph learnable edges
                 or 'node_proj' in name      # dynamic adj embedding projection (E1)
+                or 'refine_gate' in name    # CTRLightGCNConv topology refinement gate (v2)
+                or 'pool_gate' in name      # Gated GAP+GMP head blend parameter (v2)
+                or 'freq_gate' in name      # FreqTemporalGate residual gate (v2)
             ):
                 no_decay.append(param)
             else:

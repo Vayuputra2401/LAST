@@ -1,0 +1,47 @@
+# Training config optimized for LAST-E v2 (CTR-GCN aligned)
+#
+# Key changes vs default.yaml:
+#   - cosine_warmup scheduler (replaces multistep — no 10x LR cliffs)
+#   - 140 epochs (vs 90) — more time for topology refinement convergence
+#   - 10-epoch warmup from 0.001 (vs 5 from 0.01) — gentler for CTR gates
+#   - gradient_clip 1.5 (vs 2.0) — tighter for cosine annealing stability
+#   - min_lr 0.00001 (vs 0.0001) — lower floor for fine-tuning phase
+
+training:
+  # Optimizer
+  optimizer: sgd
+  lr: 0.1
+  momentum: 0.9
+  nesterov: true
+  weight_decay: 0.0004
+
+  # Scheduler
+  scheduler: cosine_warmup
+  warmup_epochs: 10
+  warmup_start_lr: 0.001
+  min_lr: 0.00001
+
+  # Duration
+  epochs: 140
+
+  # Batch
+  batch_size: 32
+  gradient_accumulation_steps: 1
+
+  # Regularization
+  label_smoothing: 0.1
+  gradient_clip: 1.5
+
+  # Precision
+  use_amp: false
+
+  # Logging
+  save_interval: 10
+  seed: 42
+
+  # Input
+  input_frames: 64
+
+  # Workers
+  num_workers: 4
+  pin_memory: true

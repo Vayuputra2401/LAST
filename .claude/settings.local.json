@@ -20,7 +20,8 @@
       "Bash(C:UserspathiAppDataLocalProgramsPythonPython311python.exe -m py_compile src/models/last_v2.py)",
       "Bash(C:UserspathiAppDataLocalProgramsPythonPython311python.exe -m py_compile src/training/trainer.py)",
       "Bash(cmd /c \"activate_ai.bat && python -m py_compile src/models/blocks/light_gcn.py && echo light_gcn.py OK && python -m py_compile src/models/last_v2.py && echo last_v2.py OK && python -m py_compile src/training/trainer.py && echo trainer.py OK\")",
-      "Bash(cmd /c \"activate_ai.bat && python -m py_compile src/models/blocks/light_gcn.py && echo OK_light_gcn\")"
+      "Bash(cmd /c \"activate_ai.bat && python -m py_compile src/models/blocks/light_gcn.py && echo OK_light_gcn\")",
+      "WebFetch(domain:openaccess.thecvf.com)"
     ],
     "deny": [],
     "ask": []

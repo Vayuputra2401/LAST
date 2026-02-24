@@ -1,0 +1,21 @@
+model:
+  name: "LAST-E-v2-Nano"
+  version: "e_v2"
+  variant: "nano"
+  num_classes: 60
+  in_channels: 3
+  input_streams: ["joint", "velocity", "bone"]
+  dropout: 0.3
+  graph_layout: "ntu-rgb+d"
+  graph_strategy: "spatial"
+
+  # Architecture
+  channels: [24, 48, 96]
+  blocks_per_stage: [2, 2, 3]
+  strides: [1, 2, 2]
+  use_st_att_per_stage: [false, false, true]
+
+  # CTR-GCN aligned
+  num_groups: 4
+  drop_path_rate: 0.1
+  use_freq_gate: true

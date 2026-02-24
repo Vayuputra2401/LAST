@@ -103,7 +103,8 @@ def count_flops(model, input_shape, device):
 def main():
     parser = argparse.ArgumentParser(description='Train LAST model')
     parser.add_argument('--model', type=str, default='base',
-                       choices=['base', 'small', 'large', 'nano_e', 'base_e', 'small_e', 'large_e'],
+                       choices=['base', 'small', 'large', 'nano_e', 'base_e', 'small_e', 'large_e',
+                                'nano_e_v2', 'small_e_v2', 'base_e_v2', 'large_e_v2'],
                        help='Model variant (default: base)')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
                        help='Dataset (default: ntu60)')
@@ -240,7 +241,19 @@ def main():
     num_classes = config['data']['dataset'].get('num_classes', 60 if args.dataset == 'ntu60' else 120)
     num_joints = config['data']['dataset']['num_joints']
     
-    if args.model.endswith('_e'):
+    if args.model.endswith('_e_v2'):
+        variant = args.model.replace('_e_v2', '')
+        print(f"\n  Creating LAST-E v2 model (Variant: {variant})...")
+        from src.models.last_e_v2 import LAST_E_v2
+        model = LAST_E_v2(
+            num_classes=num_classes,
+            variant=variant,
+            dropout=config['model'].get('dropout', 0.3),
+            use_freq_gate=config['model'].get('use_freq_gate', True),
+            num_groups=config['model'].get('num_groups', 4),
+            drop_path_rate=config['model'].get('drop_path_rate'),
+        )
+    elif args.model.endswith('_e'):
         variant = args.model.replace('_e', '')
         print(f"\n  Creating LAST-E model (Variant: {variant})...")
         from src.models.last_e import LAST_E

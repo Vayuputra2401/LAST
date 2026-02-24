@@ -48,9 +48,31 @@ def main():
     num_joints = config['data']['dataset']['num_joints']
     model_version = config['model'].get('version', 'v1')
     
-    from src.models.last_v2 import LAST_v2
-    model = LAST_v2(num_classes=num_classes, variant='base')
-    print(f"[2] Model Created: {model.count_parameters():,} params (v2)")
+    if model_version == 'e_v2':
+        from src.models.last_e_v2 import LAST_E_v2
+        variant = config['model'].get('variant', 'base')
+        model = LAST_E_v2(
+            num_classes=num_classes,
+            variant=variant,
+            dropout=config['model'].get('dropout', 0.3),
+            use_freq_gate=config['model'].get('use_freq_gate', True),
+            num_groups=config['model'].get('num_groups', 4),
+            drop_path_rate=config['model'].get('drop_path_rate'),
+        )
+        print(f"[2] Model Created: {model.count_parameters():,} params (e_v2 {variant})")
+    elif model_version == 'e':
+        from src.models.last_e import LAST_E
+        variant = config['model'].get('variant', 'base')
+        model = LAST_E(
+            num_classes=num_classes,
+            variant=variant,
+            dropout=config['model'].get('dropout', 0.3),
+        )
+        print(f"[2] Model Created: {model.count_parameters():,} params (e {variant})")
+    else:
+        from src.models.last_v2 import LAST_v2
+        model = LAST_v2(num_classes=num_classes, variant='base')
+        print(f"[2] Model Created: {model.count_parameters():,} params (v2)")
 
     # ── 3. Transforms ────────────────────────────────────────────────────
     # Update config to disable normalization for MIB (already done in preprocess_v2)

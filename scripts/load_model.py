@@ -20,21 +20,34 @@ from src.utils.config import load_config
 def main():
     parser = argparse.ArgumentParser(description='Load and inspect a LAST model')
     parser.add_argument('--model', type=str, default='base',
-                       choices=['base', 'small', 'large', 'base_e', 'small_e', 'large_e'],
+                       choices=['base', 'small', 'large', 'base_e', 'small_e', 'large_e',
+                                'nano_e_v2', 'small_e_v2', 'base_e_v2', 'large_e_v2'],
                        help='Model variant (default: base)')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
                        help='Dataset to configure num_classes (default: ntu60)')
     args = parser.parse_args()
 
     # Load full config (including model config)
-    base_model = args.model.replace('_e', '') if args.model.endswith('_e') else args.model
-    config = load_config(dataset=args.dataset, model=base_model)
+    config = load_config(dataset=args.dataset, model=args.model)
 
     # Model Params
     num_classes = config['data']['dataset'].get('num_classes', 60 if args.dataset == 'ntu60' else 120)
 
     # Create model
-    if args.model.endswith('_e'):
+    if args.model.endswith('_e_v2'):
+        variant = args.model.replace('_e_v2', '')
+        print(f"Creating LAST-E v2 model (Variant: {variant})...")
+        from src.models.last_e_v2 import LAST_E_v2
+        model = LAST_E_v2(
+            num_classes=num_classes,
+            variant=variant,
+            dropout=config['model'].get('dropout', 0.3),
+            use_freq_gate=config['model'].get('use_freq_gate', True),
+            num_groups=config['model'].get('num_groups', 4),
+            drop_path_rate=config['model'].get('drop_path_rate'),
+        )
+        model_label = f"LAST-E-v2-{variant.capitalize()}"
+    elif args.model.endswith('_e'):
         variant = args.model.replace('_e', '')
         print(f"Creating LAST-E model (Variant: {variant})...")
         from src.models.last_e import LAST_E

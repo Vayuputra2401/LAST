@@ -1,0 +1,21 @@
+model:
+  name: "LAST-E-v2-Large"
+  version: "e_v2"
+  variant: "large"
+  num_classes: 60
+  in_channels: 3
+  input_streams: ["joint", "velocity", "bone"]
+  dropout: 0.3
+  graph_layout: "ntu-rgb+d"
+  graph_strategy: "spatial"
+
+  # Architecture
+  channels: [48, 96, 192]
+  blocks_per_stage: [4, 5, 5]
+  strides: [1, 2, 2]
+  use_st_att_per_stage: [true, true, true]
+
+  # CTR-GCN aligned
+  num_groups: 4
+  drop_path_rate: 0.2
+  use_freq_gate: true
