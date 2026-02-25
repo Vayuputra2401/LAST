@@ -109,3 +109,19 @@ def normalize_digraph(A):
             Dn[i, i] = Dl[i]**(-1)
     AD = np.dot(A, Dn)
     return AD
+
+
+def normalize_symdigraph(A):
+    """Symmetric normalization: D^{-1/2} A D^{-1/2}.
+
+    Better gradient flow than D^{-1}A (asymmetric) because both
+    sides of the adjacency are scaled equally.  Used by LAST-E v3.
+    """
+    Dl = np.sum(A, 0)
+    num_node = A.shape[0]
+    Dn_half = np.zeros((num_node, num_node))
+    for i in range(num_node):
+        if Dl[i] > 0:
+            Dn_half[i, i] = Dl[i] ** (-0.5)
+    return np.dot(np.dot(Dn_half, A), Dn_half)
+

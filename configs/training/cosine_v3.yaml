@@ -1,0 +1,54 @@
+# Training config for LAST-E v3 (EfficientGCN-based)
+#
+# Tuned for EfficientGCN-style architecture:
+#   - cosine_warmup scheduler for smooth LR decay
+#   - 120 epochs (EfficientGCN uses ~70 on big batches; we use smaller batch)
+#   - 10-epoch warmup to let zero-init gates stabilise before LR ramp
+#   - AMP enabled — MotionGate is fully AMP-safe (no FFT in motion path)
+#   - gradient_clip 1.0 — tighter clip for stable cosine annealing
+#   - weight_decay 0.0004 — standard for skeleton GCN
+#
+# NOTE: For 'large' variant with HybridGate, float32 FFT is used internally
+#       so AMP won't cause issues there either.
+
+training:
+  # Optimizer
+  optimizer: sgd
+  lr: 0.1
+  momentum: 0.9
+  nesterov: true
+  weight_decay: 0.0004
+
+  # Scheduler
+  scheduler: cosine_warmup
+  warmup_epochs: 10
+  warmup_start_lr: 0.001
+  min_lr: 0.00001
+
+  # Duration
+  epochs: 120
+
+  # Batch
+  batch_size: 32
+  gradient_accumulation_steps: 1
+
+  # Regularization
+  label_smoothing: 0.1
+  gradient_clip: 1.0
+
+  # Precision — AMP-safe for all v3 variants
+  use_amp: true
+
+  # Logging
+  save_interval: 10
+  seed: 42
+
+  # Input
+  input_frames: 64
+
+  # Workers
+  num_workers: 4
+  pin_memory: true
+
+  # InfoGCN IB loss weight (only active for base/large variants)
+  ib_loss_weight: 0.01

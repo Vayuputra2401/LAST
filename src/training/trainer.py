@@ -357,11 +357,26 @@ class Trainer:
             # ── Forward ──────────────────────────────────────────────────
             if self.use_amp:
                 with torch.amp.autocast('cuda', dtype=self.amp_dtype):
-                    outputs = self.model(batch_data)
-                    loss    = self.criterion(outputs, batch_labels)
+                    raw_out = self.model(batch_data)
+                    # LAST-E v3 returns (logits, ib_loss) during training
+                    if isinstance(raw_out, tuple):
+                        outputs, aux_loss = raw_out
+                    else:
+                        outputs, aux_loss = raw_out, None
+                    loss = self.criterion(outputs, batch_labels)
+                    if aux_loss is not None:
+                        ib_w = self.train_cfg.get('ib_loss_weight', 0.01)
+                        loss = loss + ib_w * aux_loss
             else:
-                outputs = self.model(batch_data)
-                loss    = self.criterion(outputs, batch_labels)
+                raw_out = self.model(batch_data)
+                if isinstance(raw_out, tuple):
+                    outputs, aux_loss = raw_out
+                else:
+                    outputs, aux_loss = raw_out, None
+                loss = self.criterion(outputs, batch_labels)
+                if aux_loss is not None:
+                    ib_w = self.train_cfg.get('ib_loss_weight', 0.01)
+                    loss = loss + ib_w * aux_loss
 
             # ── NaN/Inf guard BEFORE backward ────────────────────────────
             # Check both outputs and loss — NaN in outputs corrupts BN stats
@@ -469,10 +484,12 @@ class Trainer:
 
             if self.use_amp:
                 with torch.amp.autocast('cuda', dtype=self.amp_dtype):
-                    outputs = self.model(batch_data)
+                    raw_out = self.model(batch_data)
+                    outputs = raw_out[0] if isinstance(raw_out, tuple) else raw_out
                     loss    = self.criterion(outputs, batch_labels)
             else:
-                outputs = self.model(batch_data)
+                raw_out = self.model(batch_data)
+                outputs = raw_out[0] if isinstance(raw_out, tuple) else raw_out
                 loss    = self.criterion(outputs, batch_labels)
 
             if not torch.isfinite(loss):

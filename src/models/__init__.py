@@ -9,6 +9,13 @@ from .last_e_v2 import (
     create_last_e_v2_base,
     create_last_e_v2_large,
 )
+from .last_e_v3 import (
+    LAST_E_v3,
+    create_last_e_v3_nano,
+    create_last_e_v3_small,
+    create_last_e_v3_base,
+    create_last_e_v3_large,
+)
 
 __all__ = [
     'LAST_v2',
@@ -21,4 +28,10 @@ __all__ = [
     'create_last_e_v2_small',
     'create_last_e_v2_base',
     'create_last_e_v2_large',
+    'LAST_E_v3',
+    'create_last_e_v3_nano',
+    'create_last_e_v3_small',
+    'create_last_e_v3_base',
+    'create_last_e_v3_large',
 ]
+
