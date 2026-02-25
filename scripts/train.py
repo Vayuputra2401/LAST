@@ -131,6 +131,8 @@ def main():
                        help='Override training.min_lr (cosine floor)')
     parser.add_argument('--milestones',   type=str,   default=None,
                        help='Override training.milestones as comma-separated: --milestones 50,65')
+    parser.add_argument('--data_root',    type=str,   default=None,
+                       help='Override environment.paths.data_base (root dir containing LAST-60-v2/)')
     # ── General key=value override (highest priority, applied last) ──────────
     parser.add_argument('--set', nargs='*', metavar='KEY=VALUE', default=None,
                        help='Override any config key via dot-notation: '
@@ -192,6 +194,9 @@ def main():
         config['training']['min_lr'] = args.min_lr
     if args.milestones is not None:
         config['training']['milestones'] = [int(x) for x in args.milestones.split(',')]
+    # --data_root override
+    if args.data_root is not None:
+        config['environment']['paths']['data_base'] = args.data_root
     # General --set (applied last — highest priority)
     if args.set:
         for kv in args.set:
