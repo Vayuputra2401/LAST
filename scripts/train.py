@@ -251,6 +251,7 @@ def main():
             variant=variant,
             dropout=config['model'].get('dropout'),
             drop_path_rate=config['model'].get('drop_path_rate'),
+            use_st_att=config['model'].get('use_st_att'),
         )
         # Store IB loss weight for trainer
         config['training']['ib_loss_weight'] = config.get('model', {}).get(

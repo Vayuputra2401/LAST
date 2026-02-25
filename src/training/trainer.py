@@ -25,7 +25,8 @@ import torch.nn.functional as F
 import numpy as np
 from torch.amp import GradScaler
 from torch.optim.lr_scheduler import (
-    CosineAnnealingLR, MultiStepLR, LinearLR, SequentialLR
+    CosineAnnealingLR, CosineAnnealingWarmRestarts,
+    MultiStepLR, LinearLR, SequentialLR
 )
 from tqdm import tqdm
 from datetime import datetime
@@ -195,6 +196,31 @@ class Trainer:
             self.scheduler = SequentialLR(
                 self.optimizer,
                 schedulers=[warmup_scheduler, cosine_scheduler],
+                milestones=[warmup_epochs],
+            )
+        elif self.train_cfg['scheduler'] == 'cosine_warmup_restart':
+            # SGDR: Linear warmup → CosineAnnealingWarmRestarts
+            # EfficientGCN-style: warm restarts act as implicit regularization
+            # by periodically shaking the model out of sharp minima.
+            warmup_scheduler = LinearLR(
+                self.optimizer,
+                start_factor=self.train_cfg['warmup_start_lr'] / self.train_cfg['lr'],
+                end_factor=1.0,
+                total_iters=warmup_epochs,
+            )
+            # T_0 = period of first restart cycle (default: 30 epochs)
+            # T_mult = multiplier for subsequent cycles (default: 1 = constant)
+            t_0 = self.train_cfg.get('restart_period', 30)
+            t_mult = self.train_cfg.get('restart_mult', 1)
+            sgdr_scheduler = CosineAnnealingWarmRestarts(
+                self.optimizer,
+                T_0=t_0,
+                T_mult=t_mult,
+                eta_min=self.train_cfg['min_lr'],
+            )
+            self.scheduler = SequentialLR(
+                self.optimizer,
+                schedulers=[warmup_scheduler, sgdr_scheduler],
                 milestones=[warmup_epochs],
             )
         elif self.train_cfg['scheduler'] == 'multistep_warmup':

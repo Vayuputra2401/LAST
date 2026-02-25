@@ -229,6 +229,7 @@ class LAST_E_v3(nn.Module):
         graph_strategy: str = 'spatial',
         dropout: float = None,
         drop_path_rate: float = None,
+        use_st_att: list = None,
     ):
         super().__init__()
 
@@ -247,7 +248,7 @@ class LAST_E_v3(nn.Module):
         expand_ratio = cfg['expand_ratio']
         max_hop = cfg['max_hop']
         gate_type = cfg['gate_type']
-        use_st_att = cfg['use_st_att']
+        _use_st_att = use_st_att if use_st_att is not None else cfg['use_st_att']
         use_subset_att = cfg['use_subset_att']
         use_ib_loss = cfg['use_ib_loss']
 
@@ -315,7 +316,7 @@ class LAST_E_v3(nn.Module):
                     stride=blk_stride,
                     expand_ratio=expand_ratio,
                     gate_type=blk_gate,
-                    use_st_att=use_st_att[stage_idx],
+                    use_st_att=_use_st_att[stage_idx],
                     use_subset_att=use_subset_att,
                     drop_path_rate=dp_rate,
                 ))
