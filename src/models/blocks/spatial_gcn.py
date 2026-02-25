@@ -1,13 +1,15 @@
 """
 SpatialGCN — Multi-hop spatial graph convolution for LAST-E v3.
 
-Ported from EfficientGCN with two additions:
-    1. Symmetric D^{-1/2}AD^{-1/2} normalised adjacency (via raw partitions).
+Ported from EfficientGCN with key improvements:
+    1. Symmetric D^{-1/2}AD^{-1/2} normalised adjacency (via full-graph degree).
     2. HD-GCN-inspired lightweight subset attention: learns per-sample softmax
        weights over K subsets, computed from POST-aggregation features.
+    3. N2 Fix: Uses ALL available subsets (K = A.shape[0]), not max_hop+1.
+       For max_hop=2 with spatial strategy: K=5 (self, centrip×2, centrifug×2).
 
 The layer uses a single 1×1 Conv2d to split channels into K groups (one per
-hop distance 0..max_hop), then aggregates each group with the corresponding
+adjacency subset), then aggregates each group with the corresponding
 adjacency subset via einsum.
 """
 
@@ -22,7 +24,7 @@ class SpatialGCN(nn.Module):
         in_channels:  Input feature channels.
         out_channels: Output feature channels.
         A:            Pre-computed adjacency subsets, shape (K, V, V).
-        max_hop:      Maximum graph distance (K = max_hop + 1).
+                      K is determined by graph strategy + max_hop.
         use_subset_att: Enable HD-GCN-style subset attention (default True).
     """
 
@@ -31,11 +33,11 @@ class SpatialGCN(nn.Module):
         in_channels: int,
         out_channels: int,
         A: torch.Tensor,
-        max_hop: int = 2,
         use_subset_att: bool = True,
     ):
         super().__init__()
-        K = max_hop + 1
+        # N2 FIX: Use ALL available subsets, not max_hop + 1
+        K = A.shape[0]
         self.K = K
         self.out_channels = out_channels
 
@@ -43,10 +45,8 @@ class SpatialGCN(nn.Module):
         self.gcn = nn.Conv2d(in_channels, out_channels * K, 1, bias=False)
         self.bn = nn.BatchNorm2d(out_channels)
 
-        # Adjacency subsets — non-learnable, set by Graph
-        # A may have more subsets than K (spatial strategy → 3 for 1-hop);
-        # we take the first K.
-        self.register_buffer('A', A[:K].clone())  # (K, V, V)
+        # Adjacency subsets — all of them
+        self.register_buffer('A', A.clone())  # (K, V, V)
 
         # Learnable edge importance multiplier (per-entry)
         self.edge = nn.Parameter(torch.ones_like(self.A))
@@ -81,7 +81,6 @@ class SpatialGCN(nn.Module):
             x = torch.einsum('bkctv,kvw->bkctw', x, A_eff)  # (B, K, C, T, V)
 
             # 2. P3 Fix: Compute attention on POST-aggregation features
-            # Reshape to (B, C*K, T, V) for the attention module
             att = self.subset_att(x.reshape(B, self.K * C, T, V))  # (B, K)
 
             # 3. Weighted sum over subsets

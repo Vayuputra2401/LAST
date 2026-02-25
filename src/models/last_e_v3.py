@@ -36,7 +36,7 @@ from .blocks.ep_sep_tcn import EpSepTCN
 from .blocks.motion_gate import MotionGate, HybridGate
 from .blocks.st_joint_att import ST_JointAtt
 from .blocks.stream_fusion_concat import StreamFusionConcat
-from .graph import Graph, normalize_symdigraph
+from .graph import Graph, normalize_symdigraph_full
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +75,6 @@ class V3Block(nn.Module):
         A: torch.Tensor,
         depth: int = 1,
         stride: int = 1,
-        max_hop: int = 2,
         expand_ratio: int = 2,
         gate_type: str = 'motion',
         use_st_att: bool = True,
@@ -87,7 +86,6 @@ class V3Block(nn.Module):
         # Spatial graph convolution
         self.gcn = SpatialGCN(
             in_channels, out_channels, A,
-            max_hop=max_hop,
             use_subset_att=use_subset_att,
         )
         self.act = nn.Hardswish(inplace=True)
@@ -261,8 +259,9 @@ class LAST_E_v3(nn.Module):
         self.stream_names = ['joint', 'velocity', 'bone']
 
         # ── 1. Graph adjacency ───────────────────────────────────────────
-        # P2 FIX: raw_partitions=True → subsets have clean 0/1 values,
-        # normalize_symdigraph applied exactly once here.
+        # P2 FIX: raw_partitions=True → subsets have clean 0/1 values.
+        # N1 FIX: normalize_symdigraph_full uses FULL graph degree for ALL
+        # subsets, not per-subset degree (which caused 9x self-loop bias).
         self.graph = Graph(
             layout=graph_layout,
             strategy=graph_strategy,
@@ -270,9 +269,7 @@ class LAST_E_v3(nn.Module):
             raw_partitions=True,
         )
         A_raw = self.graph.A  # (K, V, V) — raw 0/1 partitions
-        A_sym = np.stack([
-            normalize_symdigraph(A_raw[k]) for k in range(A_raw.shape[0])
-        ])
+        A_sym = normalize_symdigraph_full(A_raw)
         A = torch.tensor(A_sym, dtype=torch.float32)
         self.register_buffer('A', A)
 
@@ -316,7 +313,6 @@ class LAST_E_v3(nn.Module):
                     A=A,
                     depth=depths[stage_idx],
                     stride=blk_stride,
-                    max_hop=max_hop,
                     expand_ratio=expand_ratio,
                     gate_type=blk_gate,
                     use_st_att=use_st_att[stage_idx],

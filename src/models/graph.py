@@ -131,3 +131,35 @@ def normalize_symdigraph(A):
             Dn_half[i, i] = Dl[i] ** (-0.5)
     return np.dot(np.dot(Dn_half, A), Dn_half)
 
+
+def normalize_symdigraph_full(A_subsets):
+    """Symmetric normalization using FULL graph degree for all subsets.
+
+    Instead of computing D per-subset (which over-weights self-loops and
+    under-weights sparse subsets), this computes the degree from the
+    combined adjacency (sum of all subsets) and applies it uniformly:
+
+        D_full = diag(sum_k A_k · 1)
+        A_norm[k] = D_full^{-1/2} · A_k · D_full^{-1/2}
+
+    This gives balanced weights: a self-loop at spine (degree 9) gets weight
+    1/9 ≈ 0.11 (correct), not 1.0 (per-subset bug).
+
+    Args:
+        A_subsets: numpy array (K, V, V) — raw 0/1 adjacency subsets.
+
+    Returns:
+        A_norm: numpy array (K, V, V) — normalized subsets.
+    """
+    K, V, _ = A_subsets.shape
+    A_full = A_subsets.sum(axis=0)            # (V, V)
+    Dl = np.sum(A_full, 0)                    # (V,)
+    Dn_half = np.zeros((V, V))
+    for i in range(V):
+        if Dl[i] > 0:
+            Dn_half[i, i] = Dl[i] ** (-0.5)
+    return np.stack([
+        np.dot(np.dot(Dn_half, A_subsets[k]), Dn_half)
+        for k in range(K)
+    ])
+
