@@ -1,22 +1,21 @@
+# LAST-E v3 Nano model configuration
 model:
-  name: "LAST-E-v3-Nano"
-  version: "e_v3"
-  variant: "nano"
+  name: last_e_v3_nano
+  variant: nano
   num_classes: 60
   in_channels: 3
-  input_streams: ["joint", "velocity", "bone"]
-  dropout: 0.2
-  graph_layout: "ntu-rgb+d"
-  graph_strategy: "spatial"
-
-  # Architecture
+  graph_layout: ntu-rgb+d
+  graph_strategy: spatial
   stem_channels: 24
   channels: [32, 48, 64]
+  num_blocks: [1, 1, 1]
   depths: [1, 1, 1]
   strides: [1, 2, 2]
   expand_ratio: 2
   max_hop: 1
-  gate_type: "motion"
+  gate_type: motion
+  use_st_att: [true, true, true]
   use_subset_att: false
   use_ib_loss: false
+  dropout: 0.2
   drop_path_rate: 0.0

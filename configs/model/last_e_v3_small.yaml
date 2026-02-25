@@ -1,22 +1,21 @@
+# LAST-E v3 Small model configuration
 model:
-  name: "LAST-E-v3-Small"
-  version: "e_v3"
-  variant: "small"
+  name: last_e_v3_small
+  variant: small
   num_classes: 60
   in_channels: 3
-  input_streams: ["joint", "velocity", "bone"]
-  dropout: 0.25
-  graph_layout: "ntu-rgb+d"
-  graph_strategy: "spatial"
-
-  # Architecture
+  graph_layout: ntu-rgb+d
+  graph_strategy: spatial
   stem_channels: 32
   channels: [48, 64, 96]
+  num_blocks: [1, 2, 2]
   depths: [1, 1, 1]
   strides: [1, 2, 2]
   expand_ratio: 2
   max_hop: 2
-  gate_type: "motion"
+  gate_type: motion
+  use_st_att: [true, true, true]
   use_subset_att: true
   use_ib_loss: false
+  dropout: 0.25
   drop_path_rate: 0.0

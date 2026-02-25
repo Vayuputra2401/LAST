@@ -17,9 +17,10 @@ class Graph:
         - ntu-rgb+d: Is consist of 25 joints. For more information, please
         refer to https://github.com/shahroudy/NTURGB-D
     """
-    def __init__(self, layout='ntu-rgb+d', strategy='spatial', max_hop=1, dilation=1):
+    def __init__(self, layout='ntu-rgb+d', strategy='spatial', max_hop=1, dilation=1, raw_partitions=False):
         self.max_hop = max_hop
         self.dilation = dilation
+        self.raw_partitions = raw_partitions
 
         self.get_edge(layout)
         self.hop_dis = get_hop_distance(self.num_node, self.edge, max_hop=max_hop)
@@ -50,14 +51,19 @@ class Graph:
             adjacency[self.hop_dis == hop] = 1
         normalize_adjacency = normalize_digraph(adjacency)
 
+        # For v3: use raw 0/1 adjacency for partitioning so that
+        # normalize_symdigraph can be applied exactly once downstream.
+        # For v1/v2 backward compat: default uses normalize_digraph output.
+        partition_src = adjacency if self.raw_partitions else normalize_adjacency
+
         if strategy == 'uniform':
             A = np.zeros((1, self.num_node, self.num_node))
-            A[0] = normalize_adjacency
+            A[0] = partition_src
             self.A = A
         elif strategy == 'distance':
             A = np.zeros((len(valid_hop), self.num_node, self.num_node))
             for i, hop in enumerate(valid_hop):
-                A[i][self.hop_dis == hop] = normalize_adjacency[self.hop_dis == hop]
+                A[i][self.hop_dis == hop] = partition_src[self.hop_dis == hop]
             self.A = A
         elif strategy == 'spatial':
             A = []
@@ -69,11 +75,11 @@ class Graph:
                     for j in range(self.num_node):
                         if self.hop_dis[j, i] == hop:
                             if self.hop_dis[j, self.center] == self.hop_dis[i, self.center]:
-                                a_root[j, i] = normalize_adjacency[j, i]
+                                a_root[j, i] = partition_src[j, i]
                             elif self.hop_dis[j, self.center] > self.hop_dis[i, self.center]:
-                                a_close[j, i] = normalize_adjacency[j, i]
+                                a_close[j, i] = partition_src[j, i]
                             else:
-                                a_further[j, i] = normalize_adjacency[j, i]
+                                a_further[j, i] = partition_src[j, i]
                 if hop == 0:
                     A.append(a_root)
                 else:

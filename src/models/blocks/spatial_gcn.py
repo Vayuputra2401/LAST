@@ -2,9 +2,9 @@
 SpatialGCN — Multi-hop spatial graph convolution for LAST-E v3.
 
 Ported from EfficientGCN with two additions:
-    1. Symmetric D^{-1/2}AD^{-1/2} normalised adjacency (fixes P4 gradient audit).
-    2. HD-GCN-inspired lightweight subset attention: instead of equally summing
-       K-hop outputs, learns per-sample softmax weights over K subsets.
+    1. Symmetric D^{-1/2}AD^{-1/2} normalised adjacency (via raw partitions).
+    2. HD-GCN-inspired lightweight subset attention: learns per-sample softmax
+       weights over K subsets, computed from POST-aggregation features.
 
 The layer uses a single 1×1 Conv2d to split channels into K groups (one per
 hop distance 0..max_hop), then aggregates each group with the corresponding
@@ -52,6 +52,7 @@ class SpatialGCN(nn.Module):
         self.edge = nn.Parameter(torch.ones_like(self.A))
 
         # HD-GCN inspired: lightweight attention over K subsets
+        # P3 Fix: attention computed on POST-aggregation features
         self.use_subset_att = use_subset_att
         if use_subset_att:
             self.subset_att = nn.Sequential(
@@ -75,10 +76,15 @@ class SpatialGCN(nn.Module):
         A_eff = self.A * self.edge               # (K, V, V)
 
         if self.use_subset_att:
-            # Per-sample attention weights over subsets
-            att = self.subset_att(x)             # (B, K)
+            # 1. Split into K groups and aggregate with graph
             x = x.view(B, self.K, C, T, V)
-            x = torch.einsum('bkctv,kvw->bkctw', x, A_eff)
+            x = torch.einsum('bkctv,kvw->bkctw', x, A_eff)  # (B, K, C, T, V)
+
+            # 2. P3 Fix: Compute attention on POST-aggregation features
+            # Reshape to (B, C*K, T, V) for the attention module
+            att = self.subset_att(x.reshape(B, self.K * C, T, V))  # (B, K)
+
+            # 3. Weighted sum over subsets
             x = (x * att[:, :, None, None, None]).sum(dim=1)  # (B, C, T, V)
         else:
             x = x.view(B, self.K, C, T, V)

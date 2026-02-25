@@ -146,6 +146,8 @@ class Trainer:
                 or 'refine_gate' in name    # CTRLightGCNConv topology refinement gate (v2)
                 or 'pool_gate' in name      # Gated GAP+GMP head blend parameter (v2)
                 or 'freq_gate' in name      # FreqTemporalGate residual gate (v2)
+                or 'edge' in name            # SpatialGCN edge importance (v3)
+                or 'stream_weights' in name  # StreamFusion blend logits (v2/v3)
             ):
                 no_decay.append(param)
             else:

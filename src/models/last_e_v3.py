@@ -1,32 +1,29 @@
 """
 LAST-E v3: EfficientGCN-Based Architecture with MotionGate.
 
-Architecture summary
---------------------
+Architecture summary (after audit fixes)
+-----------------------------------------
   3 Streams (joint, velocity, bone): each (B, 3, T, V)
         |
-  StreamFusionV2 — per-stream BN + shared stem + per-stream stem BN + learned α
+  StreamFusionConcat — per-stream BN + Concat(9ch) + Conv1×1 → C₀
         |
-  Stage 1: SpatialGCN → [EpSepTCN × d₁] → MotionGate → ST_JointAtt
+  Stage 1: [V3Block × num_blocks₁]   (each block: SpatialGCN → EpSepTCN×d → Gate → ST_JointAtt)
         |
-  Stage 2: SpatialGCN → [EpSepTCN × d₂, stride=2] → MotionGate → ST_JointAtt
+  Stage 2: [V3Block × num_blocks₂]   (stride=2 on first block)
         |
-  Stage 3: SpatialGCN → [EpSepTCN × d₃, stride=2] → MotionGate/HybridGate → ST_JointAtt
+  Stage 3: [V3Block × num_blocks₃]   (stride=2 on first block, HybridGate for large)
         |
   Gated GAP+GMP Pool → BN → Dropout → FC(C₃ → num_classes)
         |  [+ InfoGCN IB loss during training for base/large]
 
-Key differences vs LAST-E v2
------------------------------
-- SpatialGCN (EfficientGCN-style) replaces CTRLightGCNConv.
-- EpSepTCN (inverted bottleneck) replaces MultiScaleTCN4.
-- MotionGate (novel) replaces FreqTemporalGate — temporal-diff channel
-  gating, AMP-safe, cheaper, truly novel.
-- HybridGate (motion+FFT) for large variant only.
-- HD-GCN subset attention in SpatialGCN.
-- Symmetric D^{-1/2}AD^{-1/2} graph normalisation.
-- InfoGCN Information Bottleneck auxiliary loss (base/large, training only).
-- Compound scaling: width + depth scaled together.
+Audit fixes applied
+--------------------
+- P2: raw_partitions=True → single correct D^{-1/2}AD^{-1/2} normalization
+- P5: num_blocks per stage → spatial receptive field 10-16 hops (was 6)
+- P6: Wider channels → 3-4 dims/class (was 2.13)
+- P4: StreamFusionConcat replaces softmax-coupled StreamFusionV2
+- P3: Post-aggregation subset attention in SpatialGCN
+- P0/P1: edge + stream_weights excluded from WD (in trainer.py)
 """
 
 import torch
@@ -38,12 +35,12 @@ from .blocks.spatial_gcn import SpatialGCN
 from .blocks.ep_sep_tcn import EpSepTCN
 from .blocks.motion_gate import MotionGate, HybridGate
 from .blocks.st_joint_att import ST_JointAtt
-from .blocks.stream_fusion_v2 import StreamFusionV2
+from .blocks.stream_fusion_concat import StreamFusionConcat
 from .graph import Graph, normalize_symdigraph
 
 
 # ---------------------------------------------------------------------------
-# DropPath (stochastic depth) — identical to v2 for consistency
+# DropPath (stochastic depth)
 # ---------------------------------------------------------------------------
 class DropPath(nn.Module):
     """Drop entire residual paths during training (stochastic depth)."""
@@ -65,23 +62,10 @@ class DropPath(nn.Module):
 # V3 Block: SpatialGCN → EpSepTCN(×depth) → Gate → ST_JointAtt
 # ---------------------------------------------------------------------------
 class V3Block(nn.Module):
-    """One stage block of LAST-E v3.
+    """One block of LAST-E v3.
 
     SpatialGCN → [EpSepTCN × depth] → MotionGate/HybridGate → ST_JointAtt
     with DropPath on the residual connection.
-
-    Args:
-        in_channels:     Input channels.
-        out_channels:    Output channels.
-        A:               Adjacency tensor (K, V, V).
-        depth:           Number of EpSepTCN layers (default: 1).
-        stride:          Temporal stride on first TCN (default: 1).
-        max_hop:         GCN K-hop distance (default: 2).
-        expand_ratio:    EpSepTCN expansion ratio (default: 2).
-        gate_type:       'motion' or 'hybrid' (default: 'motion').
-        use_st_att:      Whether to include ST_JointAtt (default: True).
-        use_subset_att:  SpatialGCN subset attention (default: True).
-        drop_path_rate:  DropPath probability (default: 0.0).
     """
 
     def __init__(
@@ -142,29 +126,27 @@ class V3Block(nn.Module):
         self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0 else nn.Identity()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: (B, C_in, T, V)
-        Returns:
-            out: (B, C_out, T', V)
-        """
         res = self.residual(x)
-
         out = self.act(self.gcn(x))
         out = self.tcns(out)
         out = self.gate(out)
         out = self.st_att(out)
-
         return res + self.drop_path(out)
 
 
 # ---------------------------------------------------------------------------
 # Variant configurations
+#
+# Param budgets (EfficientGCN single-stream):
+#   B0 ≈ 320K, B1 ≈ 420K, B2 ≈ 540K, B3 ≈ 740K, B4 ≈ 940K
+#
+# Targets: nano < B0, small < B1, base < B3, large < B4
 # ---------------------------------------------------------------------------
 MODEL_VARIANTS_E_V3 = {
     'nano': {
         'stem_channels': 24,
         'channels': [32, 48, 64],
+        'num_blocks': [1, 1, 1],       # 3 SpatialGCN → 3×1=3 hops (ok for nano)
         'depths': [1, 1, 1],
         'strides': [1, 2, 2],
         'expand_ratio': 2,
@@ -179,6 +161,7 @@ MODEL_VARIANTS_E_V3 = {
     'small': {
         'stem_channels': 32,
         'channels': [48, 64, 96],
+        'num_blocks': [1, 2, 2],       # 5 SpatialGCN → 5×2=10 hops ✅
         'depths': [1, 1, 1],
         'strides': [1, 2, 2],
         'expand_ratio': 2,
@@ -193,7 +176,8 @@ MODEL_VARIANTS_E_V3 = {
     'base': {
         'stem_channels': 48,
         'channels': [64, 96, 128],
-        'depths': [1, 1, 2],
+        'num_blocks': [2, 2, 2],       # 6 SpatialGCN → 6×2=12 hops ✅
+        'depths': [1, 1, 1],
         'strides': [1, 2, 2],
         'expand_ratio': 2,
         'max_hop': 2,
@@ -205,9 +189,10 @@ MODEL_VARIANTS_E_V3 = {
         'drop_path_rate': 0.05,
     },
     'large': {
-        'stem_channels': 64,
-        'channels': [96, 128, 192],
-        'depths': [1, 2, 2],
+        'stem_channels': 48,
+        'channels': [80, 112, 160],
+        'num_blocks': [2, 2, 2],       # 6 SpatialGCN → 6×2=12 hops ✅
+        'depths': [1, 1, 1],
         'strides': [1, 2, 2],
         'expand_ratio': 2,
         'max_hop': 2,
@@ -257,9 +242,10 @@ class LAST_E_v3(nn.Module):
 
         cfg = MODEL_VARIANTS_E_V3[variant]
         stem_ch = cfg['stem_channels']
-        channels = cfg['channels']         # [C1, C2, C3]
-        depths = cfg['depths']             # [d1, d2, d3]
-        strides = cfg['strides']           # [s1, s2, s3]
+        channels = cfg['channels']
+        num_blocks = cfg['num_blocks']
+        depths = cfg['depths']
+        strides = cfg['strides']
         expand_ratio = cfg['expand_ratio']
         max_hop = cfg['max_hop']
         gate_type = cfg['gate_type']
@@ -274,55 +260,72 @@ class LAST_E_v3(nn.Module):
         self.use_ib_loss = use_ib_loss
         self.stream_names = ['joint', 'velocity', 'bone']
 
-        # ── 1. Graph adjacency (symmetric normalisation) ─────────────────
+        # ── 1. Graph adjacency ───────────────────────────────────────────
+        # P2 FIX: raw_partitions=True → subsets have clean 0/1 values,
+        # normalize_symdigraph applied exactly once here.
         self.graph = Graph(
             layout=graph_layout,
             strategy=graph_strategy,
             max_hop=max_hop,
+            raw_partitions=True,
         )
-        # Re-normalise with symmetric D^{-1/2}AD^{-1/2}
-        A_raw = self.graph.A  # (K, V, V) numpy
+        A_raw = self.graph.A  # (K, V, V) — raw 0/1 partitions
         A_sym = np.stack([
             normalize_symdigraph(A_raw[k]) for k in range(A_raw.shape[0])
         ])
         A = torch.tensor(A_sym, dtype=torch.float32)
         self.register_buffer('A', A)
 
-        # ── 2. Stream fusion (same as v2) ────────────────────────────────
-        self.fusion = StreamFusionV2(
+        # ── 2. Stream fusion (P4 FIX: concat instead of softmax) ────────
+        self.fusion = StreamFusionConcat(
             in_channels=in_channels,
             out_channels=stem_ch,
             num_streams=3,
         )
 
-        # ── 3. Stages ───────────────────────────────────────────────────
-        # Total blocks for DropPath linear ramp
-        total_stages = len(channels)
-        block_idx = 0
+        # ── 3. Stages (P5 FIX: multiple V3Blocks per stage) ────────────
+        # Total blocks across all stages for DropPath linear ramp
+        total_blocks = sum(num_blocks)
+        block_count = 0
 
+        self.stages = nn.ModuleList()
         prev_ch = stem_ch
-        stages = []
-        for i in range(total_stages):
-            dp_rate = _drop_path * (block_idx / max(total_stages - 1, 1))
-            block_idx += 1
-            stages.append(V3Block(
-                in_channels=prev_ch,
-                out_channels=channels[i],
-                A=A,
-                depth=depths[i],
-                stride=strides[i],
-                max_hop=max_hop,
-                expand_ratio=expand_ratio,
-                gate_type=gate_type if i == total_stages - 1 else 'motion',
-                use_st_att=use_st_att[i],
-                use_subset_att=use_subset_att,
-                drop_path_rate=dp_rate,
-            ))
-            prev_ch = channels[i]
+        for stage_idx in range(len(channels)):
+            stage_blocks = nn.ModuleList()
+            for blk_idx in range(num_blocks[stage_idx]):
+                # First block of each stage has stride + channel change
+                if blk_idx == 0:
+                    blk_in = prev_ch
+                    blk_out = channels[stage_idx]
+                    blk_stride = strides[stage_idx]
+                else:
+                    # Subsequent blocks: same channels, stride=1
+                    blk_in = channels[stage_idx]
+                    blk_out = channels[stage_idx]
+                    blk_stride = 1
 
-        self.stage1 = stages[0]
-        self.stage2 = stages[1]
-        self.stage3 = stages[2]
+                dp_rate = _drop_path * (block_count / max(total_blocks - 1, 1))
+                block_count += 1
+
+                # HybridGate only on last stage's blocks for large variant
+                blk_gate = gate_type if stage_idx == len(channels) - 1 else 'motion'
+
+                stage_blocks.append(V3Block(
+                    in_channels=blk_in,
+                    out_channels=blk_out,
+                    A=A,
+                    depth=depths[stage_idx],
+                    stride=blk_stride,
+                    max_hop=max_hop,
+                    expand_ratio=expand_ratio,
+                    gate_type=blk_gate,
+                    use_st_att=use_st_att[stage_idx],
+                    use_subset_att=use_subset_att,
+                    drop_path_rate=dp_rate,
+                ))
+
+            self.stages.append(stage_blocks)
+            prev_ch = channels[stage_idx]
 
         # ── 4. Head: Gated GAP+GMP + classifier ─────────────────────────
         last_ch = channels[-1]
@@ -380,7 +383,7 @@ class LAST_E_v3(nn.Module):
             for name in self.stream_names:
                 if name in x:
                     s = x[name]
-                    if s.dim() == 5:      # (B, C, T, V, M) — take primary body
+                    if s.dim() == 5:
                         s = s[..., 0]
                     streams.append(s)
             while len(streams) < 3:
@@ -393,17 +396,17 @@ class LAST_E_v3(nn.Module):
         # ── Fuse streams → (B, stem_ch, T, V) ──
         out = self.fusion(streams)
 
-        # ── Backbone ──
-        out = self.stage1(out)   # (B, C1, T,   V)
-        out = self.stage2(out)   # (B, C2, T/2, V)
-        out = self.stage3(out)   # (B, C3, T/4, V)
+        # ── Backbone: multi-block stages ──
+        for stage_blocks in self.stages:
+            for block in stage_blocks:
+                out = block(out)
 
         # ── Gated GAP+GMP pool ──
         gate = torch.sigmoid(self.pool_gate)
         gap = F.adaptive_avg_pool2d(out, (1, 1))
         gmp = F.adaptive_max_pool2d(out, (1, 1))
         pooled = gap * gate + gmp * (1 - gate)
-        pooled = pooled.view(pooled.size(0), -1)     # (B, C3)
+        pooled = pooled.view(pooled.size(0), -1)
 
         # ── InfoGCN IB loss (training only) ──
         ib_loss = None
@@ -427,20 +430,13 @@ class LAST_E_v3(nn.Module):
 # ---------------------------------------------------------------------------
 
 def create_last_e_v3_nano(num_classes: int = 60, **kwargs) -> LAST_E_v3:
-    """Create LAST-E-v3-Nano."""
     return LAST_E_v3(num_classes=num_classes, variant='nano', **kwargs)
 
-
 def create_last_e_v3_small(num_classes: int = 60, **kwargs) -> LAST_E_v3:
-    """Create LAST-E-v3-Small."""
     return LAST_E_v3(num_classes=num_classes, variant='small', **kwargs)
 
-
 def create_last_e_v3_base(num_classes: int = 60, **kwargs) -> LAST_E_v3:
-    """Create LAST-E-v3-Base."""
     return LAST_E_v3(num_classes=num_classes, variant='base', **kwargs)
 
-
 def create_last_e_v3_large(num_classes: int = 60, **kwargs) -> LAST_E_v3:
-    """Create LAST-E-v3-Large."""
     return LAST_E_v3(num_classes=num_classes, variant='large', **kwargs)

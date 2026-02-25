@@ -9,6 +9,7 @@ from .ctr_gcn_block import (
     DropPath, CTRLightGCNConv, MultiScaleTCN4, FreqTemporalGate, CTRGCNBlock,
 )
 from .stream_fusion_v2 import StreamFusionV2
+from .stream_fusion_concat import StreamFusionConcat
 from .spatial_gcn import SpatialGCN
 from .ep_sep_tcn import EpSepTCN
 from .motion_gate import MotionGate, HybridGate
