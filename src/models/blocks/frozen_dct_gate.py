@@ -58,9 +58,11 @@ class FrozenDCTGate(nn.Module):
 
         # ── Learnable frequency mask ─────────────────────────────────────
         # Shape (1, C, T, 1): one logit per (channel, frequency bin).
-        # Zero-init → sigmoid(0) = 0.5 → passes all frequencies at init.
+        # Init -2.0 → sigmoid(-2) ≈ 0.119 → x_back ≈ 0.119x → output ≈ 1.119x.
+        # Near-identity init: avoids 1.5x BN instability from zero-init (sigmoid(0)=0.5).
+        # Learning rate to mask: sigmoid'(-2) ≈ 0.105 (slower but not dead).
         # Excluded from weight decay (see trainer.py no_decay list).
-        self.freq_mask = nn.Parameter(torch.zeros(1, channels, T, 1))
+        self.freq_mask = nn.Parameter(torch.full((1, channels, T, 1), -2.0))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -69,18 +71,26 @@ class FrozenDCTGate(nn.Module):
         Returns:
             out: (B, C, T, V) — x + frequency-filtered version of x
         """
+        # Cast to fp32 for DCT matmul: under AMP (fp16), summing T=64 products in fp16
+        # accumulates ~1-2% relative error per coefficient.  fp32 cast is free on CPU
+        # and adds <0.1% overhead on GPU (64×64 matmul).  Cast result back to input dtype.
+        orig_dtype = x.dtype
+        xf = x.float()
+        dct  = self.dct.float()
+        idct = self.idct.float()
+
         # Transform to DCT domain along T axis
-        # x: (B, C, T, V) → transpose T↔V → (B, C, V, T)
+        # xf: (B, C, T, V) → transpose T↔V → (B, C, V, T)
         # matmul with dct (T, T): (B, C, V, T) @ (T, T) → (B, C, V, T)
         # transpose back → (B, C, T, V)
-        x_freq = torch.matmul(x.transpose(2, 3), self.dct).transpose(2, 3)
+        x_freq = torch.matmul(xf.transpose(2, 3), dct).transpose(2, 3)
 
         # Apply data-independent learnable mask (same for all samples)
-        mask = torch.sigmoid(self.freq_mask)   # (1, C, T, 1) — broadcasts over B, V
+        mask = torch.sigmoid(self.freq_mask.float())   # (1, C, T, 1) — broadcasts over B, V
         x_gated = x_freq * mask
 
         # Transform back to time domain
-        x_back = torch.matmul(x_gated.transpose(2, 3), self.idct).transpose(2, 3)
+        x_back = torch.matmul(x_gated.transpose(2, 3), idct).transpose(2, 3).to(orig_dtype)
 
         # Residual: preserves gradient flow when mask suppresses all frequencies
         return x + x_back

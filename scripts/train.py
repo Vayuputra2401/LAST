@@ -141,9 +141,12 @@ def main():
     args = parser.parse_args()
 
     # ── 1. Load & merge config ──────────────────────────────────────────
-    # Load training config (Defaults)
+    # Load training config baseline.
+    # ShiftFuse-GCN uses its own calibrated defaults (EfficientGCN-aligned schedule,
+    # no label smoothing, relaxed gradient clip). All other models use default.yaml.
+    _training_cfg_name = 'shiftfuse' if args.model.startswith('shiftfuse_') else 'default'
     training_config_path = os.path.join(
-        os.path.dirname(__file__), '..', 'configs', 'training', 'default.yaml'
+        os.path.dirname(__file__), '..', 'configs', 'training', f'{_training_cfg_name}.yaml'
     )
     with open(training_config_path, 'r') as f:
         default_cfg = yaml.safe_load(f)
@@ -360,7 +363,7 @@ def main():
     val_dataset = SkeletonDataset(
         data_path=processed_data_path,
         data_type=data_type,
-        max_frames=300,
+        max_frames=config['data']['dataset']['max_frames'],
         num_joints=num_joints,
         transform=val_transform,
         split='val',

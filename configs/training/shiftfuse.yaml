@@ -1,0 +1,60 @@
+# Training config for ShiftFuse-GCN (LAST-Lite)
+#
+# Calibrated to match EfficientGCN-B0 training conditions for fair comparison:
+#   - 120 epochs  (EfficientGCN: 120)
+#   - MultiStep milestones [60, 90]  (EfficientGCN: [60, 90])
+#   - No label smoothing  (EfficientGCN: 0.0)
+#   - Relaxed gradient clip  (EfficientGCN: none; ShiftFuse has no adaptive modules)
+#   - 5-epoch warmup for gate stability
+#
+# All values can be overridden at the command line:
+#   --epochs 90 --milestones 50,65 --set training.label_smoothing=0.05
+
+training:
+  # Optimizer
+  optimizer: sgd
+  lr: 0.1
+  momentum: 0.9
+  nesterov: true
+  weight_decay: 0.0004
+
+  # Scheduler (MultiStep mirrors EfficientGCN exactly)
+  scheduler: multistep_warmup
+  warmup_epochs: 5
+  warmup_start_lr: 0.01
+  milestones: [60, 90]   # drops at 50% and 75% of 120 epochs — EfficientGCN standard
+  gamma: 0.1
+  min_lr: 0.0001         # floor for cosine_warmup (unused by multistep_warmup)
+
+  # Duration
+  epochs: 120
+  batch_size: 64
+  gradient_accumulation_steps: 1
+
+  # Regularization
+  # EfficientGCN-B0 uses 0.0 — match for fair comparison at this model scale
+  label_smoothing: 0.0
+  # ShiftFuse has no adaptive/dynamic modules — BN keeps grads bounded without clip
+  gradient_clip: 5.0
+
+  # Input
+  input_frames: 64
+
+  # Precision
+  use_amp: true
+  use_compile: false
+
+  # DataLoader
+  num_workers: 4
+  pin_memory: true
+
+  # Logging
+  log_interval: 20
+  eval_interval: 1
+  save_interval: 10
+
+  # Reproducibility
+  seed: 42
+
+  # IB loss (ShiftFuse has no information bottleneck loss)
+  ib_loss_weight: 0.0

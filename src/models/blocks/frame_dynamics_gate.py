@@ -13,7 +13,9 @@ differences), FrameDynamicsGate uses a fixed learned gate per position —
 data-independent and edge-friendly.
 
 Implementation: a single (1, C, T, 1) parameter, directly used as the gate
-logit.  sigmoid(0) = 0.5 at init, so all frames contribute equally at start.
+logit.  Initialised to 2.0 so sigmoid(2.0) ≈ 0.88 at the start — near-identity
+(~12% initial suppression), which avoids halving the gradient signal through the
+main path at epoch 0.  The gate can still learn to suppress any frame toward 0.
 
 Cost: C × T params (e.g., 48 × 64 = 3072 for Stage 1 of ShiftFuse-small).
 Excluded from weight decay (gate/mask parameter, not a convolution weight).
@@ -38,9 +40,9 @@ class FrameDynamicsGate(nn.Module):
     def __init__(self, channels: int, T: int):
         super().__init__()
         # Shape (1, C, T, 1): broadcasts over B and V.
-        # Zero-init → sigmoid(0) = 0.5 → all frames equally weighted at init.
+        # Init 2.0 → sigmoid(2.0) ≈ 0.88 → near-identity at start (~12% suppression).
         # Excluded from weight decay (see trainer.py no_decay list).
-        self.gate_logit = nn.Parameter(torch.zeros(1, channels, T, 1))
+        self.gate_logit = nn.Parameter(torch.full((1, channels, T, 1), 2.0))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

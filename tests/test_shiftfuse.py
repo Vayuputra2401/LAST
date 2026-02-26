@@ -102,9 +102,9 @@ class TestFrozenDCTGate:
         n = sum(p.numel() for p in gate.parameters())
         assert n == C_test * T_test, f"Expected {C_test * T_test}, got {n}"
 
-    def test_residual_at_zero_init(self):
-        # At zero-init, freq_mask = 0 → sigmoid(0) = 0.5
-        # x_back ≠ 0, so output should differ from x (not a pure identity)
+    def test_residual_adds_frequency_component(self):
+        # Init -2.0 → sigmoid(-2) ≈ 0.119 → x_back ≈ 0.119x ≠ 0
+        # Output = x + x_back must differ from x
         gate = FrozenDCTGate(channels=8, T=16)
         x = torch.randn(1, 8, 16, 4)
         out = gate(x)
@@ -139,12 +139,13 @@ class TestFrameDynamicsGate:
         out = gate(x)
         assert out.shape == x.shape
 
-    def test_zero_init_halves_input(self):
+    def test_init_near_identity(self):
         gate = FrameDynamicsGate(channels=16, T=T)
         x = torch.ones(1, 16, T, V)
         out = gate(x)
-        # sigmoid(0) = 0.5 → output should be 0.5 * x
-        assert torch.allclose(out, x * 0.5, atol=1e-6)
+        # Init 2.0 → sigmoid(2.0) ≈ 0.880 → near-identity (12% suppression)
+        expected_gate = torch.sigmoid(torch.tensor(2.0))
+        assert torch.allclose(out, x * expected_gate, atol=1e-5)
 
     def test_param_count(self):
         C_test, T_test = 48, 64

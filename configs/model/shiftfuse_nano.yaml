@@ -3,7 +3,7 @@
 model:
   name: shiftfuse_nano
   variant: nano
-  num_classes: 60
+  # num_classes is intentionally absent — always read from configs/data/*.yaml at runtime
   in_channels: 3
   graph_layout: ntu-rgb+d
   graph_strategy: spatial
