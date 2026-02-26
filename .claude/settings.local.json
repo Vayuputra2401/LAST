@@ -23,7 +23,8 @@
       "Bash(cmd /c \"activate_ai.bat && python -m py_compile src/models/blocks/light_gcn.py && echo OK_light_gcn\")",
       "WebFetch(domain:openaccess.thecvf.com)",
       "Bash(\"C:\\\\Users\\\\pathi\\\\envs\\\\ai_research\\\\Scripts\\\\python\" tests/test_shiftfuse.py)",
-      "Bash(\"C:\\\\Users\\\\pathi\\\\envs\\\\ai_research\\\\Scripts\\\\python\" -c \":*)"
+      "Bash(\"C:\\\\Users\\\\pathi\\\\envs\\\\ai_research\\\\Scripts\\\\python\" -c \":*)",
+      "Bash(\"C:\\\\Users\\\\pathi\\\\envs\\\\ai_research\\\\Scripts\\\\python\" tests/check_preprocessed_data.py)"
     ],
     "deny": [],
     "ask": []

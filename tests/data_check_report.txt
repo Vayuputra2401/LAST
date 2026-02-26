@@ -1,0 +1,76 @@
+Preprocessed Data Health Check
+Generated: 2026-02-27 01:29:34
+Overall: ALL CHECKS PASSED
+
+PASS: 42   FAIL: 0
+
+
+------------------------------------------------------------
+  1. File Existence & Size
+------------------------------------------------------------
+  [PASS] exists: train_label.pkl  =>  0.1 MB
+  [PASS] exists: train_joint.npy  =>  1476.6 MB
+  [PASS] exists: train_velocity.npy  =>  1476.6 MB
+  [PASS] exists: train_bone.npy  =>  1476.6 MB
+  [PASS] exists: train_bone_velocity.npy  =>  1476.6 MB
+  [PASS] exists: val_label.pkl  =>  0.0 MB
+  [PASS] exists: val_joint.npy  =>  606.4 MB
+  [PASS] exists: val_velocity.npy  =>  606.4 MB
+  [PASS] exists: val_bone.npy  =>  606.4 MB
+  [PASS] exists: val_bone_velocity.npy  =>  606.4 MB
+
+------------------------------------------------------------
+  2. Array Shapes  (expected: N × 3 × 64 × 25 × 2)
+------------------------------------------------------------
+  [PASS] train_joint.shape  =>  (40320, 3, 64, 25, 2)  OK
+  [PASS] train_velocity.shape  =>  (40320, 3, 64, 25, 2)  OK
+  [PASS] train_bone.shape  =>  (40320, 3, 64, 25, 2)  OK
+  [PASS] train_bone_velocity.shape  =>  (40320, 3, 64, 25, 2)  OK
+  [PASS] val_joint.shape  =>  (16560, 3, 64, 25, 2)  OK
+  [PASS] val_velocity.shape  =>  (16560, 3, 64, 25, 2)  OK
+  [PASS] val_bone.shape  =>  (16560, 3, 64, 25, 2)  OK
+  [PASS] val_bone_velocity.shape  =>  (16560, 3, 64, 25, 2)  OK
+
+------------------------------------------------------------
+  3. Cross-Stream Sample Count Alignment
+------------------------------------------------------------
+  [PASS] train: all streams same N  =>  {'joint': 40320, 'velocity': 40320, 'bone': 40320, 'bone_velocity': 40320}
+  [PASS] val: all streams same N  =>  {'joint': 16560, 'velocity': 16560, 'bone': 16560, 'bone_velocity': 16560}
+
+------------------------------------------------------------
+  4. Labels  (expected: list of ints in [0, 59])
+------------------------------------------------------------
+  [PASS] train: N_labels == N_array  =>  40320 vs 40320
+  [PASS] train: all labels in range  =>  min=0  max=59
+  [PASS] train: no -1 sentinel labels  =>  0 bad
+  [PASS] val: N_labels == N_array  =>  16560 vs 16560
+  [PASS] val: all labels in range  =>  min=0  max=59
+  [PASS] val: no -1 sentinel labels  =>  0 bad
+
+------------------------------------------------------------
+  5. Class Distribution  (all 60 classes present?)
+------------------------------------------------------------
+  [PASS] train: all 60 classes present  =>  60/60 classes found
+  [PASS] train: imbalance < 5×  =>  min=672  max=672  ratio=1.0×
+  [PASS] val: all 60 classes present  =>  60/60 classes found
+  [PASS] val: imbalance < 5×  =>  min=276  max=276  ratio=1.0×
+
+------------------------------------------------------------
+  6. Value Statistics  (NaN / Inf / range check on 200 random samples)
+------------------------------------------------------------
+  [PASS] train: no NaN  =>  0 NaN values
+  [PASS] train: no Inf  =>  0 Inf values
+  [PASS] train: joint range [-10,10]  =>  min=-2.354  max=4.881  mean=0.591  std=1.343
+  [PASS] train: non-zero frame fraction  =>  100.0%  (threshold: 85%)
+  [PASS] val: no NaN  =>  0 NaN values
+  [PASS] val: no Inf  =>  0 Inf values
+  [PASS] val: joint range [-10,10]  =>  min=-2.849  max=4.870  mean=0.612  std=1.411
+  [PASS] val: non-zero frame fraction  =>  97.9%  (threshold: 85%)
+
+------------------------------------------------------------
+  7. Cross-Stream Math  (velocity ~= diff(joint);  bone ~= child - parent)
+------------------------------------------------------------
+  [PASS] train: velocity == diff(joint)  =>  max_abs_err=0.000000
+  [PASS] train: bone == child-parent  =>  max_abs_err=0.000000
+  [PASS] val: velocity == diff(joint)  =>  max_abs_err=0.000000
+  [PASS] val: bone == child-parent  =>  max_abs_err=0.000000
