@@ -1,0 +1,21 @@
+# ShiftFuse-GCN Small model configuration (~120-191K params)
+# Primary edge target: beats EfficientGCN-B0 (88.3% @ 150K) with different arch.
+model:
+  name: shiftfuse_small
+  variant: small
+  num_classes: 60
+  in_channels: 3
+  graph_layout: ntu-rgb+d
+  graph_strategy: spatial
+  T: 64
+  num_joints: 25
+  stem_channels: 32
+  channels: [48, 72, 96]
+  num_blocks: [1, 2, 2]
+  strides: [1, 2, 2]
+  expand_ratio: 2
+  max_hop: 2
+  use_dct_gate: true
+  use_joint_embed: true
+  use_frame_gate: true
+  dropout: 0.15

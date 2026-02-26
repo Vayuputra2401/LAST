@@ -296,7 +296,8 @@ def preprocess_split(config, split='train', split_type='xsub', max_samples=None)
         pickle.dump(labels, f)
     
     # Print statistics
-    file_size_mb = data_file.stat().st_size / (1024 * 1024)
+    joint_file = output_dir / f"{split}_joint.npy"
+    file_size_mb = joint_file.stat().st_size / (1024 * 1024)
     print(f"\n{'='*60}")
     print(f"{split.upper()} SPLIT COMPLETE")
     print(f"{'='*60}")

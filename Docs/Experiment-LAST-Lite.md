@@ -32,6 +32,7 @@ input (B, C, T, V)
   │     x_freq = x @ DCT_matrix              (frozen, no grad)
   │     x_gated = x_freq * σ(freq_mask)      (C×T learnable, data-independent)
   │     x_back = x_gated @ DCT_matrix.T      (frozen)
+  │     output = x + x_back                  (residual prevents 0 gradient flow)
   │     → C × T params, zero per-sample adaptive compute
   │
   ├── EpSepTCN (from EfficientGCN)
@@ -87,10 +88,10 @@ BODY_REGIONS = {
 }
 
 # Channel group allocation (proportional to region importance):
-# Arms (24%): fine manipulation (writing, eating, phone)
-# Legs (16%): locomotion (walking, kicking)
-# Torso (17%): posture (standing, bowing)
-# Cross-body (43%): coordination (throwing, hugging)
+# Arms (25%): fine manipulation (writing, eating, phone)
+# Legs (25%): locomotion (walking, kicking)
+# Torso (12.5%): posture (standing, bowing)
+# Cross-body (37.5%): coordination (throwing, hugging)
 
 def get_channel_groups(C):
     arm_end   = C // 4          # 25% for arms

@@ -105,7 +105,8 @@ def main():
     parser.add_argument('--model', type=str, default='base',
                        choices=['base', 'small', 'large', 'nano_e', 'base_e', 'small_e', 'large_e',
                                 'nano_e_v2', 'small_e_v2', 'base_e_v2', 'large_e_v2',
-                                'nano_e_v3', 'small_e_v3', 'base_e_v3', 'large_e_v3'],
+                                'nano_e_v3', 'small_e_v3', 'base_e_v3', 'large_e_v3',
+                                'shiftfuse_nano', 'shiftfuse_small'],
                        help='Model variant (default: base)')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
                        help='Dataset (default: ntu60)')
@@ -262,6 +263,19 @@ def main():
         config['training']['ib_loss_weight'] = config.get('model', {}).get(
             'ib_loss_weight', config['training'].get('ib_loss_weight', 0.01)
         )
+    elif args.model.startswith('shiftfuse_'):
+        variant = args.model.replace('shiftfuse_', '')
+        T = config['data']['dataset']['max_frames']
+        print(f"\n  Creating ShiftFuse-GCN (Variant: {variant}, T={T})...")
+        from src.models.shiftfuse_gcn import LAST_Lite
+        model = LAST_Lite(
+            num_classes=num_classes,
+            variant=variant,
+            T=T,
+            num_joints=num_joints,
+            dropout=config['model'].get('dropout'),
+        )
+        config['training']['ib_loss_weight'] = 0.0
     else:
         raise ValueError(f"Unsupported model variant: {args.model}")
     
@@ -301,10 +315,14 @@ def main():
         json.dump(model_stats, f, indent=2)
     
     # ── 5. Data ─────────────────────────────────────────────────────────
-    # Build data path
+    # Build data path — prefer explicit 'data_folder' env key; fall back to dataset defaults
     data_base = config['environment']['paths']['data_base']
-    folder_name = "LAST-60-v2" if args.dataset == 'ntu60' else "LAST-120-v2"
-    processed_data_path = os.path.join(data_base, folder_name, "data", "processed_v2")
+    _env_folder = config.get('environment', {}).get('paths', {}).get('data_folder')
+    if _env_folder:
+        folder_name = _env_folder
+    else:
+        folder_name = "LAST-60" if args.dataset == 'ntu60' else "LAST-120"
+    processed_data_path = os.path.join(data_base, folder_name, "data", "processed")
     
     print(f"\n  Loading data from: {processed_data_path}")
     print(f"  Data Type: {data_type}")
@@ -331,7 +349,7 @@ def main():
     train_dataset = SkeletonDataset(
         data_path=processed_data_path,
         data_type=data_type,
-        max_frames=300, # Load full, crop in transform
+        max_frames=config['data']['dataset']['max_frames'],
         num_joints=num_joints,
         transform=train_transform,
         split='train',

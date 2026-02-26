@@ -10,7 +10,7 @@ dataset:
   
   # Skeleton parameters
   num_joints: 25
-  max_frames: 300
+  max_frames: 64  # EfficientGCN-style: preprocess_data.py uniformly subsamples to this
   max_bodies: 2
   
   # Split configuration - FIXED splits for reproducibility

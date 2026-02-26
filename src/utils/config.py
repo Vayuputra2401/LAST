@@ -77,7 +77,9 @@ class ConfigLoader:
         #   'base'    → 'last_base'    → last_base.yaml   (v2 models)
         #   'base_e'  → 'last_e_base'  → last_e_base.yaml (LAST-E models)
         if not model_name.startswith('last_'):
-            if model_name.endswith('_e_v3'):
+            if model_name.startswith('shiftfuse_'):
+                pass                                    # 'shiftfuse_nano' → 'shiftfuse_nano.yaml'
+            elif model_name.endswith('_e_v3'):
                 variant = model_name[:-5]               # 'base_e_v3' → 'base'
                 model_name = f'last_e_v3_{variant}'     # → 'last_e_v3_base'
             elif model_name.endswith('_e_v2'):

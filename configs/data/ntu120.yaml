@@ -1,15 +1,16 @@
-# Data Loading Configuration
+# Data Loading Configuration for NTU RGB+D 120
 # Parameters for skeleton dataset loading
 
 dataset:
   name: "NTU_RGBD_120"
+  num_classes: 120  # 120 action classes (A1-A120)
   
   # Data format
-  data_type: "skeleton"  # 'skeleton' for raw .skeleton files, 'npy' for preprocessed
+  data_type: "mib"  # 'skeleton' for raw .skeleton files, 'npy' for preprocessed, 'mib' for Multi-Stream
   
   # Skeleton parameters
   num_joints: 25
-  max_frames: 300
+  max_frames: 64  # EfficientGCN-style: preprocess_data.py uniformly subsamples to this
   max_bodies: 2
   
   # Split configuration - FIXED splits for reproducibility
@@ -32,19 +33,27 @@ dataset:
   split_type: "xsub"  # 'xsub' (cross-subject) or 'xset' (cross-setup)
   
   # Preprocessing & Normalization
+  # NOTE: normalize is set to false because preprocess_data.py
+  # already applies spine-centering, front-rotation, and mean-torso scaling offline.
+  # Applying Normalize again here would double-normalize pre-normalized streams.
   preprocessing:
-    normalize: true
+    normalize: false
     normalization_method: "center_spine"  # 'center_spine', 'first_frame', or 'none'
     center_joint: 0  # SpineBase for NTU RGB+D
     scale_by_torso: true
     
   # Data augmentation (for training only)
   augmentation:
-    enabled: false  # Will enable after baseline works
+    enabled: true
     rotation_range: [-15, 15]   # degrees
     scale_range: [0.9, 1.1]
     shear_range: [-0.1, 0.1]
-    noise_std: 0.001
+    # Per-stream noise std, calibrated for ~6-10% SNR on normalized data.
+    noise_std: 0.01
+    noise_std_joint: 0.01
+    noise_std_velocity: 0.002
+    noise_std_bone: 0.005
+    temporal_flip_p: 0.0  # Disabled: most actions are directional
 
 dataloader:
   batch_size: 32

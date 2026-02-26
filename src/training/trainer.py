@@ -145,8 +145,11 @@ class Trainer:
                 or 'A_learned' in name      # adaptive/directional graph learnable edges
                 or 'node_proj' in name      # dynamic adj embedding projection (E1)
                 or 'refine_gate' in name    # CTRLightGCNConv topology refinement gate (v2)
-                or 'pool_gate' in name      # Gated GAP+GMP head blend parameter (v2)
+                or 'pool_gate' in name      # Gated GAP+GMP head blend parameter
                 or 'freq_gate' in name      # FreqTemporalGate residual gate (v2)
+                or 'freq_mask' in name      # FrozenDCTGate learnable frequency mask (LAST-Lite)
+                or 'gate_logit' in name     # FrameDynamicsGate temporal position gate (LAST-Lite)
+                or 'joint_embed' in name    # JointEmbedding semantic table (LAST-Lite)
                 or 'edge' in name            # SpatialGCN edge importance (v3)
                 or 'stream_weights' in name  # StreamFusion blend logits (v2/v3)
             ):
