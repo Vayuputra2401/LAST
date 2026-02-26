@@ -19,10 +19,9 @@ from src.utils.config import load_config
 
 def main():
     parser = argparse.ArgumentParser(description='Load and inspect a LAST model')
-    parser.add_argument('--model', type=str, default='base',
-                       choices=['base', 'small', 'large', 'base_e', 'small_e', 'large_e',
-                                'nano_e_v2', 'small_e_v2', 'base_e_v2', 'large_e_v2'],
-                       help='Model variant (default: base)')
+    parser.add_argument('--model', type=str, default='base_e_v3',
+                       choices=['nano_e_v3', 'small_e_v3', 'base_e_v3', 'large_e_v3'],
+                       help='Model variant (default: base_e_v3)')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
                        help='Dataset to configure num_classes (default: ntu60)')
     args = parser.parse_args()
@@ -34,30 +33,20 @@ def main():
     num_classes = config['data']['dataset'].get('num_classes', 60 if args.dataset == 'ntu60' else 120)
 
     # Create model
-    if args.model.endswith('_e_v2'):
-        variant = args.model.replace('_e_v2', '')
-        print(f"Creating LAST-E v2 model (Variant: {variant})...")
-        from src.models.last_e_v2 import LAST_E_v2
-        model = LAST_E_v2(
+    if args.model.endswith('_e_v3'):
+        variant = args.model.replace('_e_v3', '')
+        print(f"Creating LAST-E v3 model (Variant: {variant})...")
+        from src.models.last_e_v3 import LAST_E_v3
+        model = LAST_E_v3(
             num_classes=num_classes,
             variant=variant,
             dropout=config['model'].get('dropout', 0.3),
-            use_freq_gate=config['model'].get('use_freq_gate', True),
-            num_groups=config['model'].get('num_groups', 4),
             drop_path_rate=config['model'].get('drop_path_rate'),
+            use_st_att=config['model'].get('use_st_att'),
         )
-        model_label = f"LAST-E-v2-{variant.capitalize()}"
-    elif args.model.endswith('_e'):
-        variant = args.model.replace('_e', '')
-        print(f"Creating LAST-E model (Variant: {variant})...")
-        from src.models.last_e import LAST_E
-        model = LAST_E(num_classes=num_classes, variant=variant)
-        model_label = f"LAST-E-{variant.capitalize()}"
+        model_label = f"LAST-E-v3-{variant.capitalize()}"
     else:
-        print(f"Creating LAST v2 model (Variant: {args.model})...")
-        from src.models.last_v2 import LAST_v2
-        model = LAST_v2(num_classes=num_classes, variant=args.model)
-        model_label = f"LAST-v2-{args.model.capitalize()}"
+        raise ValueError(f"Unsupported model variant: {args.model}")
 
     num_params = model.count_parameters()
 

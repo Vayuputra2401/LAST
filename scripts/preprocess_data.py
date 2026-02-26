@@ -34,6 +34,46 @@ from src.utils.config import load_config
 from src.data.skeleton_loader import SkeletonFileParser
 from src.data.preprocessing import normalize_skeleton
 
+# Pairs (Child, Parent) -- used for bone vector generation:
+ntu_pairs_0_based = [
+    (1, 0), (20, 1), (2, 20), (3, 2), # Spine
+    (4, 20), (5, 4), (6, 5), (7, 6), (21, 7), (22, 6), # Left Arm
+    (8, 20), (9, 8), (10, 9), (11, 10), (23, 11), (24, 10), # Right Arm
+    (12, 0), (13, 12), (14, 13), (15, 14), # Left Leg
+    (16, 0), (17, 16), (18, 17), (19, 18)  # Right Leg
+]
+
+
+def gen_bone_data(joint_data):
+    """
+    Generate bone data from joint data.
+    Args:
+        joint_data: (N, C, T, V, M)
+    Returns:
+        bone_data: (N, C, T, V, M)
+    """
+    N, C, T, V, M = joint_data.shape
+    bone_data = np.zeros_like(joint_data)
+    
+    for v1, v2 in ntu_pairs_0_based:
+        # Vector from v2 (Parent) to v1 (Child)
+        if v1 < V and v2 < V:
+             bone_data[:, :, :, v1, :] = joint_data[:, :, :, v1, :] - joint_data[:, :, :, v2, :]
+             
+    # For root (0), bone is 0 (or connect to itself)
+    return bone_data
+
+def gen_velocity_data(joint_data):
+    """
+    Generate velocity data.
+    V_t = J_{t+1} - J_t
+    """
+    velocity_data = np.zeros_like(joint_data)
+    velocity_data[:, :, :-1, :, :] = joint_data[:, :, 1:, :, :] - joint_data[:, :, :-1, :, :]
+    
+    return velocity_data
+
+
 
 def process_single_file(file_info, parser, config, max_frames=300):
     """
@@ -57,14 +97,16 @@ def process_single_file(file_info, parser, config, max_frames=300):
         
         T, V, C, M = skeleton_data.shape
         
-        # Temporal crop/pad to max_frames
+        # Temporal repeat-pad / uniform subsample to max_frames (EfficientGCN style)
         if T < max_frames:
-            # Zero-pad
+            # Repeat-pad (copy last frame) to avoid velocity spikes
             padded = np.zeros((max_frames, V, C, M), dtype=np.float32)
             padded[:T] = skeleton_data
+            for t_idx in range(T, max_frames):
+                padded[t_idx] = skeleton_data[-1]  # copy last frame
             skeleton_data = padded
         elif T > max_frames:
-            # Uniformly sample
+            # Uniformly subsample
             indices = np.linspace(0, T - 1, max_frames, dtype=int)
             skeleton_data = skeleton_data[indices]
         
@@ -228,16 +270,27 @@ def preprocess_split(config, split='train', split_type='xsub', max_samples=None)
         labels = [l for l in labels if l != -1]
         print(f"  After filtering: {len(labels)} valid samples")
     
+    # Generate streams (HI-GCN / EfficientGCN style)
+    print("Generating Velocity Stream...")
+    velocity_array = gen_velocity_data(data_array)
+    
+    print("Generating Bone Stream...")
+    bone_array = gen_bone_data(data_array)
+    
+    print("Generating Bone Velocity Stream...")
+    bone_velocity_array = gen_velocity_data(bone_array)
+    
     # Save to disk
     output_dir = Path(config['environment']['paths']['processed_data']) / split_type
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    data_file = output_dir / f"{split}_data.npy"
+    print(f"\nSaving data to {output_dir}...")
+    np.save(output_dir / f"{split}_joint.npy", data_array)
+    np.save(output_dir / f"{split}_velocity.npy", velocity_array)
+    np.save(output_dir / f"{split}_bone.npy", bone_array)
+    np.save(output_dir / f"{split}_bone_velocity.npy", bone_velocity_array)
+    
     label_file = output_dir / f"{split}_label.pkl"
-    
-    print(f"\nSaving data to {data_file}...")
-    np.save(data_file, data_array)
-    
     print(f"Saving labels to {label_file}...")
     with open(label_file, 'wb') as f:
         pickle.dump(labels, f)
@@ -249,9 +302,8 @@ def preprocess_split(config, split='train', split_type='xsub', max_samples=None)
     print(f"{'='*60}")
     print(f"  Samples: {len(labels)}")
     print(f"  Shape: {data_array.shape}")
-    print(f"  Size: {file_size_mb:.1f} MB")
-    print(f"  Data file: {data_file}")
-    print(f"  Label file: {label_file}")
+    print(f"  Size (Joint): {file_size_mb:.1f} MB")
+    print(f"  Output Directory: {output_dir}")
     print(f"{'='*60}\n")
 
 

@@ -214,42 +214,141 @@ temporal_feature_weight = 1.0 + β × peak_weight  (β=learnable)
 
 ---
 
-### Recommended Synthesis: LAST-v3 Core Block
+### Idea F: **Body-Region-Aware Shift Patterns (BRASP)**
+*Novel combination of Shift-GCN spatial mixing + HD-GCN anatomical decomposition*
 
-Combining the most impactful and mutually compatible ideas:
+**The insight:** Shift-GCN assigns shift patterns randomly or by graph distance — channel 0 shifts from neighbor 1, channel 1 from neighbor 2, etc. It has no concept that "wrist → elbow" is a more meaningful shift than "wrist → right hip." Meanwhile, HD-GCN decomposes the skeleton by body region but uses expensive full GCN within each region.
+
+**The mechanism:** Organize channels into body-region groups and constrain shifts accordingly:
+
+```
+Define 5 body regions (NTU-25 joints):
+  - Left arm:   joints [4, 5, 6, 7, 21, 22]     (shoulder → hand tip/thumb)
+  - Right arm:  joints [8, 9, 10, 11, 23, 24]    (shoulder → hand tip/thumb)
+  - Left leg:   joints [12, 13, 14, 15]           (hip → foot)
+  - Right leg:  joints [16, 17, 18, 19]           (hip → foot)
+  - Torso/head: joints [0, 1, 2, 3, 20]           (spine base → spine shoulder)
+
+Channel allocation (for C=48):
+  Channels 0-11:   "Arm group"     → shift ONLY among arm joints (left+right)
+  Channels 12-23:  "Leg group"     → shift ONLY among leg joints
+  Channels 24-31:  "Torso group"   → shift ONLY among spine/head joints
+  Channels 32-47:  "Cross-body"    → shift between ALL joints (inter-region)
+```
+
+**Why novel vs existing:**
+- **Shift-GCN**: shifts randomly — no anatomical awareness, no body-region structure
+- **HD-GCN**: decomposes into regions but uses full GCN within each — expensive (C²×K params)
+- **BRASP**: anatomically-structured spatial mixing at **zero parameters**
+- Cross-body group (⅓ of channels) captures global interactions (arm↔leg for kicking)
+  while arm/leg groups capture local articulation details
+- The shift indices are precomputed at init from the adjacency matrix — no runtime cost
+
+**Cost:** 0 params. Same inference cost as standard Shift-GCN.
+
+**Expected gain:** 0.3-0.8% over random shift patterns. The structured shift forces channels to
+specialize by body region — arm channels learn arm-specific features, cross-body channels learn
+coordination features.
+
+---
+
+### Idea G: **Frozen DCT Frequency Routing (FDCR)**
+*Fixed-compute adaptation of Idea A for edge deployment*
+
+**The insight:** Idea A (FATG) applies frequency gating per-sample — the model computes DCT, applies
+a sigmoid mask, and transforms back. This is adaptive (per-sample) and requires FFT ops. For edge
+deployment, we want the frequency specialization but with **zero per-sample compute**.
+
+**The mechanism:** Make the DCT transform frozen and the frequency mask data-independent:
+
+```python
+# At init (frozen, never trained):
+dct_matrix = scipy.fft.dct(np.eye(T), type=2, norm='ortho')  # Fixed T×T matrix
+self.register_buffer('dct', torch.tensor(dct_matrix))
+
+# Learnable part (tiny, shared across ALL samples):
+self.freq_mask = nn.Parameter(torch.zeros(C, T))  # per-channel frequency preference
+
+# Forward — same mask for every sample:
+x_freq = torch.matmul(x, self.dct)                          # → frequency domain
+x_gated = x_freq * torch.sigmoid(self.freq_mask).unsqueeze(0).unsqueeze(-1)
+x_back = torch.matmul(x_gated, self.dct.T)                  # → time domain
+```
+
+**Key difference from Idea A:**
+- Idea A: mask depends on input x → adaptive → different for each sample
+- Idea G: mask is a PARAMETER → fixed → same filter for all samples → pure conv equivalent
+- In Idea G, channel 7 ALWAYS prefers low-frequency, channel 23 ALWAYS prefers high-frequency
+- It learns "walking channels" vs "punching channels" in the frequency domain globally
+
+**Why novel:**
+- No skeleton work has fixed frequency channel specialization
+- The frozen DCT is equivalent to a 1D conv with frozen weights — trivially quantizable
+- Combines the frequency insight from signal processing with the efficiency of fixed-compute
+- At inference: the `sigmoid(freq_mask)` is precomputed once → just 2 matrix multiplies
+
+**Cost:** C × T params = 48 × 64 = 3072 params per block. Zero per-sample adaptive compute.
+
+**Expected gain:** 0.3-0.5% — weaker than Idea A (adaptive) but with zero edge deployment cost.
+
+---
+
+### Recommended Synthesis 1: LAST-E v3 Block (Base/Large — Adaptive)
+
+For research/accuracy models where per-sample compute is acceptable:
 
 ```
 LAST-v3 Block = DirectionalGCNConv        (existing)
-              + FrequencyGate             (Idea A, ~5K params per block, no conv)
+              + FrequencyGate             (Idea A, ~5K params per block, per-sample)
               + ActionPrototypeGraph      (Idea B, replaces A_learned, 9375 params total)
               + IntraRegionAttention      (Idea D, 4× cheaper than full attention)
               + MultiScaleTCN            (existing)
               + ST_JointAtt              (existing)
 ```
 
-**What this achieves:**
-- Frequency-discriminative temporal representation (unexplored in skeleton domain)
-- Class-conditioned graph topology (solves the "one A_learned fits all" problem)
-- Anatomically-aware attention within body regions (computationally efficient)
-- All on top of proven efficient base (MultiScaleTCN, DirectionalGCNConv)
+### Recommended Synthesis 2: ShiftFuse-GCN Block (Lite — Fixed Compute)
 
-**Estimated accuracy gain:** Frequency gating alone is likely worth 0.5-1%. Prototype topology likely 0.5-1.5%. Hierarchical body attention likely 0.5-1%. Combined (with synergies): potentially **2-3% over current LAST-E base**, putting LAST-E base at ~92% NTU60 xsub — competitive with CTR-GCN at 9.2M params vs our 400K.
+For edge deployment where ALL operations must be fixed-compute:
+
+```
+ShiftFuse Block = BodyRegionShift          (Idea F, 0 params, zero-cost spatial mixing)
+                + Pointwise 1×1 Conv       (from Shift-GCN, C² params)
+                + JointEmbedding           (from SGN, 25×C shared)
+                + FrozenDCTGate            (Idea G, C×T params, fixed-compute frequency)
+                + EpSepTCN                 (from EfficientGCN, depthwise-separable)
+                + FrameDynamicsGate        (from SGN, T×C params)
+                + Residual
+```
+
+**What's from existing papers:** Shift (Shift-GCN), JointEmbed + FrameGate (SGN), EpSepTCN (EfficientGCN)
+**What's OURS (novel):** Body-Region-Aware Shift (F), Frozen DCT Frequency Routing (G), the combination
 
 ---
 
 ## Part 4: Priority Ranking for Implementation
 
-| Rank | Idea | Params Added | Expected Gain | Implementation Risk |
-|------|------|-------------|---------------|---------------------|
-| 1 | **Frequency-Aware Temporal Gate** (A) | ~5K/block | 0.5-1% | Low — DCT is standard |
-| 2 | **Action-Prototype Graph** (B) | ~10K total | 0.5-1.5% | Medium — needs warm-up care |
-| 3 | **Progressive Re-fusion** (C) | ~10K/stage | 0.5-1% | Medium — sequence matters |
-| 4 | **Hierarchical Body-Region Attn** (D) | ~20K/stage | 0.5-1% | Medium — region definition matters |
-| 5 | **Causal Training** (E) | 0 | 0.3-0.8% | Low — training change only |
+### For LAST-E v3 (Adaptive — Research)
 
-**Recommended first experiment:** Idea A (Frequency Gate) — it's orthogonal to all existing components,
-adds essentially no params, and addresses a completely unexplored axis of the problem. If it works,
-combine with B.
+| Rank | Idea | Params Added | Expected Gain | Risk | For Base? | For Lite? |
+|------|------|-------------|---------------|------|-----------|-----------|
+| 1 | **Frequency-Aware Temporal Gate** (A) | ~5K/block | 0.5-1% | Low | ✅ | ❌ |
+| 2 | **Action-Prototype Graph** (B) | ~10K total | 0.5-1.5% | Medium | ✅ | ❌ |
+| 3 | **Progressive Re-fusion** (C) | ~10K/stage | 0.5-1% | Medium | ✅ | ❌ |
+| 4 | **Hierarchical Body-Region Attn** (D) | ~20K/stage | 0.5-1% | Medium | ✅ | ⚠️ |
+| 5 | **Causal Training** (E) | 0 | 0.3-0.8% | Low | ✅ | ✅ |
+
+### For ShiftFuse-GCN (Fixed Compute — Edge)
+
+| Rank | Idea | Params Added | Expected Gain | Risk | Novel? |
+|------|------|-------------|---------------|------|--------|
+| 1 | **Body-Region-Aware Shift** (F) | 0 | 0.3-0.8% | Low | ✅ Ours |
+| 2 | **Frozen DCT Frequency Routing** (G) | ~3K/block | 0.3-0.5% | Low | ✅ Ours |
+| 3 | **Joint Semantic Embedding** (SGN) | 25×C | 0.5-1% | Low | SGN |
+| 4 | **Frame Dynamics Gate** (SGN) | T×C | 0.3-0.5% | Low | SGN |
+| 5 | **Causal Training** (E) | 0 | 0.3-0.8% | Low | Ours |
+
+**Recommended first experiment:** Ideas F+G together — they define the ShiftFuse-GCN identity.
+If F+G alone match EfficientGCN-B0, that's a publishable result at sub-150K params.
 
 ---
 

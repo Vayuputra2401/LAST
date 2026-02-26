@@ -13,47 +13,97 @@ weight_decay: 0.0004
 **Weight decay exclusion** — the following parameter groups have WD=0:
 - Bias parameters (`bias`)
 - Batch normalization weights and biases
-- `alpha` parameters (ST_JointAtt gate weights + DirectionalGCNConv subset blending weights)
+- `alpha` parameters (ST_JointAtt gate weights + SpatialGCN subset blending weights)
 - `A_learned` (adaptive adjacency in LAST-v2)
+- `pool_gate` (gated head blend parameter)
+- `edge` (learnable edge weights in SpatialGCN)
 
 This prevents regularization from suppressing learned structural parameters that should be
 free to diverge from zero initialization.
 
 ---
 
-## Learning Rate Schedule
+## Learning Rate Schedules
 
-Two-phase schedule implemented as `torch.optim.lr_scheduler.SequentialLR`:
+Three scheduler options, configurable via `--scheduler`:
+
+### Option 1: `cosine_warmup` (Phase A default)
 
 ```
 Phase 1: LinearLR warmup
-  epochs 0–9 (10 epochs)
-  lr: 0.001 → 0.01
+  epochs 0–4 (5 epochs)
+  lr: 0.01 → 0.1
 
 Phase 2: CosineAnnealingLR
-  epochs 10–69 (60 epochs)
-  lr: 0.01 → 1e-5
+  epochs 5–89 (85 epochs)
+  lr: 0.1 → 0.0001
 ```
 
-`SequentialLR` is fully checkpoint-safe: state is saved and restored correctly on resume
-without requiring epoch offset arithmetic.
+Smooth decay, no LR cliffs. Implemented as `SequentialLR(LinearLR, CosineAnnealingLR)`.
+
+### Option 2: `cosine_warmup_restart` (Phase D — SGDR)
+
+```
+Phase 1: LinearLR warmup
+  epochs 0–4 (5 epochs)
+  lr: 0.01 → 0.1
+
+Phase 2: CosineAnnealingWarmRestarts (SGDR)
+  T_0 = 30 (first cycle period)
+  T_mult = 1 (constant cycle length)
+  eta_min = 0.0001
+
+  Cycle 1: epochs 5–35, lr: 0.1 → 0.0001
+  Cycle 2: epochs 35–65, lr: 0.1 → 0.0001 (restart)
+  Cycle 3: epochs 65–95, lr: 0.1 → 0.0001 (restart)
+```
+
+SGDR acts as **implicit regularization** — periodic warm restarts shake the model out of
+sharp minima, encouraging convergence to flatter regions of the loss landscape. Used by
+EfficientGCN. Configurable via:
+```bash
+--set training.restart_period=30 training.restart_mult=1
+```
+
+### Option 3: `multistep_warmup` (legacy, not recommended)
+
+```
+Phase 1: LinearLR warmup
+Phase 2: MultiStepLR at milestones [50, 65], gamma=0.1
+```
+
+Creates aggressive 10× LR cliffs that shock BN stats and cause premature convergence.
+**Not used for v3 training.**
 
 ---
 
 ## Training Hyperparameters
 
-| Parameter        | Value   | Config key            |
-|------------------|---------|-----------------------|
-| Epochs           | 70      | `epochs`              |
-| Batch size       | 16*     | `batch_size`          |
-| Input frames     | 64      | `input_frames`        |
-| Label smoothing  | 0.1     | `label_smoothing`     |
-| Gradient clipping| 1.0     | `grad_clip`           |
-| AMP              | optional| `--amp` flag          |
+### Phase A+B+D Combined (Current Run)
 
-\* Default. Override per environment: Lambda A10 uses `--batch_size 32` (LAST-v2) or `--batch_size 128` (LAST-E).
+| Parameter | Value | Config key |
+|-----------|-------|------------|
+| Epochs | 90 | `epochs` |
+| Batch size | 32 | `batch_size` |
+| Effective batch | 64 | `batch_size × gradient_accumulation_steps` |
+| Input frames | 64 | `input_frames` |
+| Label smoothing | 0.1 | `label_smoothing` |
+| Gradient clip | 1.0 | `gradient_clip` |
+| Drop path rate | 0.15 | `model.drop_path_rate` |
+| use_st_att | [F, F, T] | `model.use_st_att` |
+| Scheduler | SGDR | `cosine_warmup_restart` |
+| AMP | enabled | `--amp` |
 
-**Config file:** `configs/training/default.yaml`
+### Regularization Stack
+
+| Technique | Config | Effect |
+|-----------|--------|--------|
+| Dropout (head) | 0.3 | Prevents classifier overfitting |
+| DropPath | 0.15 (linear ramp) | Forces gradient flow through skip connections |
+| Label smoothing | 0.1 | Prevents overconfident logits |
+| Weight decay | 0.0004 | L2 penalty on conv weights |
+| IB loss | weight=0.01 | Information bottleneck regularization (base/large) |
+| Gradient accumulation | 2× | Effective batch 64 for better gradient estimates |
 
 ---
 
@@ -62,43 +112,51 @@ without requiring epoch offset arithmetic.
 Enable with `--amp` flag. Uses `torch.cuda.amp.GradScaler` for FP16 forward + backward.
 - ~40% VRAM reduction on all GPUs
 - No observed accuracy degradation in preliminary tests
-- Required on Kaggle T4 (16GB) for base_e at batch_size=16
-- Recommended on Lambda A10 even though VRAM is larger — faster throughput
+- Required on Kaggle T4 (16GB) for base variant at batch_size=32
 
 ---
 
 ## Training Commands
 
 ```bash
-# Lambda A10 (primary) — LAST-v2 teacher
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-python scripts/train.py --model base --dataset ntu60 --env lambda --amp --batch_size 32
+# Phase A+B+D (current — Kaggle T4)
+python scripts/train.py \
+  --model base_e_v3 --dataset ntu60 --split_type xsub \
+  --epochs 90 --batch_size 32 --lr 0.1 \
+  --weight_decay 0.0004 --dropout 0.3 \
+  --scheduler cosine_warmup_restart --min_lr 0.0001 \
+  --amp --workers 2 --seed 42 --env kaggle \
+  --set training.gradient_clip=1.0 \
+       training.gradient_accumulation_steps=2 \
+       training.warmup_epochs=5 \
+       training.warmup_start_lr=0.01 \
+       training.label_smoothing=0.1 \
+       training.ib_loss_weight=0.01 \
+       training.save_interval=10 \
+       training.nesterov=true \
+       training.momentum=0.9 \
+       training.restart_period=30 \
+       training.restart_mult=1 \
+       model.drop_path_rate=0.15 \
+       model.use_st_att=false,false,true
 
-# Lambda A10 — LAST-E student
-python scripts/train.py --model base_e --dataset ntu60 --env lambda --amp --batch_size 128
+# Local — smoke test (2 epochs)
+python scripts/train.py --model nano_e_v3 --dataset ntu60 --epochs 2 --batch_size 4
 
-# Kaggle T4 — LAST-E baseline
-python scripts/train.py --model base_e --dataset ntu60 --env kaggle --amp
-
-# Local — smoke test (2 epochs, small batch)
-python scripts/train.py --model nano_e --dataset ntu60 --epochs 2 --batch_size 4
-
-# Resume from checkpoint
-python scripts/train.py --model base --dataset ntu60 --env lambda --amp --batch_size 32 \
-  --resume /lambda/nfs/research-last/LAST-runs/run-YYYY-MM-DD/checkpoints/best_model.pth
+# Override data root (e.g., for different dataset location)
+python scripts/train.py --model base_e_v3 --dataset ntu60 --env kaggle \
+  --data_root /kaggle/input/my-custom-dataset
 ```
 
 ### All --model choices
 
-| Flag       | Model            | Params  |
-|------------|------------------|---------|
-| `nano_e`   | LAST-E nano      | 92K     |
-| `small_e`  | LAST-E small     | 178K    |
-| `base_e`   | LAST-E base      | 364K    |
-| `large_e`  | LAST-E large     | 644K    |
-| `small`    | LAST-v2 small    | ~4.8M   |
-| `base`     | LAST-v2 base     | ~9.2M   |
-| `large`    | LAST-v2 large    | ~14M    |
+| Flag | Model | Params |
+|------|-------|--------|
+| `nano_e_v3` | LAST-E v3 nano | 83K |
+| `small_e_v3` | LAST-E v3 small | 345K |
+| `base_e_v3` | LAST-E v3 base | 720K |
+| `large_e_v3` | LAST-E v3 large | 1.08M |
+| `base` | LAST-v2 base | ~9.2M |
 
 ---
 
@@ -107,18 +165,12 @@ python scripts/train.py --model base --dataset ntu60 --env lambda --amp --batch_
 **File:** `src/training/trainer.py`
 
 Key features:
-- **Two-level NaN guard**:
-  1. Pre-forward input check — if any MIB stream contains non-finite values, skip the batch
-     entirely (BN running stats are never touched by garbage data)
-  2. Post-forward loss check — if loss is NaN/Inf, reset all BN running stats to neutral
-     (mean=0, var=1) and skip the backward + optimizer step
-- **AMP GradScaler** — automatically skips optimizer step when gradients overflow; independent
-  layer of protection on top of the explicit NaN checks
-- **GPU-side metric accumulation** — loss and accuracy accumulated as tensors on GPU;
-  `.item()` called once at epoch end to avoid repeated PCIe syncs
-- **Gradient accumulation** — configurable via `gradient_accumulation_steps` (default=1)
-- **Banner** — displays `type(self.model).__name__` at training start (not hardcoded string)
-- **Checkpoint save** — saves model state, optimizer, scheduler, scaler, epoch, best_acc to `.pth`
+- **Two-level NaN guard**: pre-forward input check + post-forward loss check with BN reset
+- **AMP GradScaler** — automatically skips step on gradient overflow
+- **GPU-side metric accumulation** — `.item()` called once at epoch end
+- **Gradient accumulation** — configurable via `gradient_accumulation_steps`
+- **Checkpoint save** — model, optimizer, scheduler, scaler, epoch, best_acc to `.pth`
+- **Three scheduler options** — `cosine_warmup`, `cosine_warmup_restart` (SGDR), `multistep_warmup`
 
 ---
 
@@ -130,29 +182,24 @@ Environment auto-detection:
 - `--env` flag provided → use that environment
 - `/kaggle` exists in filesystem → uses `configs/environment/kaggle.yaml`
 - Otherwise → uses `configs/environment/local.yaml`
-- Lambda requires explicit `--env lambda`
 
-Hardware settings (num_workers, pin_memory, prefetch_factor) in environment YAMLs are
-automatically applied to the DataLoader — no CLI flags needed for these.
-
-Model name mapping:
-```
-base_e   → configs/model/last_e_base.yaml
-small_e  → configs/model/last_e_small.yaml
-large_e  → configs/model/last_e_large.yaml
-nano_e   → configs/model/last_e_nano.yaml
-base     → configs/model/last_base.yaml
-...
+CLI overrides via `--set KEY=VALUE` (dot-notation, auto-cast):
+```bash
+--set training.lr=0.1           # → float 0.1
+--set model.use_st_att=false,false,true  # → [False, False, True]
+--set training.nesterov=true    # → bool True
 ```
 
 ---
 
-## Training Sequence
+## Training Pipeline
 
-| Step | Model          | Environment | Status   | Target                      |
-|------|----------------|-------------|----------|-----------------------------|
-| 1    | LAST-v2 base   | Lambda A10  | running  | Establish teacher accuracy  |
-| 2    | LAST-E base    | Lambda A10  | pending  | Standalone student baseline |
-| 3    | LAST-E (all 4) | Lambda A10  | pending  | Full variant sweep          |
-| 4    | Distillation   | Lambda A10  | planned  | +2–4% over standalone       |
-| 5    | NTU120         | Lambda A10  | planned  | Generalisation benchmark    |
+| Step | Model | Phase | Environment | Status |
+|------|-------|-------|-------------|--------|
+| 1 | LAST-E v3 base | A+B+D (regularization + ablation + SGDR) | Kaggle T4 | **Running** |
+| 2 | LAST-E v3 base | Evaluate convergence | Kaggle T4 | Pending |
+| 3 | LAST-E v3 all variants | Full variant sweep | Kaggle T4 | Pending |
+| 4 | LAST-v2 base | Teacher training | Kaggle T4 | Pending |
+| 5 | LAST-E v3 → LAST-Lite | Knowledge distillation | Kaggle T4 | Planned |
+| 6 | LAST-Lite | MaskCLR pretraining (if gap exists) | Kaggle T4 | Planned |
+| 7 | LAST-Lite | INT8 quantization + edge deployment | Local | Planned |

@@ -75,7 +75,7 @@ def main():
         print(f"[2] Model Created: {model.count_parameters():,} params (v2)")
 
     # ── 3. Transforms ────────────────────────────────────────────────────
-    # Update config to disable normalization for MIB (already done in preprocess_v2)
+    # Update config to disable normalization for MIB (already done in preprocess_data.py)
     if config['data']['dataset']['data_type'] == 'mib':
         config['data']['dataset']['preprocessing']['normalize'] = False
         

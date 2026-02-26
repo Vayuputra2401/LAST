@@ -7,9 +7,9 @@ in human-computer interaction, surveillance, sports analysis, and healthcare mon
 video, skeleton data is compact, viewpoint-invariant, and robust to illumination and background noise.
 
 The key challenge is the **efficiency vs. accuracy tension**: high-accuracy GCN models (CTR-GCN,
-InfoGCN, HD-GCN) require 3–10M parameters and are impractical on edge hardware. Lightweight models
-(EfficientGCN B0) sacrifice significant accuracy. There is no existing work that achieves both
-sub-150K parameter count *and* competitive accuracy.
+InfoGCN, HD-GCN) require 1.5–10M parameters and are impractical on edge hardware. Lightweight models
+(EfficientGCN-B0) sacrifice significant accuracy. There is no existing work that achieves both
+sub-1M parameter count *and* competitive accuracy with rich novel architectural contributions.
 
 ---
 
@@ -36,15 +36,31 @@ single backbone.
    attention, and LinearAttention for temporal modeling. Designed for maximum accuracy as the
    teacher in knowledge distillation.
 
-2. **LAST-E (Student) family** — Four extreme-efficiency variants (nano/small/base/large) spanning
-   92K–644K parameters. Every variant beats EfficientGCN at its corresponding parameter tier.
-   Key innovations:
+2. **LAST-E v3 (Student) family** — Four efficiency variants (nano/small/base/large) spanning
+   83K–1.08M parameters. Built on EfficientGCN-derived SpatialGCN with full-graph D⁻½AD⁻½
+   normalization and multi-subset partitioning. Key innovations:
    - **StreamFusion**: per-channel (3, C₀) softmax-weighted blend replaces 3× backbone cost
-   - **DirectionalGCNConv**: K=3 directed subsets with per-channel alpha weights, no subset sum
-   - **MultiScaleTCN**: dual-dilation (1+2) parallel branches, saves C²/2 pointwise params/block
+   - **SpatialGCN**: full-graph degree-normalized, multi-hop K=5 subset partitioning (N1 fix)
+   - **EpSepTCN**: MobileNetV2-style inverted-bottleneck separable temporal convolution
+   - **MotionGate / HybridGate**: temporal-difference channel gating (novel — no prior work)
+   - **ST_JointAtt**: factorized spatial-temporal attention with zero-init residual gate
+   - **Gated GAP+GMP head**: learnable per-channel blend of average and max pooling
+   - **DropPath**: stochastic depth regularization with linear ramp
 
-3. **Knowledge Distillation pipeline** — LAST-v2 → LAST-E KD using soft logits (KL + CE loss),
-   transferring accuracy from the 9.2M teacher to sub-1M students. Expected +2–4% top-1 gain.
+3. **LAST-Lite (Edge) family** — Two fixed-computation variants (nano_lite/small_lite) designed
+   for edge deployment. Same graph structure as LAST-E v3 but with all adaptive modules removed
+   (no MotionGate, ST_JointAtt, subset_att, learnable edge). Pure convolution, trivially
+   quantizable. Target: ~60K–180K params, INT8 deployable at <5ms on Jetson Nano.
+
+4. **Novel architectural ideas** for future research:
+   - **Frequency-Aware Temporal Gate (FATG)**: DCT-domain per-channel frequency attention
+   - **Action-Prototype Graph (APG)**: class-conditioned topology via prototype blending
+   - **Progressive Cross-Scale Re-fusion (PCRF)**: stream re-injection at different backbone depths
+   - **Hierarchical Body-Region Attention (HBRA)**: anatomical partition → 4× cheaper attention
+   - **Causal + Bidirectional Training (CBTF)**: 50% causal masking for predictive representations
+
+5. **Training pipeline** — Knowledge distillation (LAST-E v3 → LAST-Lite), optional MaskCLR
+   self-supervised pretraining, INT8 quantization, and ONNX/TensorRT edge deployment.
 
 ---
 
@@ -60,10 +76,10 @@ single backbone.
 
 | Section | File | Content |
 |---------|------|---------|
-| 02 | [Related Work](02_Related_Work.md) | SOTA comparison, what we borrow |
-| 03 | [Architecture](03_Architecture.md) | LAST-v2 + LAST-E detailed design |
+| 02 | [Related Work](02_Related_Work.md) | SOTA comparison, generational landscape |
+| 03 | [Architecture](03_Architecture.md) | LAST-v2 + LAST-E v3 + LAST-Lite design |
 | 04 | [Data Pipeline](04_Data_Pipeline.md) | MIB streams, NTU60/120, preprocessing |
-| 05 | [Training](05_Training.md) | Optimizer, scheduler, commands |
-| 06 | [Distillation](06_Distillation.md) | KD plan and hyperparameters |
-| 07 | [Experiments](07_Experiments.md) | Param counts, results (fills in over time) |
+| 05 | [Training](05_Training.md) | Optimizer, schedulers, SGDR, commands |
+| 06 | [Distillation](06_Distillation.md) | KD + MaskCLR pretraining plan |
+| 07 | [Experiments](07_Experiments.md) | Param counts, results, ablation plan |
 | 08 | [Environment Setup](08_Environment_Setup.md) | Local / Kaggle / GCP setup |

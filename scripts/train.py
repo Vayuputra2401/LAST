@@ -2,8 +2,8 @@
 LAST Training Script
 
 Usage:
-    python scripts/train.py --model base --dataset ntu60
-    python scripts/train.py --model small --dataset ntu60 --epochs 5 --batch_size 8
+    python scripts/train.py --model base_e_v3 --dataset ntu60
+    python scripts/train.py --model small_e_v3 --dataset ntu60 --epochs 5 --batch_size 8
     python scripts/train.py --model base --dataset ntu60 --resume E:\\LAST-runs\\run-...\\checkpoints\\best_model.pth
 """
 
@@ -262,31 +262,8 @@ def main():
         config['training']['ib_loss_weight'] = config.get('model', {}).get(
             'ib_loss_weight', config['training'].get('ib_loss_weight', 0.01)
         )
-    elif args.model.endswith('_e_v2'):
-        variant = args.model.replace('_e_v2', '')
-        print(f"\n  Creating LAST-E v2 model (Variant: {variant})...")
-        from src.models.last_e_v2 import LAST_E_v2
-        model = LAST_E_v2(
-            num_classes=num_classes,
-            variant=variant,
-            dropout=config['model'].get('dropout', 0.3),
-            use_freq_gate=config['model'].get('use_freq_gate', True),
-            num_groups=config['model'].get('num_groups', 4),
-            drop_path_rate=config['model'].get('drop_path_rate'),
-        )
-    elif args.model.endswith('_e'):
-        variant = args.model.replace('_e', '')
-        print(f"\n  Creating LAST-E model (Variant: {variant})...")
-        from src.models.last_e import LAST_E
-        model = LAST_E(
-            num_classes=num_classes,
-            variant=variant,
-            dropout=config['model'].get('dropout', 0.3),
-        )
     else:
-        print(f"\n  Creating LAST v2 model (Variant: {args.model})...")
-        from src.models.last_v2 import LAST_v2
-        model = LAST_v2(num_classes=num_classes, variant=args.model)
+        raise ValueError(f"Unsupported model variant: {args.model}")
     
     print(f"  Model created: {sum(p.numel() for p in model.parameters()):,} parameters")
     
@@ -302,18 +279,15 @@ def main():
         # FLOPs counter might need adjustment or just test with one stream x 3?
         # Let's mock a single stream for FLOPs first or update count_flops
         # For simplicity, we just use one stream shape to check backbone size * 3? 
-        # Actually LAST v2 shares backbone. But inference runs backbone 3 times.
+        # ActuallyLAST-E v3 shares backbone. But inference runs backbone 3 times.
         # So FLOPs = 3 * Backbone + Head.
         # We'll rely on the simple FLOPs estimator handling a standard input, 
-        # ensuring the model can handle a single tensor if passed (LAST_v2 supports both).
+        # ensuring the model can handle a single tensor if passed.
         input_shape = (3, input_frames, num_joints, 2)
     else:
         input_shape = (3, input_frames, num_joints, 2)
     
-    # FIX (Bug High): For V2 models, _forward_single_stream now handles 4D
-    # inputs via unsqueeze, so a standard 4D input_shape works correctly.
-    # count_flops wraps the model forward pass; V2 will internally add M=1.
-    print(f"  Measuring FLOPs on input {input_shape} (M=1 inferred by V2 forward)...")
+    print(f"  Measuring FLOPs on input {input_shape}...")
     model_stats = count_flops(model, input_shape, device)
     
     print(f"  Parameters:  {model_stats['total_params']:,}")
@@ -343,7 +317,6 @@ def main():
     
     # IMPORTANT: Preprocessed .npy files are ALREADY normalized by preprocess_data.py
     # (center_spine + scale_by_torso). Applying Normalize again would double-normalize.
-    # For 'mib', preprocess_v2.py also normalizes.
     merged_transform_config['dataset']['preprocessing']['normalize'] = False
     
     train_transform = get_train_transform(merged_transform_config)

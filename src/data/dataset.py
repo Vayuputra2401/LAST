@@ -114,7 +114,6 @@ class SkeletonDataset(Dataset):
         # Load data (memory-mapped for efficiency)
         self.data = np.load(data_file, mmap_mode='r')
         
-        # Load labels - handle both formats:
         # Format 1 (our preprocess_data.py): plain list [0, 1, 2, ...]
         # Format 2 (CTR-GCN/standard):      tuple (sample_names, labels)
         with open(label_file, 'rb') as f:

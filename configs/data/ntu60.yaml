@@ -30,7 +30,7 @@ dataset:
   split_type: "xsub"  # 'xsub' (cross-subject) or 'xview' (cross-view)
   
   # Preprocessing & Normalization
-  # NOTE: normalize is set to false for MIB data_type because preprocess_v2.py
+  # NOTE: normalize is set to false for MIB data_type because preprocess_data.py
   # already applies spine-centering, front-rotation, and mean-torso scaling offline.
   # Applying Normalize again here would double-normalize pre-normalized streams.
   preprocessing:
