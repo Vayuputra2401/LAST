@@ -450,12 +450,6 @@ class MIBTransform:
         """
         # ---- Sample shared random parameters ONCE ----
         if self.is_training:
-            # Determine temporal length from first stream
-            first = next(iter(streams.values()))
-            T = first.shape[1]
-            crop_start = int(np.random.randint(0, max(1, T - self.target_frames + 1))) \
-                if T > self.target_frames else 0
-
             angle  = float(np.random.uniform(self.rotation_range[0], self.rotation_range[1]))
             scale  = float(np.random.uniform(self.scale_range[0], self.scale_range[1]))
             shear  = float(np.random.uniform(self.shear_range[0], self.shear_range[1]))
@@ -465,7 +459,6 @@ class MIBTransform:
         out = {}
         for name, x in streams.items():
             if self.is_training:
-                x = self._apply_temporal_crop(x, crop_start, self.target_frames)
                 x = self._apply_rotation(x, angle)
                 x = self._apply_scale(x, scale)
                 x = self._apply_shear(x, shear)
@@ -476,9 +469,9 @@ class MIBTransform:
                 stream_noise_std = self.noise_std.get(name, 0.01)
                 if stream_noise_std > 0:
                     x = x + torch.randn_like(x) * stream_noise_std
-            else:
-                # Validation: deterministic center crop only, no augmentation
-                x = self._apply_center_crop(x, self.target_frames)
+            
+            # Subsampling/padding is already done precisely in preprocess_data.py
+            # So no crop needed here during validation or training.
             out[name] = x
         return out
 
@@ -570,7 +563,7 @@ def get_train_transform(config: dict):
             scale_by_torso=preproc.get('scale_by_torso', True)
         ))
 
-    transforms.append(TemporalCrop(target_frames=input_frames))
+    # Note: TemporalCrop removed as data is already subsampled precisely to target frames.
 
     if aug.get('enabled', True):
         transforms.extend([

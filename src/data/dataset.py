@@ -102,12 +102,23 @@ class SkeletonDataset(Dataset):
     
     def _load_npy_files(self):
         """Load preprocessed .npy files."""
-        # Expected structure: data_path/xsub/train_data.npy, train_label.pkl
+        # Expected structure: data_path/xsub/train_joint.npy, train_label.pkl
+        # We allow specifying the stream via split_config or defaulting to 'joint'
+        stream_name = 'joint'
+        if self._split_config and 'stream' in self._split_config:
+            stream_name = self._split_config['stream']
+            
         import pickle
         
-        data_file = os.path.join(self.data_path, self.split_type, f'{self.split}_data.npy')
+        data_file = os.path.join(self.data_path, self.split_type, f'{self.split}_{stream_name}.npy')
         label_file = os.path.join(self.data_path, self.split_type, f'{self.split}_label.pkl')
         
+        if not os.path.exists(data_file):
+            # Try without subfolder
+            data_file = os.path.join(self.data_path, f'{self.split}_{stream_name}.npy')
+        if not os.path.exists(label_file):
+            label_file = os.path.join(self.data_path, f'{self.split}_label.pkl')
+            
         if not os.path.exists(data_file):
             raise FileNotFoundError(f"Data file not found: {data_file}")
         
