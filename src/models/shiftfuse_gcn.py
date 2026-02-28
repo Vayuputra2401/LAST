@@ -1,37 +1,41 @@
 """
-ShiftFuse-GCN (LAST-Lite): Fixed-Compute Edge Architecture.
+ShiftFuse-GCN (LAST-Lite): Lightweight Skeleton Action Recognition.
 
 Architecture summary
 --------------------
-  3 Streams (joint, velocity, bone): each (B, 3, T, V)
+  4 Streams (joint, velocity, bone, bone_velocity): each (B, 3, T, V)
         |
-  StreamFusionConcat — per-stream BN + Concat(9ch) + Conv1×1 → C₀
+  StreamFusionConcat — per-stream BN + Concat(12ch) + Conv1×1 → C₀
         |
-  Stage 1: [ShiftFuseBlock × num_blocks₁]  stride=1
+  Stage 1: [ShiftFuseBlock × num_blocks₁]  stride=1  → StaticGCN (shared)
         |
-  Stage 2: [ShiftFuseBlock × num_blocks₂]  stride=2 on first block
+  Stage 2: [ShiftFuseBlock × num_blocks₂]  stride=2  → StaticGCN (shared)
         |
-  Stage 3: [ShiftFuseBlock × num_blocks₃]  stride=2 on first block
+  Stage 3: [ShiftFuseBlock × num_blocks₃]  stride=2  → StaticGCN (shared)
         |
   Gated GAP+GMP Pool → BN1d → Dropout → FC(C₃ → num_classes)
 
 ShiftFuseBlock (per block)
 --------------------------
-  BodyRegionShift  (Idea F — 0 params, spatial permutation by anatomy)
+  BodyRegionShift   (Idea F — 0 params, anatomical channel permutation)
   Conv2d(C,C,1×1) + BN + Hardswish  (pointwise channel mixing)
-  JointEmbedding   (additive per-joint semantic bias)
-  FrozenDCTGate    (Idea G — learnable frequency mask, C×T params)
-  EpSepTCN         (depthwise-sep temporal conv, reused from EfficientGCN)
+  JointEmbedding    (additive per-joint semantic bias, V×C params)
+  FrozenDCTGate     (Idea G — learnable frequency mask, C×T params)
+  EpSepTCN          (depthwise-sep temporal conv, reused from EfficientGCN)
   FrameDynamicsGate (learnable per-frame temporal gate, C×T params)
-  Residual         (Conv1×1+BN if channel/stride mismatch, else Identity)
+  Outer residual    (Conv1×1+BN if channel/stride mismatch, else Identity)
+  StaticGCN         (shared across stage — C² + 2C + 625 params per stage)
+
+StaticGCN (one per stage, shared weight)
+-----------------------------------------
+  x_agg = Σ_k A_k @ x  +  A_learned_norm @ x   (static + trainable graph)
+  out   = x + BN(Conv1×1(x_agg))                (projection + residual)
 
 Novel contributions
 -------------------
-  BRASP (Idea F): First anatomically-partitioned channel shift for skeleton AR.
-  FDCR  (Idea G): First fixed-compute frequency-domain channel specialisation.
-
-All modules are fixed-compute (no per-sample adaptation), making this
-architecture fully INT8-quantisable for edge deployment.
+  BRASP (Idea F): Anatomically-partitioned channel shift, 0 params.
+  FDCR  (Idea G): Fixed-compute frequency-domain channel specialisation.
+  StaticGCN: Stage-shared graph conv with learnable topology correction.
 """
 
 import torch
@@ -44,6 +48,7 @@ from .blocks.joint_embedding import JointEmbedding
 from .blocks.frame_dynamics_gate import FrameDynamicsGate
 from .blocks.ep_sep_tcn import EpSepTCN
 from .blocks.stream_fusion_concat import StreamFusionConcat
+from .blocks.static_gcn import StaticGCN
 from .graph import Graph, normalize_symdigraph_full
 
 
@@ -87,7 +92,11 @@ class ShiftFuseBlock(nn.Module):
 
     Pipeline:
         BodyRegionShift → Conv1×1+BN+Hardswish → JointEmbedding
-        → FrozenDCTGate → EpSepTCN → FrameDynamicsGate → Residual
+        → FrozenDCTGate → EpSepTCN → FrameDynamicsGate
+        → Outer residual → StaticGCN (shared, optional)
+
+    StaticGCN is passed in by LAST_Lite — one instance shared across all
+    blocks in the same stage, so graph weights are not duplicated.
 
     Args:
         in_channels:      Input channels.
@@ -100,6 +109,7 @@ class ShiftFuseBlock(nn.Module):
         use_dct_gate:     Include FrozenDCTGate (default True).
         use_joint_embed:  Include JointEmbedding (default True).
         use_frame_gate:   Include FrameDynamicsGate (default True).
+        gcn:              Optional StaticGCN (shared reference from LAST_Lite).
     """
 
     def __init__(
@@ -114,6 +124,7 @@ class ShiftFuseBlock(nn.Module):
         use_dct_gate: bool = True,
         use_joint_embed: bool = True,
         use_frame_gate: bool = True,
+        gcn: nn.Module = None,
     ):
         super().__init__()
 
@@ -143,13 +154,12 @@ class ShiftFuseBlock(nn.Module):
             expand_ratio=expand_ratio,
         )
 
-        # 6. Frame dynamics gate
-        # T_out = T // stride after EpSepTCN
+        # 6. Frame dynamics gate  (T_out = T // stride after EpSepTCN)
         T_out = T // stride
         self.frame_gate = FrameDynamicsGate(out_channels, T_out) if use_frame_gate \
             else nn.Identity()
 
-        # 7. Residual connection
+        # 7. Outer residual connection
         if in_channels != out_channels or stride != 1:
             self.residual = nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, 1,
@@ -158,6 +168,11 @@ class ShiftFuseBlock(nn.Module):
             )
         else:
             self.residual = nn.Identity()
+
+        # 8. Shared StaticGCN — stored as plain attribute (not registered as
+        #    a submodule) so that LAST_Lite owns and registers it once per stage.
+        #    Using object.__setattr__ prevents nn.Module from re-registering it.
+        object.__setattr__(self, 'gcn', gcn)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -175,7 +190,12 @@ class ShiftFuseBlock(nn.Module):
         out = self.tcn(out)
         out = self.frame_gate(out)
 
-        return res + out
+        out = res + out                    # block outer residual
+
+        if self.gcn is not None:
+            out = self.gcn(out)            # spatial refinement (StaticGCN has own residual)
+
+        return out
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +248,7 @@ class LAST_Lite(nn.Module):
         _dropout = dropout if dropout is not None else cfg['dropout']
 
         self.variant = variant
-        self.stream_names = ['joint', 'velocity', 'bone']
+        self.stream_names = ['joint', 'velocity', 'bone', 'bone_velocity']
 
         # ── 1. Graph adjacency ───────────────────────────────────────────
         # Build K-subset adjacency (same convention as LAST-E v3).
@@ -255,20 +275,32 @@ class LAST_Lite(nn.Module):
         self.fusion = StreamFusionConcat(
             in_channels=in_channels,
             out_channels=stem_ch,
-            num_streams=3,
+            num_streams=4,
         )
 
         # ── 3. Build stages ──────────────────────────────────────────────
-        # Track T after each stride-2 stage so gate params are sized correctly.
-        self.stages = nn.ModuleList()
+        # One StaticGCN per stage, shared by all blocks within that stage.
+        # Registered in self.stage_gcns so optimizer / state_dict sees them.
+        self.stages     = nn.ModuleList()
+        self.stage_gcns = nn.ModuleList()   # index matches stage index
         prev_ch = stem_ch
         T_cur   = T
 
         for stage_idx in range(len(channels)):
+            stage_ch = channels[stage_idx]
+
+            # Create the shared GCN for this stage (operates at stage_ch)
+            stage_gcn = StaticGCN(
+                channels=stage_ch,
+                A=A,                  # (K, V, V) normalised adjacency
+                num_joints=num_joints,
+            )
+            self.stage_gcns.append(stage_gcn)
+
             stage_blocks = nn.ModuleList()
             for blk_idx in range(num_blocks[stage_idx]):
-                blk_in  = prev_ch if blk_idx == 0 else channels[stage_idx]
-                blk_out = channels[stage_idx]
+                blk_in     = prev_ch  if blk_idx == 0 else stage_ch
+                blk_out    = stage_ch
                 blk_stride = strides[stage_idx] if blk_idx == 0 else 1
 
                 stage_blocks.append(ShiftFuseBlock(
@@ -282,14 +314,15 @@ class LAST_Lite(nn.Module):
                     use_dct_gate=use_dct_gate,
                     use_joint_embed=use_joint_embed,
                     use_frame_gate=use_frame_gate,
+                    gcn=stage_gcn,    # shared reference — not re-registered
                 ))
 
-                # Update T after potential stride
+                # Update T after the first (stride) block
                 if blk_idx == 0:
                     T_cur = T_cur // blk_stride
 
             self.stages.append(stage_blocks)
-            prev_ch = channels[stage_idx]
+            prev_ch = stage_ch
 
         # ── 4. Head: Gated GAP+GMP + classifier ─────────────────────────
         last_ch = channels[-1]
@@ -321,9 +354,9 @@ class LAST_Lite(nn.Module):
     def forward(self, x):
         """
         Args:
-            x: Dict {'joint': Tensor, 'velocity': Tensor, 'bone': Tensor}
-               Each shape: (B, C, T, V) or (B, C, T, V, M).
-               OR a single Tensor (B, C, T, V) or (B, C, T, V, M).
+            x: Dict with keys 'joint', 'velocity', 'bone', 'bone_velocity'
+               Each value shape: (B, C, T, V) or (B, C, T, V, M).
+               OR a single Tensor (B, C, T, V) — used for all 4 streams.
         Returns:
             logits: (B, num_classes)
         """
@@ -336,12 +369,13 @@ class LAST_Lite(nn.Module):
                     if s.dim() == 5:
                         s = s[..., 0]       # take primary body (M=0)
                     streams.append(s)
-            while len(streams) < 3:
+            # Pad with zeros if some streams are missing (e.g. 3-stream dicts)
+            while len(streams) < 4:
                 streams.append(torch.zeros_like(streams[0]))
         else:
             if x.dim() == 5:
                 x = x[..., 0]
-            streams = [x, x, x]
+            streams = [x, x, x, x]
 
         # ── Fuse streams → (B, stem_ch, T, V) ───────────────────────────
         out = self.fusion(streams)

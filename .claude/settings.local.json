@@ -24,7 +24,8 @@
       "WebFetch(domain:openaccess.thecvf.com)",
       "Bash(\"C:\\\\Users\\\\pathi\\\\envs\\\\ai_research\\\\Scripts\\\\python\" tests/test_shiftfuse.py)",
       "Bash(\"C:\\\\Users\\\\pathi\\\\envs\\\\ai_research\\\\Scripts\\\\python\" -c \":*)",
-      "Bash(\"C:\\\\Users\\\\pathi\\\\envs\\\\ai_research\\\\Scripts\\\\python\" tests/check_preprocessed_data.py)"
+      "Bash(\"C:\\\\Users\\\\pathi\\\\envs\\\\ai_research\\\\Scripts\\\\python\" tests/check_preprocessed_data.py)",
+      "Bash(\"C:\\\\Users\\\\pathi\\\\envs\\\\ai_research\\\\Scripts\\\\python\" -m pytest tests/test_shiftfuse.py -v)"
     ],
     "deny": [],
     "ask": []
