@@ -30,7 +30,11 @@ kaggle:
   time_limit_hours: 9
 
 # ── Notebook Setup (run this cell before training) ──
-# ── Notebook Setup (run this cell before training) ──
-# !mkdir -p /tmp/LAST-60-v2/data/processed_v2
-# !ln -s /kaggle/input/datasets/pathikreet/last-research-preprocessed-v2/xsub /tmp/LAST-60-v2/data/processed_v2/xsub
+# train.py builds:  data_base/LAST-60/data/processed/{split_type}/
+# So symlink the kaggle dataset xsub folder to match that structure:
+#
+# !mkdir -p /tmp/LAST-60/data/processed
+# !ln -sf /kaggle/input/datasets/pathikreet/last-research-preprocessed-v2/xsub \
+#          /tmp/LAST-60/data/processed/xsub
+# !ls /tmp/LAST-60/data/processed/xsub   # verify: should list train_joint.npy etc.
 

@@ -55,7 +55,7 @@ class SkeletonDataset(Dataset):
         self._split_config = split_config
         
         # MIB Support
-        # If 'mib', we load 3 streams: joint, velocity, bone
+        # If 'mib', we load 4 streams: joint, velocity, bone, bone_velocity
         self.streams = None
         
         # Initialize parser
@@ -179,16 +179,16 @@ class SkeletonDataset(Dataset):
         self.samples = list(range(len(self.labels)))
 
     def _load_mib_files(self):
-        """Load 3-stream .npy files."""
-        # Expected: split_joint.npy, split_velocity.npy, split_bone.npy
+        """Load 4-stream .npy files."""
+        # Expected: split_joint.npy, split_velocity.npy, split_bone.npy, split_bone_velocity.npy
         import pickle
-        
+
         # Folder for v2 processed data
         # data_path/xsub/
         # Check if folder exists, if not maybe it's in data_path directly
-        
+
         self.streams = {}
-        stream_names = ['joint', 'velocity', 'bone']
+        stream_names = ['joint', 'velocity', 'bone', 'bone_velocity']
         
         # Load Labels first (from joint stream logic usually or shared label file)
         label_file = os.path.join(self.data_path, self.split_type, f'{self.split}_label.pkl')
