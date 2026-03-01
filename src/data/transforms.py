@@ -293,6 +293,49 @@ class RandomTemporalFlip:
         return f"{self.__class__.__name__}(p={self.p})"
 
 
+class RandomTemporalSpeed:
+    """
+    Random temporal speed augmentation — applied identically across MIB streams.
+
+    Simulates a faster action by selecting a random contiguous window of
+    T_sub = int(T × r) frames (r ∈ speed_range), then repeat-padding the
+    last frame back to T. Only r < 1 is effective; r ≥ 1 is a no-op since
+    pre-subsampled data cannot produce extra frames.
+
+    Must be used inside MIBTransform (shared params across streams).
+    """
+
+    def __init__(self, speed_range: tuple = (0.8, 1.2), p: float = 1.0):
+        self.speed_range = speed_range
+        self.p = p
+
+    def sample_params(self, T: int):
+        """
+        Sample (T_sub, start_idx) for a random crop.
+        Returns (T, 0) when augmentation is skipped (no-op).
+        """
+        if np.random.random() >= self.p:
+            return T, 0
+        r = float(np.random.uniform(self.speed_range[0], self.speed_range[1]))
+        r = min(r, 1.0)  # r > 1 → no extra frames → identity
+        T_sub = max(1, int(T * r))
+        start = np.random.randint(0, T - T_sub + 1) if T_sub < T else 0
+        return T_sub, start
+
+    @staticmethod
+    def apply(x: torch.Tensor, T_sub: int, start: int) -> torch.Tensor:
+        """Crop x[:, start:start+T_sub] and repeat-pad back to original T."""
+        T = x.shape[1]
+        if T_sub >= T:
+            return x
+        x_crop = x[:, start:start + T_sub]                          # (C, T_sub, V, M)
+        pad    = x_crop[:, -1:].expand(-1, T - T_sub, -1, -1)      # repeat last frame
+        return torch.cat([x_crop, pad], dim=1)
+
+    def __repr__(self) -> str:
+        return f"RandomTemporalSpeed(speed_range={self.speed_range}, p={self.p})"
+
+
 class MIBTransform:
     """
     Geometrically consistent augmentation for Multi-Input Branch (MIB) data.
@@ -336,7 +379,7 @@ class MIBTransform:
     #   joint  std ≈ 0.15 → 0.01 / 0.15 ≈ 6.7%
     #   velocity std ≈ 0.02 → 0.002 / 0.02 ≈ 10%
     #   bone   std ≈ 0.12 → 0.005 / 0.12 ≈ 4.2%
-    DEFAULT_NOISE_STD = {'joint': 0.01, 'velocity': 0.002, 'bone': 0.005}
+    DEFAULT_NOISE_STD = {'joint': 0.01, 'velocity': 0.002, 'bone': 0.005, 'bone_velocity': 0.005}
 
     def __init__(
         self,
@@ -346,6 +389,8 @@ class MIBTransform:
         shear_range: tuple = (-0.1, 0.1),
         noise_std = 0.01,
         temporal_flip_p: float = 0.0,
+        temporal_speed_p: float = 0.0,
+        temporal_speed_range: tuple = (0.8, 1.2),
         is_training: bool = True,
     ):
         self.target_frames = target_frames
@@ -359,9 +404,13 @@ class MIBTransform:
             # Legacy scalar → uniform across all streams
             self.noise_std = {'joint': float(noise_std),
                               'velocity': float(noise_std),
-                              'bone': float(noise_std)}
+                              'bone': float(noise_std),
+                              'bone_velocity': float(noise_std)}
         self.temporal_flip_p = temporal_flip_p
+        self.temporal_speed_p = temporal_speed_p
+        self.temporal_speed_range = tuple(temporal_speed_range)
         self.is_training = is_training
+        self._speed_aug = RandomTemporalSpeed(temporal_speed_range, p=temporal_speed_p)
 
     # ------------------------------------------------------------------
     # Helpers that accept pre-sampled scalars so we can reuse parameters
@@ -450,10 +499,14 @@ class MIBTransform:
         """
         # ---- Sample shared random parameters ONCE ----
         if self.is_training:
-            angle  = float(np.random.uniform(self.rotation_range[0], self.rotation_range[1]))
-            scale  = float(np.random.uniform(self.scale_range[0], self.scale_range[1]))
-            shear  = float(np.random.uniform(self.shear_range[0], self.shear_range[1]))
+            angle   = float(np.random.uniform(self.rotation_range[0], self.rotation_range[1]))
+            scale   = float(np.random.uniform(self.scale_range[0], self.scale_range[1]))
+            shear   = float(np.random.uniform(self.shear_range[0], self.shear_range[1]))
             do_flip = np.random.random() < self.temporal_flip_p
+            # Temporal speed: sample crop params once for all streams
+            _T_ref  = next(iter(streams.values())).shape[1]
+            speed_T_sub, speed_start = self._speed_aug.sample_params(_T_ref)
+            do_speed = speed_T_sub < _T_ref
 
         # ---- Apply identical geometric transforms to every stream ----
         out = {}
@@ -464,12 +517,14 @@ class MIBTransform:
                 x = self._apply_shear(x, shear)
                 if do_flip:
                     x = self._apply_flip(x)
+                if do_speed:
+                    x = RandomTemporalSpeed.apply(x, speed_T_sub, speed_start)
                 # Independent per-stream noise, scaled per-stream to maintain
                 # consistent SNR (~6-8%) across joint/velocity/bone.
                 stream_noise_std = self.noise_std.get(name, 0.01)
                 if stream_noise_std > 0:
                     x = x + torch.randn_like(x) * stream_noise_std
-            
+
             # Subsampling/padding is already done precisely in preprocess_data.py
             # So no crop needed here during validation or training.
             out[name] = x
@@ -481,7 +536,8 @@ class MIBTransform:
             f"MIBTransform(target_frames={self.target_frames}, "
             f"rotation={self.rotation_range}, scale={self.scale_range}, "
             f"shear={self.shear_range}, noise_std={{{noise_repr}}}, "
-            f"flip_p={self.temporal_flip_p}, training={self.is_training})"
+            f"flip_p={self.temporal_flip_p}, speed_p={self.temporal_speed_p}, "
+            f"speed_range={self.temporal_speed_range}, training={self.is_training})"
         )
 
 
@@ -516,13 +572,16 @@ def get_train_transform(config: dict):
                 noise_joint = aug.get('noise_std_joint', None)
                 noise_vel   = aug.get('noise_std_velocity', None)
                 noise_bone  = aug.get('noise_std_bone', None)
+                noise_bv = aug.get('noise_std_bone_velocity', None)
                 if any(v is not None for v in (noise_joint, noise_vel, noise_bone)):
                     # At least one per-stream override → build dict,
                     # falling back to the global noise_std for unspecified streams
                     noise_std = {
-                        'joint':    noise_joint if noise_joint is not None else raw_noise,
-                        'velocity': noise_vel   if noise_vel   is not None else raw_noise,
-                        'bone':     noise_bone  if noise_bone  is not None else raw_noise,
+                        'joint':         noise_joint if noise_joint is not None else raw_noise,
+                        'velocity':      noise_vel   if noise_vel   is not None else raw_noise,
+                        'bone':          noise_bone  if noise_bone  is not None else raw_noise,
+                        'bone_velocity': noise_bv    if noise_bv    is not None else
+                                         (noise_bone if noise_bone is not None else raw_noise),
                     }
                 else:
                     # Pure scalar → use defaults calibrated for ~6-8% SNR
@@ -537,6 +596,8 @@ def get_train_transform(config: dict):
                 shear_range=tuple(aug.get('shear_range', (-0.1, 0.1))),
                 noise_std=noise_std,
                 temporal_flip_p=aug.get('temporal_flip_p', 0.0),
+                temporal_speed_p=aug.get('temporal_speed_p', 0.0),
+                temporal_speed_range=tuple(aug.get('temporal_speed_range', (0.8, 1.2))),
                 is_training=True,
             )
         else:

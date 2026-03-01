@@ -78,7 +78,7 @@ MODEL_VARIANTS_SHIFTFUSE = {
         'use_dct_gate':    True,
         'use_joint_embed': True,
         'use_frame_gate':  True,
-        'dropout':         0.15,
+        'dropout':         0.3,
     },
 }
 

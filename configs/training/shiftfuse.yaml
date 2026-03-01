@@ -16,24 +16,24 @@ training:
   lr: 0.1
   momentum: 0.9
   nesterov: true
-  weight_decay: 0.0004
+  weight_decay: 0.001
 
   # Scheduler (MultiStep mirrors EfficientGCN exactly)
   scheduler: multistep_warmup
   warmup_epochs: 5
   warmup_start_lr: 0.01
-  milestones: [60, 90]   # drops at 50% and 75% of 120 epochs — EfficientGCN standard
+  milestones: [60, 80]   # drops at ~67% and ~89% of 90 epochs — avoids third-phase overfitting
   gamma: 0.1
   min_lr: 0.0001         # floor for cosine_warmup (unused by multistep_warmup)
 
   # Duration
-  epochs: 120
+  epochs: 90
   batch_size: 64
   gradient_accumulation_steps: 1
 
   # Regularization
-  # EfficientGCN-B0 uses 0.0 — match for fair comparison at this model scale
-  label_smoothing: 0.0
+  # 0.1 reduces overconfident predictions (observed train 96.9% vs val 80.77% gap)
+  label_smoothing: 0.1
   # ShiftFuse has no adaptive/dynamic modules — BN keeps grads bounded without clip
   gradient_clip: 5.0
 

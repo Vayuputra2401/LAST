@@ -42,8 +42,8 @@ dataset:
   # Data augmentation (for training only)
   augmentation:
     enabled: true  # Will enable after baseline works
-    rotation_range: [-15, 15]   # degrees
-    scale_range: [0.9, 1.1]
+    rotation_range: [-30, 30]   # degrees — wider for xsub cross-subject viewpoint variation
+    scale_range: [0.85, 1.15]  # wider to reduce scale overfitting
     shear_range: [-0.1, 0.1]
     # Per-stream noise std, calibrated for ~6-10% SNR on normalized data.
     # Joint position std ≈ 0.15 → 0.01/0.15 = 6.7% SNR
@@ -53,6 +53,8 @@ dataset:
     noise_std_joint: 0.01       # Joint position noise
     noise_std_velocity: 0.002   # Velocity noise (5× less than joint)
     noise_std_bone: 0.005       # Bone vector noise (2× less than joint)
+    temporal_speed_p: 1.0          # random temporal speed augmentation (speed invariance)
+    temporal_speed_range: [0.8, 1.2]  # subsample at 0.8-1.2× speed, then pad/trim to T
     temporal_flip_p: 0.0  # Disabled: NTU60 actions are strongly directional
                           # (stand-up ≠ sit-down, drink ≠ un-drink). p=0.5 mislabels
                           # ~45/60 classes under temporal reversal → caps train acc at ~52%.

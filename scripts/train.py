@@ -100,6 +100,70 @@ def count_flops(model, input_shape, device):
     }
 
 
+def _run_checkpoint_averaging(model, val_loader, run_dir, n_checkpoints, device):
+    """
+    Average the last N epoch checkpoints and evaluate on val_loader.
+    Prints the averaged checkpoint top-1/top-5 accuracy.
+    """
+    import glob as _glob
+    checkpoint_dir = os.path.join(run_dir, 'checkpoints')
+    # Find epoch checkpoints (exclude best_model.pth and final_model.pth)
+    ckpt_paths = sorted(
+        _glob.glob(os.path.join(checkpoint_dir, 'checkpoint_ep*.pth')),
+        key=lambda p: int(os.path.basename(p).replace('checkpoint_ep', '').replace('.pth', ''))
+    )
+    if len(ckpt_paths) == 0:
+        print('\n[avg_checkpoints] No epoch checkpoints found — skipping.')
+        return
+    selected = ckpt_paths[-n_checkpoints:]
+    print(f'\n[avg_checkpoints] Averaging {len(selected)} checkpoints:')
+    for p in selected:
+        print(f'  {os.path.basename(p)}')
+
+    # Load and average state dicts
+    avg_state = None
+    for path in selected:
+        ckpt = torch.load(path, map_location=device)
+        sd   = ckpt['model_state_dict']
+        if avg_state is None:
+            avg_state = {k: v.clone().float() for k, v in sd.items()}
+        else:
+            for k in avg_state:
+                avg_state[k] += sd[k].float()
+    for k in avg_state:
+        avg_state[k] /= len(selected)
+        avg_state[k] = avg_state[k].to(next(iter(torch.load(selected[0], map_location=device)['model_state_dict'].values())).dtype)
+
+    model.load_state_dict(avg_state)
+    model.eval()
+
+    # Evaluate
+    correct1 = correct5 = total = 0
+    with torch.no_grad():
+        for batch in val_loader:
+            if isinstance(batch, dict):
+                labels = batch.pop('label')
+                inputs = {k: v.to(device) for k, v in batch.items()}
+            else:
+                inputs, labels = batch
+                inputs = inputs.to(device)
+            labels = labels.to(device)
+            out = model(inputs)
+            _, pred_top5 = out.topk(5, dim=1)
+            correct1 += pred_top5[:, 0].eq(labels).sum().item()
+            correct5 += pred_top5.eq(labels.unsqueeze(1).expand_as(pred_top5)).any(dim=1).sum().item()
+            total    += labels.size(0)
+
+    top1 = 100.0 * correct1 / total
+    top5 = 100.0 * correct5 / total
+    print(f'[avg_checkpoints] Averaged model — Val Top-1: {top1:.2f}%  Top-5: {top5:.2f}%')
+
+    # Save averaged checkpoint
+    avg_path = os.path.join(checkpoint_dir, f'averaged_last{len(selected)}.pth')
+    torch.save({'model_state_dict': avg_state, 'val_top1': top1}, avg_path)
+    print(f'[avg_checkpoints] Saved to {avg_path}')
+
+
 def main():
     parser = argparse.ArgumentParser(description='Train LAST model')
     parser.add_argument('--model', type=str, default='base',
@@ -138,6 +202,9 @@ def main():
     parser.add_argument('--set', nargs='*', metavar='KEY=VALUE', default=None,
                        help='Override any config key via dot-notation: '
                             '--set training.lr=0.1 training.epochs=90 model.dropout=0.5')
+    parser.add_argument('--avg_checkpoints', type=int, default=0, metavar='N',
+                       help='After training, average the last N epoch checkpoints '
+                            'and evaluate on val set (0 = disabled)')
     args = parser.parse_args()
 
     # ── 1. Load & merge config ──────────────────────────────────────────
@@ -459,6 +526,12 @@ def main():
     
     # Start training
     trainer.train(train_loader, val_loader)
+
+    # ── Checkpoint averaging (optional) ─────────────────────────────────
+    if args.avg_checkpoints > 0:
+        _run_checkpoint_averaging(
+            model, val_loader, run_dir, args.avg_checkpoints, device
+        )
 
 
 if __name__ == '__main__':

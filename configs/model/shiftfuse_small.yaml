@@ -18,4 +18,4 @@ model:
   use_dct_gate: true
   use_joint_embed: true
   use_frame_gate: true
-  dropout: 0.15
+  dropout: 0.3
