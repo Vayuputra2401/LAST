@@ -150,6 +150,8 @@ class Trainer:
                 or 'freq_mask' in name      # FrozenDCTGate learnable frequency mask (LAST-Lite)
                 or 'gate_logit' in name     # FrameDynamicsGate temporal position gate (LAST-Lite)
                 or 'joint_embed' in name    # JointEmbedding semantic table (LAST-Lite)
+                or 'sym_weight' in name     # BSE bilateral symmetry weights (LAST-Lite)
+                or 'sym_vel_weight' in name # BSE bilateral velocity weights (LAST-Lite)
                 or 'edge' in name            # SpatialGCN edge importance (v3)
                 or 'stream_weights' in name  # StreamFusion blend logits (v2/v3)
             ):

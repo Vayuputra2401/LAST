@@ -1,10 +1,9 @@
 # Training config for ShiftFuse-GCN (LAST-Lite)
 #
-# Calibrated to match EfficientGCN-B0 training conditions for fair comparison:
-#   - 120 epochs  (EfficientGCN: 120)
-#   - MultiStep milestones [60, 90]  (EfficientGCN: [60, 90])
-#   - No label smoothing  (EfficientGCN: 0.0)
-#   - Relaxed gradient clip  (EfficientGCN: none; ShiftFuse has no adaptive modules)
+# Round 3 — corrected regularization after nano (79.75%) beat small (78.84%):
+#   - 120 epochs, milestones [60, 90]
+#   - Label smoothing 0.05 (was 0.1 — too aggressive)
+#   - Weight decay 0.0005 (was 0.001 — over-regularized small)
 #   - 5-epoch warmup for gate stability
 #
 # All values can be overridden at the command line:
@@ -16,24 +15,24 @@ training:
   lr: 0.1
   momentum: 0.9
   nesterov: true
-  weight_decay: 0.001
+  weight_decay: 0.0005
 
   # Scheduler (MultiStep mirrors EfficientGCN exactly)
   scheduler: multistep_warmup
   warmup_epochs: 5
   warmup_start_lr: 0.01
-  milestones: [60, 80]   # drops at ~67% and ~89% of 90 epochs — avoids third-phase overfitting
+  milestones: [60, 90]   # drops at 50% and 75% of 120 epochs
   gamma: 0.1
   min_lr: 0.0001         # floor for cosine_warmup (unused by multistep_warmup)
 
   # Duration
-  epochs: 90
+  epochs: 120
   batch_size: 64
   gradient_accumulation_steps: 1
 
   # Regularization
-  # 0.1 reduces overconfident predictions (observed train 96.9% vs val 80.77% gap)
-  label_smoothing: 0.1
+  # 0.05 balances regularization without strangling small model's extra capacity
+  label_smoothing: 0.05
   # ShiftFuse has no adaptive/dynamic modules — BN keeps grads bounded without clip
   gradient_clip: 5.0
 

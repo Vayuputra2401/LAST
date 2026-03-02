@@ -20,6 +20,7 @@ ShiftFuseBlock (per block)
   BodyRegionShift   (Idea F — 0 params, anatomical channel permutation)
   Conv2d(C,C,1×1) + BN + Hardswish  (pointwise channel mixing)
   JointEmbedding    (additive per-joint semantic bias, V×C params)
+  BSE               (Bilateral Symmetry Encoding — 2C+1 params, L-R symmetry)
   FrozenDCTGate     (Idea G — learnable frequency mask, C×T params)
   EpSepTCN          (depthwise-sep temporal conv, reused from EfficientGCN)
   FrameDynamicsGate (learnable per-frame temporal gate, C×T params)
@@ -34,6 +35,7 @@ StaticGCN (one per stage, shared weight)
 Novel contributions
 -------------------
   BRASP (Idea F): Anatomically-partitioned channel shift, 0 params.
+  BSE:  Bilateral symmetry encoding — L-R joint diff + dynamics, 2C+1 params.
   FDCR  (Idea G): Fixed-compute frequency-domain channel specialisation.
   StaticGCN: Stage-shared graph conv with learnable topology correction.
 """
@@ -46,6 +48,7 @@ from .blocks.body_region_shift import BodyRegionShift
 from .blocks.frozen_dct_gate import FrozenDCTGate
 from .blocks.joint_embedding import JointEmbedding
 from .blocks.frame_dynamics_gate import FrameDynamicsGate
+from .blocks.bilateral_symmetry import BilateralSymmetryEncoding
 from .blocks.ep_sep_tcn import EpSepTCN
 from .blocks.stream_fusion_concat import StreamFusionConcat
 from .blocks.static_gcn import StaticGCN
@@ -66,6 +69,7 @@ MODEL_VARIANTS_SHIFTFUSE = {
         'use_dct_gate':    True,
         'use_joint_embed': True,
         'use_frame_gate':  True,
+        'use_bilateral':   True,
         'dropout':         0.1,
     },
     'small': {
@@ -78,7 +82,8 @@ MODEL_VARIANTS_SHIFTFUSE = {
         'use_dct_gate':    True,
         'use_joint_embed': True,
         'use_frame_gate':  True,
-        'dropout':         0.3,
+        'use_bilateral':   True,
+        'dropout':         0.2,
     },
 }
 
@@ -109,6 +114,7 @@ class ShiftFuseBlock(nn.Module):
         use_dct_gate:     Include FrozenDCTGate (default True).
         use_joint_embed:  Include JointEmbedding (default True).
         use_frame_gate:   Include FrameDynamicsGate (default True).
+        use_bilateral:    Include BilateralSymmetryEncoding (default True).
         gcn:              Optional StaticGCN (shared reference from LAST_Lite).
     """
 
@@ -124,6 +130,7 @@ class ShiftFuseBlock(nn.Module):
         use_dct_gate: bool = True,
         use_joint_embed: bool = True,
         use_frame_gate: bool = True,
+        use_bilateral: bool = True,
         gcn: nn.Module = None,
     ):
         super().__init__()
@@ -140,6 +147,10 @@ class ShiftFuseBlock(nn.Module):
 
         # 3. Joint semantic embedding
         self.joint_embed = JointEmbedding(out_channels, num_joints) if use_joint_embed \
+            else nn.Identity()
+
+        # 3b. Bilateral Symmetry Encoding (BSE — novel)
+        self.bilateral = BilateralSymmetryEncoding(out_channels) if use_bilateral \
             else nn.Identity()
 
         # 4. Frozen DCT frequency gate (Idea G)
@@ -186,6 +197,7 @@ class ShiftFuseBlock(nn.Module):
         out = self.shift(x)
         out = self.pw_conv(out)
         out = self.joint_embed(out)
+        out = self.bilateral(out)
         out = self.dct_gate(out)
         out = self.tcn(out)
         out = self.frame_gate(out)
@@ -245,6 +257,7 @@ class LAST_Lite(nn.Module):
         use_dct_gate    = cfg['use_dct_gate']
         use_joint_embed = cfg['use_joint_embed']
         use_frame_gate  = cfg['use_frame_gate']
+        use_bilateral   = cfg.get('use_bilateral', True)
         _dropout = dropout if dropout is not None else cfg['dropout']
 
         self.variant = variant
@@ -314,6 +327,7 @@ class LAST_Lite(nn.Module):
                     use_dct_gate=use_dct_gate,
                     use_joint_embed=use_joint_embed,
                     use_frame_gate=use_frame_gate,
+                    use_bilateral=use_bilateral,
                     gcn=stage_gcn,    # shared reference — not re-registered
                 ))
 

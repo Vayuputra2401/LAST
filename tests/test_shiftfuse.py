@@ -36,6 +36,7 @@ from src.models.blocks.body_region_shift import BodyRegionShift
 from src.models.blocks.frozen_dct_gate import FrozenDCTGate
 from src.models.blocks.joint_embedding import JointEmbedding
 from src.models.blocks.frame_dynamics_gate import FrameDynamicsGate
+from src.models.blocks.bilateral_symmetry import BilateralSymmetryEncoding
 from src.models.blocks.static_gcn import StaticGCN
 from src.models.graph import Graph, normalize_symdigraph_full
 
@@ -199,6 +200,53 @@ class TestFrameDynamicsGate:
         assert n == C_test * T_test, f"Expected {C_test * T_test}, got {n}"
 
 
+class TestBilateralSymmetryEncoding:
+    def test_output_shape(self):
+        bse = BilateralSymmetryEncoding(channels=48)
+        x = torch.randn(B, 48, T, V)
+        out = bse(x)
+        assert out.shape == x.shape, f"Expected {x.shape}, got {out.shape}"
+
+    def test_param_count(self):
+        C_test = 48
+        bse = BilateralSymmetryEncoding(channels=C_test)
+        n = sum(p.numel() for p in bse.parameters())
+        expected = 2 * C_test + 1  # sym_weight + sym_vel_weight + gate
+        assert n == expected, f"Expected {expected}, got {n}"
+
+    def test_near_identity_at_init(self):
+        bse = BilateralSymmetryEncoding(channels=16)
+        x = torch.randn(B, 16, T, V)
+        out = bse(x)
+        # gate=sigmoid(-2)≈0.12 and weights=0 → mod≈0 → out≈x
+        assert torch.allclose(out, x, atol=1e-6), "BSE should be near-identity at init"
+
+    def test_antisymmetric_injection(self):
+        bse = BilateralSymmetryEncoding(channels=8)
+        # Set non-zero weights to test antisymmetry
+        with torch.no_grad():
+            bse.sym_weight.fill_(1.0)
+            bse.gate.fill_(10.0)  # sigmoid(10)≈1
+        x = torch.randn(1, 8, 16, V)
+        out = bse(x)
+        # Check: modification to left joints = -modification to right joints
+        left_mod = out[:, :, :, bse.LEFT_JOINTS] - x[:, :, :, bse.LEFT_JOINTS]
+        right_mod = out[:, :, :, bse.RIGHT_JOINTS] - x[:, :, :, bse.RIGHT_JOINTS]
+        assert torch.allclose(left_mod, -right_mod, atol=1e-5), \
+            "BSE should inject antisymmetrically"
+
+    def test_torso_unchanged(self):
+        bse = BilateralSymmetryEncoding(channels=8)
+        with torch.no_grad():
+            bse.sym_weight.fill_(1.0)
+            bse.gate.fill_(10.0)
+        x = torch.randn(1, 8, 16, V)
+        out = bse(x)
+        torso = [0, 1, 2, 3, 20]
+        assert torch.allclose(out[:, :, :, torso], x[:, :, :, torso]), \
+            "BSE should not modify torso/midline joints"
+
+
 # ---------------------------------------------------------------------------
 # Full model tests
 # ---------------------------------------------------------------------------
@@ -246,13 +294,13 @@ class TestLASTLite:
     def test_nano_param_budget(self):
         model = create_shiftfuse_nano(NUM_CLASSES)
         n = model.count_parameters()
-        # +StaticGCN (Option C + A_learned): expected ~79,943
-        assert n < 80_000, f"nano should be < 80K params, got {n:,}"
+        # +BSE (~291 params): expected ~80,234
+        assert n < 81_000, f"nano should be < 81K params, got {n:,}"
 
     def test_small_param_budget(self):
         model = create_shiftfuse_small(NUM_CLASSES)
         n = model.count_parameters()
-        # +StaticGCN (Option C + A_learned): expected ~246,775
+        # +BSE (~773 params): expected ~247,548
         assert n < 250_000, f"small should be < 250K params, got {n:,}"
 
     def test_no_nan_output(self):
@@ -303,12 +351,14 @@ if __name__ == '__main__':
     shift = BodyRegionShift(C_ex, A_flat)
     dct_g = FrozenDCTGate(C_ex, T_ex)
     je    = JointEmbedding(C_ex, V_ex)
+    bse   = BilateralSymmetryEncoding(C_ex)
     fg    = FrameDynamicsGate(C_ex, T_ex)
     sgcn  = StaticGCN(C_ex, A_sym, V_ex)
 
     print(f'  BodyRegionShift   : {sum(p.numel() for p in shift.parameters()):>8,}  (expected 0)')
     print(f'  FrozenDCTGate     : {sum(p.numel() for p in dct_g.parameters()):>8,}  (expected {C_ex*T_ex})')
     print(f'  JointEmbedding    : {sum(p.numel() for p in je.parameters()):>8,}  (expected {V_ex*C_ex})')
+    print(f'  BSE               : {sum(p.numel() for p in bse.parameters()):>8,}  (expected {2*C_ex+1})')
     print(f'  FrameDynamicsGate : {sum(p.numel() for p in fg.parameters()):>8,}  (expected {C_ex*T_ex})')
     print(f'  StaticGCN (C=48)  : {sum(p.numel() for p in sgcn.parameters()):>8,}  (expected {C_ex*C_ex + 2*C_ex + V_ex*V_ex})')
     print()

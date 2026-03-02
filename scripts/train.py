@@ -141,11 +141,17 @@ def _run_checkpoint_averaging(model, val_loader, run_dir, n_checkpoints, device)
     correct1 = correct5 = total = 0
     with torch.no_grad():
         for batch in val_loader:
-            if isinstance(batch, dict):
-                labels = batch.pop('label')
-                inputs = {k: v.to(device) for k, v in batch.items()}
-            else:
+            if isinstance(batch, (list, tuple)):
                 inputs, labels = batch
+            elif isinstance(batch, dict):
+                labels = batch.pop('label')
+                inputs = batch
+            else:
+                raise ValueError(f"Unexpected batch type: {type(batch)}")
+            # Move to device — inputs may be a dict of tensors or a single tensor
+            if isinstance(inputs, dict):
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+            else:
                 inputs = inputs.to(device)
             labels = labels.to(device)
             out = model(inputs)
