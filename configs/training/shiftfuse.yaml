@@ -1,13 +1,15 @@
 # Training config for ShiftFuse-GCN (LAST-Lite)
 #
-# Round 3 — corrected regularization after nano (79.75%) beat small (78.84%):
-#   - 120 epochs, milestones [60, 90]
-#   - Label smoothing 0.05 (was 0.1 — too aggressive)
-#   - Weight decay 0.0005 (was 0.001 — over-regularized small)
-#   - 5-epoch warmup for gate stability
+# Round 4 — plateau breaker: CTRLightGCN + DropPath + Mixup/CutMix + cosine schedule
+#   Previous (Round 3): multistep_warmup, LS=0.05, no augmentation → 81% wall
+#   Changes:
+#     - cosine_warmup replaces multistep (smoother decay, no sharp re-memorization)
+#     - label_smoothing 0.1 (was 0.05)
+#     - mixup_alpha 0.2 + cutmix_prob 0.5 (first augmentation for LAST-Lite)
+#     - DropPath + block_dropout now in model config (no trainer change needed)
 #
 # All values can be overridden at the command line:
-#   --epochs 90 --milestones 50,65 --set training.label_smoothing=0.05
+#   --epochs 120 --set training.label_smoothing=0.05
 
 training:
   # Optimizer
@@ -17,13 +19,11 @@ training:
   nesterov: true
   weight_decay: 0.0005
 
-  # Scheduler (MultiStep mirrors EfficientGCN exactly)
-  scheduler: multistep_warmup
+  # Scheduler — cosine warmup for smooth decay (replaces multistep)
+  scheduler: cosine_warmup
   warmup_epochs: 5
   warmup_start_lr: 0.01
-  milestones: [60, 90]   # drops at 50% and 75% of 120 epochs
-  gamma: 0.1
-  min_lr: 0.0001         # floor for cosine_warmup (unused by multistep_warmup)
+  min_lr: 0.0001
 
   # Duration
   epochs: 120
@@ -31,10 +31,14 @@ training:
   gradient_accumulation_steps: 1
 
   # Regularization
-  # 0.05 balances regularization without strangling small model's extra capacity
-  label_smoothing: 0.05
-  # ShiftFuse has no adaptive/dynamic modules — BN keeps grads bounded without clip
+  label_smoothing: 0.1        # Round 4: tightened from 0.05
   gradient_clip: 5.0
+
+  # Mixup + Temporal CutMix
+  # Mixed targets are soft float one-hot blends (compatible with label_smoothing)
+  mixup_alpha: 0.2            # Beta(alpha, alpha) lambda; 0.0 = disabled
+  cutmix_prob: 0.5            # prob of CutMix vs Mixup per batch; 0.0 = disabled
+  cutmix_alpha: 1.0           # Beta(alpha, alpha) for CutMix lambda
 
   # Input
   input_frames: 64

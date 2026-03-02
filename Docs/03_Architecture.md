@@ -19,13 +19,13 @@ Input: Dict{'joint': (B,3,T,V,M), 'velocity': ..., 'bone': ..., 'bone_velocity':
   │     Per-stream BN(4) → Concat(4×3=12ch) → Conv1×1(12→C₀) → BN → Hardswish
   │     Output: (B, C₀, T, V)
   │
-  ├── Stage 1: [ShiftFuseBlock × N₁], stride=1  → StaticGCN₁ (shared)
+  ├── Stage 1: [ShiftFuseBlock × N₁], stride=1  → CTRLightGCN₁ (shared)
   │     Output: (B, C₁, T, V)
   │
-  ├── Stage 2: [ShiftFuseBlock × N₂], stride=2  → StaticGCN₂ (shared)
+  ├── Stage 2: [ShiftFuseBlock × N₂], stride=2  → CTRLightGCN₂ (shared)
   │     Output: (B, C₂, T/2, V)
   │
-  ├── Stage 3: [ShiftFuseBlock × N₃], stride=2  → StaticGCN₃ (shared)
+  ├── Stage 3: [ShiftFuseBlock × N₃], stride=2  → CTRLightGCN₃ (shared)
   │     Output: (B, C₃, T/4, V)
   │
   ├── Gated Head
@@ -36,7 +36,7 @@ Input: Dict{'joint': (B,3,T,V,M), 'velocity': ..., 'bone': ..., 'bone_velocity':
 
 ### ShiftFuseBlock — Detailed Pipeline
 
-Each block follows a fixed 8-component pipeline. The block is the fundamental unit of LAST-Lite:
+Each block follows a fixed 9-component pipeline. The block is the fundamental unit of LAST-Lite:
 
 ```
 input (B, C_in, T, V)
@@ -73,39 +73,58 @@ input (B, C_in, T, V)
   │     mask init = -2.0 → σ ≈ 0.12, output ≈ 1.12x (near-identity)
   │     Matmul cast to fp32 to avoid AMP fp16 accumulation error
   │
-  ├── 6. EpSepTCN (from EfficientGCN)
-  │     MobileNetV2-style: Expand(1×1, ratio=2) → DW(k=5) → PW(1×1) + residual
-  │     Params: ~(2C² × expand + C × k × expand + 2C² + BN)
+  ├── 6. EpSepTCN / MultiScaleEpSepTCN (temporal convolution)
+  │
+  │   nano: EpSepTCN (from EfficientGCN)
+  │     MobileNetV2-style: Expand(1×1, r=2) → DW(k=5) → PW(1×1) + residual
   │     Applies temporal stride at this stage
   │
-  ├── 7. FrameDynamicsGate (from SGN)
-  │     gate = σ(frame_embed[t])    (T_out × C_out learnable matrix)
-  │     x = x * gate
-  │     gate_logit init = 2.0 → σ ≈ 0.88 (~12% suppression, not 50%)
-  │     T_out = T // stride (uses OUTPUT temporal length)
+  │   small: MultiScaleEpSepTCN ★ NOVEL (parallel multi-scale branches)
+  │     Channels split into 3 equal groups:
+  │     Branch 0 (C/3): Expand→DW(k=3)→PW — local gestures (3-frame RF)
+  │     Branch 1 (C/3): Expand→DW(k=5)→PW — mid-range motion (5-frame RF)
+  │     Branch 2 (C/3): MaxPool(k=3)  — sharp temporal transitions
+  │     Concat → mix Conv1×1 → residual
+  │     Covers 3 temporal scales simultaneously at same channel cost
   │
-  ├── 8. Outer Residual
-  │     Conv1×1+BN if channel/stride mismatch, else Identity
-  │     out = residual(input) + pipeline_output
+  ├── 7. DropPath (stochastic depth regularization, 0 params)
+  │     Randomly drops entire main branch per sample during training
+  │     Rate increases linearly: 0.0 at block 0 → drop_path_rate at last block
+  │     nano max rate: 0.10   |   small max rate: 0.15
+  │     At inference: identity (no effect on forward pass)
   │
-  └── 9. StaticGCN ★ NOVEL (shared per stage)
-        x_agg = Σ_k A_k @ x  +  A_learned_norm @ x
-        out = x + BN(Conv1×1(x_agg))
+  ├── 8. Outer Residual + Backbone Dropout
+  │     out = residual(input) + drop_path(pipeline_output)
+  │     backbone_dropout(out)   — intermediate feature regularization
+  │     nano: 0.05   |   small: 0.10
+  │
+  └── 9. CTRLightGCN ★ NOVEL (shared per stage)
+        For each group g ∈ {0..G-1}:
+          A_g = A_physical_sum + A_group[g]   (physical + learned per-group correction)
+          h_g = GroupConv_g(A_g @ x_group_g) (group-specific projection)
+        out = x + BN(concat(h_0, ..., h_{G-1}))
         One instance shared across all blocks in the stage
-        Params per stage: C² + 2C + 625
+        nano G=2: Params per stage = C²/2 + 2C + 2×625
+        small G=4: Params per stage = C²/4 + 2C + 4×625
 ```
 
-### StaticGCN — Stage-Shared Graph Convolution
+### CTRLightGCN — Stage-Shared Channel-Group Topology Refinement
 
-**Source:** `src/models/blocks/static_gcn.py`
+**Source:** `src/models/blocks/ctr_light_gcn.py`
 
-StaticGCN performs spatial graph aggregation after the block residual, providing a shared spatial refinement for all blocks in a stage.
+CTRLightGCN performs spatial graph aggregation after the block residual. Unlike a single-matrix GCN, it splits channels into G groups and assigns each group its own learnable adjacency correction — enabling channel-specific spatial topology specialisation.
 
-**Graph adjacency** consists of two components:
-1. **K static subsets** (K=3 for 1-hop, K=5 for 2-hop): Pre-computed from the skeleton graph, normalised with symmetric D^{-1/2}AD^{-1/2}. Registered as a buffer (not trained).
-2. **A_learned** (V×V = 625 params): Trainable topology correction, zero-initialised. At each forward pass, normalised as D^{-1/2}|A_learned|D^{-1/2} (absolute value ensures non-negative edges). Excluded from weight decay.
+**Graph adjacency** per group consists of two components:
+1. **A_physical** (V×V): Sum of all K static subsets, registered as a buffer. Shared across all groups.
+2. **A_group[g]** (V×V = 625 params per group): Per-group learnable topology correction, zero-initialised. Excluded from weight decay (matched by `'A_group'` keyword in trainer).
 
-**Weight sharing**: Creating one StaticGCN per stage and passing it by reference to each block eliminates C² + 2C + 625 parameters per additional block in the stage. For small variant (5 blocks, 3 stages), this saves ~30K parameters.
+**Channel-group spatial specialisation**: Different channel groups can learn different spatial attention patterns. For example, group 0 might strengthen centripetal (parent→child) connections for arm joints, while group 3 focuses on cross-body coordination between arm and leg joints.
+
+**Weight sharing**: Creating one CTRLightGCN per stage and passing it by reference to each block eliminates params per additional block in the stage.
+
+**Parameter efficiency**: At large channel widths, CTRLightGCN with G=4 is *cheaper* than StaticGCN because group convolutions scale as C²/G instead of C²:
+- C=96, StaticGCN: 96²+2×96+625 = **10,033** params
+- C=96, CTRLightGCN G=4: (24²×4)+2×96+4×625 = **4,996** params (2× cheaper!)
 
 ### Novel Component Details
 
@@ -187,43 +206,48 @@ The DCT basis is computed once from `scipy.fft.dct(eye(T), type=2, norm='ortho')
 | strides | [1, 2, 2] | [1, 2, 2] |
 | expand_ratio | 2 | 2 |
 | max_hop (K subsets) | 1 (K=3) | 2 (K=5) |
-| dropout | 0.1 | 0.2 |
-| **Total params** | **80,234** | **247,548** |
+| temporal conv | EpSepTCN(k=5) | MultiScaleEpSepTCN(k=3/5/MaxPool) |
+| CTRLightGCN groups G | 2 | 4 |
+| drop_path_rate (max) | 0.10 | 0.15 |
+| block_dropout | 0.05 | 0.10 |
+| head dropout | 0.15 | 0.30 |
+| **Total params** | **73,789** | **162,181** |
 
-### Parameter Budget Breakdown (small variant)
+### Parameter Budget Breakdown (small variant, Round 4)
 
 ```
-StreamFusionConcat:                           ~2.0K
+StreamFusionConcat:                              ~2.0K
   4 × BN2d(3) + Conv2d(12→32, 1) + BN(32)
 
 Stage 1 (1 block, C=48):
-  BRASP:              0
-  Conv2d(32→48) + BN: 1,632
-  JointEmbed:         25 × 48 = 1,200
-  BSE:                2 × 48 + 1 = 97
-  FrozenDCTGate:      48 × 64 = 3,072
-  EpSepTCN:           ~9,700
-  FrameDynGate:       64 × 48 + 48 = 3,120
-  Residual(32→48):    32 × 48 + 96 = 1,632
-  StaticGCN₁:         48² + 96 + 625 = 3,025
-  Subtotal:           ~23.5K
+  BRASP:                  0
+  Conv2d(32→48) + BN:     1,632
+  JointEmbed:             25 × 48 = 1,200
+  BSE:                    2 × 48 + 1 = 97
+  FrozenDCTGate:          48 × 64 = 3,072
+  MultiScaleEpSepTCN:     ~4,100   (3 branches, C/3=16 each)
+  DropPath:               0
+  Residual(32→48):        32 × 48 + 96 = 1,632
+  block_dropout:          0
+  CTRLightGCN₁ (G=4):    576 + 96 + 2,500 = 3,172
+  Subtotal:               ~15.0K
 
 Stage 2 (2 blocks, C=72):
-  Block 1 (48→72, stride=2): ~38K
-  Block 2 (72→72, stride=1): ~34K
-  StaticGCN₂ (shared):       72² + 144 + 625 = 5,953
-  Subtotal:                   ~78K
+  Block 1 (48→72, stride=2): ~15.5K
+  Block 2 (72→72, stride=1): ~13.5K
+  CTRLightGCN₂ (shared):    1,296 + 144 + 2,500 = 3,940
+  Subtotal:                  ~33K
 
 Stage 3 (2 blocks, C=96):
-  Block 1 (72→96, stride=2): ~55K
-  Block 2 (96→96, stride=1): ~50K
-  StaticGCN₃ (shared):       96² + 192 + 625 = 10,033
-  Subtotal:                   ~115K
+  Block 1 (72→96, stride=2): ~21K
+  Block 2 (96→96, stride=1): ~19K
+  CTRLightGCN₃ (shared):     2,304 + 192 + 2,500 = 4,996
+  Subtotal:                   ~45K
 
 Gated Head:
-  pool_gate(96) + BN1d(96) + FC(96→60): ~6.1K
+  pool_gate(96) + BN1d(96) + FC(96→60):          ~6.1K
 
-TOTAL:                                     ~247.5K
+TOTAL (confirmed):                                162,181
 ```
 
 ### Shape Trace (small variant, B=2, T=64, V=25)
@@ -231,9 +255,9 @@ TOTAL:                                     ~247.5K
 ```
 Input:       4 × (2, 3, 64, 25)
 Fusion:      (2, 32, 64, 25)
-Stage 1:     (2, 48, 64, 25)  →  StaticGCN₁  →  (2, 48, 64, 25)
-Stage 2:     (2, 72, 32, 25)  →  StaticGCN₂  →  (2, 72, 32, 25)
-Stage 3:     (2, 96, 16, 25)  →  StaticGCN₃  →  (2, 96, 16, 25)
+Stage 1:     (2, 48, 64, 25)  →  CTRLightGCN₁  →  (2, 48, 64, 25)
+Stage 2:     (2, 72, 32, 25)  →  CTRLightGCN₂  →  (2, 72, 32, 25)
+Stage 3:     (2, 96, 16, 25)  →  CTRLightGCN₃  →  (2, 96, 16, 25)
 Pool:        (2, 96)
 Logits:      (2, 60)
 ```
@@ -322,11 +346,12 @@ Single stream:  ~4.2M
 |----------|-----------|-----------|
 | Backbone runs | 1 (fused 4-stream input) | 4 (independent per-stream) |
 | Stream interaction | Early fusion (StreamFusionConcat) | None (late ensemble) |
-| GCN style | StaticGCN (fixed + A_learned) | CrossTemporalPrototypeGCN (adaptive) |
+| GCN style | CTRLightGCN (G-group topology refinement) | CrossTemporalPrototypeGCN (adaptive) |
 | Spatial processing | BRASP (zero-param shift) | Body-region attention |
-| Temporal processing | EpSepTCN + FDCR (fixed-compute) | Partitioned attention + FreqTemporalGate |
+| Temporal processing | EpSepTCN/MultiScaleTCN + FDCR | Partitioned attention + FreqTemporalGate |
 | Symmetry modelling | BSE (explicit bilateral encoding) | Implicit via attention |
 | Per-sample adaptive ops | **0** | Many (attention, dynamic graph, prototype blend) |
+| Regularization | DropPath + Mixup/CutMix + block dropout | DropPath |
 | Quantisable (INT8) | Yes | No |
-| Parameters | 80K--248K | ~4.2M per stream |
+| Parameters | **74K–162K** | ~4.2M per stream |
 | Use case | Edge deployment, real-time | Research, teacher for KD |

@@ -152,6 +152,7 @@ class Trainer:
                 or 'joint_embed' in name    # JointEmbedding semantic table (LAST-Lite)
                 or 'sym_weight' in name     # BSE bilateral symmetry weights (LAST-Lite)
                 or 'sym_vel_weight' in name # BSE bilateral velocity weights (LAST-Lite)
+                or 'A_group' in name        # CTRLightGCN per-group adjacency corrections
                 or 'edge' in name            # SpatialGCN edge importance
                 or 'stream_weights' in name  # StreamFusion blend logits
             ):
@@ -286,6 +287,16 @@ class Trainer:
         # ── Gradient Clipping ───────────────────────────────────────────────
         self.grad_clip = self.train_cfg['gradient_clip']
 
+        # ── Mixup / Temporal CutMix ─────────────────────────────────────────
+        # Applied per-batch during training; validation is always clean.
+        # mixup_alpha > 0   : enables Mixup (Beta(alpha, alpha) lambda)
+        # cutmix_prob > 0   : enables Temporal CutMix (cuts a temporal segment)
+        # When both enabled, each batch randomly uses CutMix (p=cutmix_prob)
+        # or Mixup (p=1−cutmix_prob).
+        self.mixup_alpha  = self.train_cfg.get('mixup_alpha', 0.0)
+        self.cutmix_prob  = self.train_cfg.get('cutmix_prob', 0.0)
+        self.cutmix_alpha = self.train_cfg.get('cutmix_alpha', 1.0)
+
         # ── State Tracking ──────────────────────────────────────────────────
         self.best_val_acc  = 0.0
         self.start_epoch   = 0
@@ -367,6 +378,50 @@ class Trainer:
                       f"batch {batch_idx} — skipping")
                 continue
 
+            # ── Mixup / Temporal CutMix ───────────────────────────────────
+            # Produces soft targets (float one-hot blend) so label smoothing
+            # in the criterion acts on top of the mixup interpolation.
+            mixed_target = None   # None = use original integer labels
+            use_mixup = self.mixup_alpha > 0.0 or self.cutmix_prob > 0.0
+            if use_mixup:
+                perm = torch.randperm(B, device=self.device)
+                use_cutmix = (self.cutmix_prob > 0.0
+                              and np.random.rand() < self.cutmix_prob)
+                if use_cutmix:
+                    # Temporal CutMix: swap a random time segment [t1:t2]
+                    lam = np.random.beta(self.cutmix_alpha, self.cutmix_alpha)
+                    # Get T from first available stream
+                    if isinstance(batch_data, dict):
+                        _sample = next(iter(batch_data.values()))
+                    else:
+                        _sample = batch_data
+                    T = _sample.shape[2]
+                    cut_len  = max(1, int(T * (1.0 - lam)))
+                    t_start  = np.random.randint(0, max(1, T - cut_len + 1))
+                    t_end    = t_start + cut_len
+                    lam_real = 1.0 - cut_len / T
+                    if isinstance(batch_data, dict):
+                        for k in batch_data:
+                            batch_data[k][:, :, t_start:t_end, :] = \
+                                batch_data[k][perm, :, t_start:t_end, :]
+                    else:
+                        batch_data[:, :, t_start:t_end, :] = \
+                            batch_data[perm, :, t_start:t_end, :]
+                else:
+                    # Mixup: linear blend of entire sample
+                    lam_real = np.random.beta(self.mixup_alpha, self.mixup_alpha)
+                    if isinstance(batch_data, dict):
+                        for k in batch_data:
+                            batch_data[k] = (lam_real * batch_data[k]
+                                             + (1.0 - lam_real) * batch_data[k][perm])
+                    else:
+                        batch_data = (lam_real * batch_data
+                                      + (1.0 - lam_real) * batch_data[perm])
+                # Build soft float target: lam·y_a + (1-lam)·y_b
+                y_a = F.one_hot(batch_labels, num_classes=num_classes).float()
+                y_b = F.one_hot(batch_labels[perm], num_classes=num_classes).float()
+                mixed_target = lam_real * y_a + (1.0 - lam_real) * y_b
+
             # ── Snapshot BN running stats before forward ─────────────────
             # If the forward produces NaN (fp16 overflow chain inside network),
             # BN running_mean/var are already contaminated before we detect it.
@@ -377,6 +432,9 @@ class Trainer:
                             for m in _bn_mods]
 
             # ── Forward ──────────────────────────────────────────────────
+            # target: integer labels (clean) or float one-hot blend (mixed)
+            target = mixed_target if mixed_target is not None else batch_labels
+
             if self.use_amp:
                 with torch.amp.autocast('cuda', dtype=self.amp_dtype):
                     raw_out = self.model(batch_data)
@@ -385,7 +443,7 @@ class Trainer:
                         outputs, aux_loss = raw_out
                     else:
                         outputs, aux_loss = raw_out, None
-                    loss = self.criterion(outputs, batch_labels)
+                    loss = self.criterion(outputs, target)
                     if aux_loss is not None:
                         ib_w = self.train_cfg.get('ib_loss_weight', 0.01)
                         loss = loss + ib_w * aux_loss
@@ -395,7 +453,7 @@ class Trainer:
                     outputs, aux_loss = raw_out
                 else:
                     outputs, aux_loss = raw_out, None
-                loss = self.criterion(outputs, batch_labels)
+                loss = self.criterion(outputs, target)
                 if aux_loss is not None:
                     ib_w = self.train_cfg.get('ib_loss_weight', 0.01)
                     loss = loss + ib_w * aux_loss

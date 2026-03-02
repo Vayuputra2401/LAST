@@ -5,12 +5,14 @@ Covers:
   - Forward pass shape: dict input → (B, num_classes)
   - Tensor (non-dict) input handling
   - 5D input handling (B, C, T, V, M) → takes M=0 body
-  - Param count targets: nano < 80K, small < 250K
+  - Param count targets: nano < 81K (~74K actual), small < 250K (~162K actual)
   - BodyRegionShift: zero learnable parameters
   - FrozenDCTGate: dct/idct buffers are not trainable (require_grad=False)
   - JointEmbedding: correct output shape (no-op at zero-init)
   - FrameDynamicsGate: correct output shape
-  - StaticGCN: output shape, param count, near-identity at zero-init
+  - CTRLightGCN: output shape, param count, per-group adjacency parameters
+  - BilateralSymmetryEncoding: antisymmetric injection, torso unchanged
+  - DropPath: stochastic depth (0 params, identity at eval)
   - All individual blocks: input → output shape preserved
   - Dry run: data shape trace through entire model
 """
@@ -38,6 +40,8 @@ from src.models.blocks.joint_embedding import JointEmbedding
 from src.models.blocks.frame_dynamics_gate import FrameDynamicsGate
 from src.models.blocks.bilateral_symmetry import BilateralSymmetryEncoding
 from src.models.blocks.static_gcn import StaticGCN
+from src.models.blocks.ctr_light_gcn import CTRLightGCN
+from src.models.blocks.drop_path import DropPath
 from src.models.graph import Graph, normalize_symdigraph_full
 
 
@@ -178,6 +182,70 @@ class TestStaticGCN:
         assert not gcn.A.requires_grad, "Static A must be a buffer (no grad)"
 
 
+class TestCTRLightGCN:
+    def _make_gcn(self, channels=48, num_groups=4):
+        g = Graph(layout='ntu-rgb+d', strategy='spatial', max_hop=1, raw_partitions=True)
+        A = torch.tensor(normalize_symdigraph_full(g.A), dtype=torch.float32)
+        return CTRLightGCN(channels=channels, A=A, num_joints=V, num_groups=num_groups)
+
+    def test_output_shape(self):
+        gcn = self._make_gcn(48, num_groups=4)
+        x   = torch.randn(B, 48, T, V)
+        out = gcn(x)
+        assert out.shape == x.shape, f"Expected {x.shape}, got {out.shape}"
+
+    def test_param_count(self):
+        C_test, G = 48, 4
+        gcn = self._make_gcn(C_test, G)
+        n   = sum(p.numel() for p in gcn.parameters())
+        # G × (C//G)² conv + 2C BN + G × V² adjacency
+        expected = G * (C_test // G) ** 2 + 2 * C_test + G * V * V
+        assert n == expected, f"Expected {expected}, got {n}"
+
+    def test_A_group_is_parameter(self):
+        gcn = self._make_gcn(48, 4)
+        for i, ag in enumerate(gcn.A_group):
+            assert ag.requires_grad, f"A_group[{i}] must be trainable"
+
+    def test_A_physical_buffer_no_grad(self):
+        gcn = self._make_gcn(48, 4)
+        assert not gcn.A_physical.requires_grad, "A_physical must be a buffer"
+
+    def test_nano_groups(self):
+        gcn = self._make_gcn(32, num_groups=2)
+        x   = torch.randn(B, 32, T, V)
+        out = gcn(x)
+        assert out.shape == x.shape
+
+
+class TestDropPath:
+    def test_output_shape(self):
+        dp  = DropPath(drop_prob=0.1)
+        x   = torch.randn(B, 48, T, V)
+        dp.train()
+        out = dp(x)
+        assert out.shape == x.shape
+
+    def test_zero_params(self):
+        dp = DropPath(0.1)
+        n  = sum(p.numel() for p in dp.parameters())
+        assert n == 0, f"DropPath should have 0 params, got {n}"
+
+    def test_identity_at_eval(self):
+        dp = DropPath(drop_prob=0.99)  # would drop almost everything in train
+        dp.eval()
+        x   = torch.randn(B, 48, T, V)
+        out = dp(x)
+        assert torch.allclose(out, x), "DropPath should be identity at eval"
+
+    def test_identity_when_prob_zero(self):
+        dp = DropPath(drop_prob=0.0)
+        dp.train()
+        x   = torch.randn(B, 48, T, V)
+        out = dp(x)
+        assert torch.allclose(out, x), "DropPath(0.0) should be identity in train too"
+
+
 class TestFrameDynamicsGate:
     def test_output_shape(self):
         gate = FrameDynamicsGate(channels=48, T=T)
@@ -294,13 +362,13 @@ class TestLASTLite:
     def test_nano_param_budget(self):
         model = create_shiftfuse_nano(NUM_CLASSES)
         n = model.count_parameters()
-        # +BSE (~291 params): expected ~80,234
+        # Round 4: CTRLightGCN G=2 + no FrameDynamicsGate → ~73,789
         assert n < 81_000, f"nano should be < 81K params, got {n:,}"
 
     def test_small_param_budget(self):
         model = create_shiftfuse_small(NUM_CLASSES)
         n = model.count_parameters()
-        # +BSE (~773 params): expected ~247,548
+        # Round 4: CTRLightGCN G=4 + MultiScaleEpSepTCN + no FrameDynamicsGate → ~162,181
         assert n < 250_000, f"small should be < 250K params, got {n:,}"
 
     def test_no_nan_output(self):
@@ -335,8 +403,8 @@ if __name__ == '__main__':
     print(SEP)
     nano  = create_shiftfuse_nano(60)
     small = create_shiftfuse_small(60)
-    print(f'  nano  params: {nano.count_parameters():>10,}  (budget < 80,000)')
-    print(f'  small params: {small.count_parameters():>10,}  (budget < 250,000)')
+    print(f'  nano  params: {nano.count_parameters():>10,}  (budget < 81,000, expected ~73,789)')
+    print(f'  small params: {small.count_parameters():>10,}  (budget < 250,000, expected ~162,181)')
     print()
 
     # ── Block-level param breakdown ─────────────────────────────────
@@ -386,7 +454,7 @@ if __name__ == '__main__':
     for si, stage in enumerate(small.stages):
         for bi, blk in enumerate(stage):
             blk.register_forward_hook(make_hook(f'Stage{si+1}_Block{bi+1}'))
-        small.stage_gcns[si].register_forward_hook(make_hook(f'Stage{si+1}_StaticGCN'))
+        small.stage_gcns[si].register_forward_hook(make_hook(f'Stage{si+1}_CTRLightGCN'))
 
     with torch.no_grad():
         logits = small(streams_in)
@@ -397,7 +465,7 @@ if __name__ == '__main__':
             k = f'Stage{si+1}_Block{bi+1}'
             if k in shapes:
                 print(f'  {k:<22}: {shapes[k]}')
-        k2 = f'Stage{si+1}_StaticGCN'
+        k2 = f'Stage{si+1}_CTRLightGCN'
         if k2 in shapes:
             print(f'  {k2:<22}: {shapes[k2]}')
     print(f'  Output (logits)    : {tuple(logits.shape)}')

@@ -7,37 +7,41 @@ Architecture summary
         |
   StreamFusionConcat — per-stream BN + Concat(12ch) + Conv1×1 → C₀
         |
-  Stage 1: [ShiftFuseBlock × num_blocks₁]  stride=1  → StaticGCN (shared)
+  Stage 1: [ShiftFuseBlock × num_blocks₁]  stride=1  → CTRLightGCN (shared)
         |
-  Stage 2: [ShiftFuseBlock × num_blocks₂]  stride=2  → StaticGCN (shared)
+  Stage 2: [ShiftFuseBlock × num_blocks₂]  stride=2  → CTRLightGCN (shared)
         |
-  Stage 3: [ShiftFuseBlock × num_blocks₃]  stride=2  → StaticGCN (shared)
+  Stage 3: [ShiftFuseBlock × num_blocks₃]  stride=2  → CTRLightGCN (shared)
         |
   Gated GAP+GMP Pool → BN1d → Dropout → FC(C₃ → num_classes)
 
 ShiftFuseBlock (per block)
 --------------------------
-  BodyRegionShift   (Idea F — 0 params, anatomical channel permutation)
+  BodyRegionShift   (BRASP — 0 params, anatomical channel permutation)
   Conv2d(C,C,1×1) + BN + Hardswish  (pointwise channel mixing)
   JointEmbedding    (additive per-joint semantic bias, V×C params)
-  BSE               (Bilateral Symmetry Encoding — 2C+1 params, L-R symmetry)
-  FrozenDCTGate     (Idea G — learnable frequency mask, C×T params)
-  EpSepTCN          (depthwise-sep temporal conv, reused from EfficientGCN)
-  FrameDynamicsGate (learnable per-frame temporal gate, C×T params)
+  BSE               (Bilateral Symmetry Encoding — 2C+1 params)
+  FrozenDCTGate     (FDCR — learnable frequency mask, C×T params)
+  EpSepTCN / MultiScaleEpSepTCN  (temporal convolution)
+  DropPath          (stochastic depth, linear rate schedule)
   Outer residual    (Conv1×1+BN if channel/stride mismatch, else Identity)
-  StaticGCN         (shared across stage — C² + 2C + 625 params per stage)
+  Backbone Dropout  (intermediate feature regularization)
+  CTRLightGCN       (shared across stage — channel-group topology refinement)
 
-StaticGCN (one per stage, shared weight)
------------------------------------------
-  x_agg = Σ_k A_k @ x  +  A_learned_norm @ x   (static + trainable graph)
-  out   = x + BN(Conv1×1(x_agg))                (projection + residual)
+CTRLightGCN (one per stage, shared weight)
+------------------------------------------
+  For each group g:
+    A_g = A_physical_sum + A_group[g]
+    h_g = GroupConv_g(A_g @ x_group_g)
+  out = x + BN(concat([h_0, ..., h_{G-1}]))
 
 Novel contributions
 -------------------
-  BRASP (Idea F): Anatomically-partitioned channel shift, 0 params.
-  BSE:  Bilateral symmetry encoding — L-R joint diff + dynamics, 2C+1 params.
-  FDCR  (Idea G): Fixed-compute frequency-domain channel specialisation.
-  StaticGCN: Stage-shared graph conv with learnable topology correction.
+  BRASP:       Anatomically-partitioned channel shift, 0 params.
+  BSE:         Bilateral symmetry encoding — L-R joint diff + dynamics, 2C+1 params.
+  FDCR:        Fixed-compute frequency-domain channel specialisation, C×T params.
+  CTRLightGCN: Stage-shared channel-group topology refinement (G per-group adjacencies).
+  Training:    DropPath + Mixup/CutMix — first application to ultra-compact skeleton GCNs.
 """
 
 import torch
@@ -49,9 +53,10 @@ from .blocks.frozen_dct_gate import FrozenDCTGate
 from .blocks.joint_embedding import JointEmbedding
 from .blocks.frame_dynamics_gate import FrameDynamicsGate
 from .blocks.bilateral_symmetry import BilateralSymmetryEncoding
-from .blocks.ep_sep_tcn import EpSepTCN
+from .blocks.ep_sep_tcn import EpSepTCN, MultiScaleEpSepTCN
 from .blocks.stream_fusion_concat import StreamFusionConcat
-from .blocks.static_gcn import StaticGCN
+from .blocks.ctr_light_gcn import CTRLightGCN
+from .blocks.drop_path import DropPath
 from .graph import Graph, normalize_symdigraph_full
 
 
@@ -60,30 +65,40 @@ from .graph import Graph, normalize_symdigraph_full
 # ---------------------------------------------------------------------------
 MODEL_VARIANTS_SHIFTFUSE = {
     'nano': {
-        'stem_channels': 24,
-        'channels':      [32, 48, 64],
-        'num_blocks':    [1, 1, 1],
-        'strides':       [1, 2, 2],
-        'expand_ratio':  2,
-        'max_hop':       1,
-        'use_dct_gate':    True,
-        'use_joint_embed': True,
-        'use_frame_gate':  True,
-        'use_bilateral':   True,
-        'dropout':         0.1,
+        'stem_channels':      24,
+        'channels':           [32, 48, 64],
+        'num_blocks':         [1, 1, 1],
+        'strides':            [1, 2, 2],
+        'expand_ratio':       2,
+        'max_hop':            1,
+        'use_dct_gate':       True,
+        'use_joint_embed':    True,
+        'use_frame_gate':     False,   # Removed: redundant with FrozenDCTGate
+        'use_bilateral':      True,
+        'use_multiscale_tcn': False,   # EpSepTCN for nano (param budget)
+        'num_tcn_branches':   2,       # unused when use_multiscale_tcn=False
+        'num_gcn_groups':     2,       # CTRLightGCN groups (nano budget)
+        'drop_path_rate':     0.10,    # max stochastic depth rate
+        'block_dropout':      0.05,    # intermediate backbone dropout
+        'dropout':            0.15,    # classifier head dropout
     },
     'small': {
-        'stem_channels': 32,
-        'channels':      [48, 72, 96],
-        'num_blocks':    [1, 2, 2],
-        'strides':       [1, 2, 2],
-        'expand_ratio':  2,
-        'max_hop':       2,
-        'use_dct_gate':    True,
-        'use_joint_embed': True,
-        'use_frame_gate':  True,
-        'use_bilateral':   True,
-        'dropout':         0.2,
+        'stem_channels':      32,
+        'channels':           [48, 72, 96],
+        'num_blocks':         [1, 2, 2],
+        'strides':            [1, 2, 2],
+        'expand_ratio':       2,
+        'max_hop':            2,
+        'use_dct_gate':       True,
+        'use_joint_embed':    True,
+        'use_frame_gate':     False,   # Removed: redundant with FrozenDCTGate
+        'use_bilateral':      True,
+        'use_multiscale_tcn': True,    # Multi-scale k=3/k=5/MaxPool for small
+        'num_tcn_branches':   3,
+        'num_gcn_groups':     4,       # CTRLightGCN groups (full)
+        'drop_path_rate':     0.15,    # max stochastic depth rate
+        'block_dropout':      0.10,    # intermediate backbone dropout
+        'dropout':            0.30,    # classifier head dropout
     },
 }
 
@@ -96,26 +111,31 @@ class ShiftFuseBlock(nn.Module):
     One block of ShiftFuse-GCN.
 
     Pipeline:
-        BodyRegionShift → Conv1×1+BN+Hardswish → JointEmbedding
-        → FrozenDCTGate → EpSepTCN → FrameDynamicsGate
-        → Outer residual → StaticGCN (shared, optional)
+        BodyRegionShift → Conv1×1+BN+Hardswish → JointEmbedding → BSE
+        → FrozenDCTGate → EpSepTCN (or MultiScaleEpSepTCN)
+        → DropPath → Outer residual → Backbone Dropout
+        → CTRLightGCN (shared, optional)
 
-    StaticGCN is passed in by LAST_Lite — one instance shared across all
+    CTRLightGCN is passed in by LAST_Lite — one instance shared across all
     blocks in the same stage, so graph weights are not duplicated.
 
     Args:
-        in_channels:      Input channels.
-        out_channels:     Output channels.
-        A_flat:           (V, V) flat adjacency for BodyRegionShift init.
-        T:                Temporal length (for FrozenDCTGate / FrameDynamicsGate).
-        stride:           Temporal stride applied by EpSepTCN (default 1).
-        expand_ratio:     EpSepTCN expansion ratio (default 2).
-        num_joints:       Number of skeleton joints (default 25).
-        use_dct_gate:     Include FrozenDCTGate (default True).
-        use_joint_embed:  Include JointEmbedding (default True).
-        use_frame_gate:   Include FrameDynamicsGate (default True).
-        use_bilateral:    Include BilateralSymmetryEncoding (default True).
-        gcn:              Optional StaticGCN (shared reference from LAST_Lite).
+        in_channels:        Input channels.
+        out_channels:       Output channels.
+        A_flat:             (V, V) flat adjacency for BodyRegionShift init.
+        T:                  Temporal length (for FrozenDCTGate).
+        stride:             Temporal stride applied by temporal conv (default 1).
+        expand_ratio:       EpSepTCN expansion ratio (default 2).
+        num_joints:         Number of skeleton joints (default 25).
+        use_dct_gate:       Include FrozenDCTGate (default True).
+        use_joint_embed:    Include JointEmbedding (default True).
+        use_frame_gate:     Include FrameDynamicsGate (default False).
+        use_bilateral:      Include BilateralSymmetryEncoding (default True).
+        use_multiscale_tcn: Use MultiScaleEpSepTCN instead of EpSepTCN.
+        num_tcn_branches:   Number of TCN branches (2 or 3, for multiscale only).
+        drop_path_prob:     DropPath probability for this block (default 0.0).
+        block_dropout:      Intermediate backbone dropout (default 0.0).
+        gcn:                Optional CTRLightGCN (shared reference from LAST_Lite).
     """
 
     def __init__(
@@ -129,13 +149,17 @@ class ShiftFuseBlock(nn.Module):
         num_joints: int = 25,
         use_dct_gate: bool = True,
         use_joint_embed: bool = True,
-        use_frame_gate: bool = True,
+        use_frame_gate: bool = False,
         use_bilateral: bool = True,
+        use_multiscale_tcn: bool = False,
+        num_tcn_branches: int = 3,
+        drop_path_prob: float = 0.0,
+        block_dropout: float = 0.0,
         gcn: nn.Module = None,
     ):
         super().__init__()
 
-        # 1. Body-Region-Aware Spatial Shift (Idea F) — 0 params
+        # 1. Body-Region-Aware Spatial Shift (BRASP) — 0 params
         self.shift = BodyRegionShift(in_channels, A_flat)
 
         # 2. Pointwise channel mixing
@@ -145,32 +169,51 @@ class ShiftFuseBlock(nn.Module):
             nn.Hardswish(inplace=True),
         )
 
-        # 3. Joint semantic embedding
-        self.joint_embed = JointEmbedding(out_channels, num_joints) if use_joint_embed \
+        # 3. Joint semantic embedding (SGN-style per-joint additive bias)
+        self.joint_embed = (
+            JointEmbedding(out_channels, num_joints) if use_joint_embed
             else nn.Identity()
-
-        # 3b. Bilateral Symmetry Encoding (BSE — novel)
-        self.bilateral = BilateralSymmetryEncoding(out_channels) if use_bilateral \
-            else nn.Identity()
-
-        # 4. Frozen DCT frequency gate (Idea G)
-        self.dct_gate = FrozenDCTGate(out_channels, T) if use_dct_gate \
-            else nn.Identity()
-
-        # 5. Temporal convolution (EfficientGCN EpSepTCN — reused as-is)
-        self.tcn = EpSepTCN(
-            out_channels,
-            kernel_size=5,
-            stride=stride,
-            expand_ratio=expand_ratio,
         )
 
-        # 6. Frame dynamics gate  (T_out = T // stride after EpSepTCN)
-        T_out = T // stride
-        self.frame_gate = FrameDynamicsGate(out_channels, T_out) if use_frame_gate \
+        # 3b. Bilateral Symmetry Encoding (BSE — novel, 2C+1 params)
+        self.bilateral = (
+            BilateralSymmetryEncoding(out_channels) if use_bilateral
             else nn.Identity()
+        )
 
-        # 7. Outer residual connection
+        # 4. Frozen DCT frequency gate (FDCR — C×T params, residual)
+        self.dct_gate = (
+            FrozenDCTGate(out_channels, T) if use_dct_gate
+            else nn.Identity()
+        )
+
+        # 5. Temporal convolution
+        if use_multiscale_tcn:
+            self.tcn = MultiScaleEpSepTCN(
+                out_channels,
+                stride=stride,
+                expand_ratio=expand_ratio,
+                num_branches=num_tcn_branches,
+            )
+        else:
+            self.tcn = EpSepTCN(
+                out_channels,
+                kernel_size=5,
+                stride=stride,
+                expand_ratio=expand_ratio,
+            )
+
+        # 6. Frame dynamics gate (disabled by default — redundant with FrozenDCTGate)
+        T_out = T // stride
+        self.frame_gate = (
+            FrameDynamicsGate(out_channels, T_out) if use_frame_gate
+            else nn.Identity()
+        )
+
+        # 7. DropPath (stochastic depth) — applied to main path before residual
+        self.drop_path = DropPath(drop_path_prob)
+
+        # 8. Outer residual connection
         if in_channels != out_channels or stride != 1:
             self.residual = nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, 1,
@@ -180,9 +223,14 @@ class ShiftFuseBlock(nn.Module):
         else:
             self.residual = nn.Identity()
 
-        # 8. Shared StaticGCN — stored as plain attribute (not registered as
-        #    a submodule) so that LAST_Lite owns and registers it once per stage.
-        #    Using object.__setattr__ prevents nn.Module from re-registering it.
+        # 9. Backbone intermediate dropout (regularizes post-residual features)
+        self.block_drop = (
+            nn.Dropout(block_dropout) if block_dropout > 0.0
+            else nn.Identity()
+        )
+
+        # 10. Shared CTRLightGCN — stored as plain attribute (not registered as
+        #     a submodule) so that LAST_Lite owns and registers it once per stage.
         object.__setattr__(self, 'gcn', gcn)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -202,10 +250,12 @@ class ShiftFuseBlock(nn.Module):
         out = self.tcn(out)
         out = self.frame_gate(out)
 
-        out = res + out                    # block outer residual
+        out = self.drop_path(out)        # stochastic depth on main path
+        out = res + out                  # block outer residual
+        out = self.block_drop(out)       # backbone intermediate dropout
 
         if self.gcn is not None:
-            out = self.gcn(out)            # spatial refinement (StaticGCN has own residual)
+            out = self.gcn(out)          # spatial refinement (CTRLightGCN has own residual)
 
         return out
 
@@ -248,24 +298,27 @@ class LAST_Lite(nn.Module):
             )
 
         cfg = MODEL_VARIANTS_SHIFTFUSE[variant]
-        stem_ch      = cfg['stem_channels']
-        channels     = cfg['channels']
-        num_blocks   = cfg['num_blocks']
-        strides      = cfg['strides']
-        expand_ratio = cfg['expand_ratio']
-        max_hop      = cfg['max_hop']
-        use_dct_gate    = cfg['use_dct_gate']
-        use_joint_embed = cfg['use_joint_embed']
-        use_frame_gate  = cfg['use_frame_gate']
-        use_bilateral   = cfg.get('use_bilateral', True)
+        stem_ch           = cfg['stem_channels']
+        channels          = cfg['channels']
+        num_blocks        = cfg['num_blocks']
+        strides           = cfg['strides']
+        expand_ratio      = cfg['expand_ratio']
+        max_hop           = cfg['max_hop']
+        use_dct_gate      = cfg['use_dct_gate']
+        use_joint_embed   = cfg['use_joint_embed']
+        use_frame_gate    = cfg['use_frame_gate']
+        use_bilateral     = cfg.get('use_bilateral', True)
+        use_multiscale    = cfg.get('use_multiscale_tcn', False)
+        num_tcn_branches  = cfg.get('num_tcn_branches', 3)
+        num_gcn_groups    = cfg.get('num_gcn_groups', 4)
+        drop_path_rate    = cfg.get('drop_path_rate', 0.0)
+        block_dropout     = cfg.get('block_dropout', 0.0)
         _dropout = dropout if dropout is not None else cfg['dropout']
 
         self.variant = variant
         self.stream_names = ['joint', 'velocity', 'bone', 'bone_velocity']
 
         # ── 1. Graph adjacency ───────────────────────────────────────────
-        # Build K-subset adjacency (spatial multi-hop subsets).
-        # raw_partitions=True → clean 0/1 subsets, no double normalisation.
         self.graph = Graph(
             layout=graph_layout,
             strategy=graph_strategy,
@@ -277,12 +330,10 @@ class LAST_Lite(nn.Module):
         A = torch.tensor(A_sym, dtype=torch.float32)
         self.register_buffer('A', A)
 
-        # Flat (V, V) adjacency for BodyRegionShift neighbour lookup:
-        # union of all K subsets — A[v,w]>0 iff v,w are graph-connected.
+        # Flat (V, V) adjacency for BodyRegionShift neighbour lookup
         A_flat = torch.tensor(
             (A_raw.sum(0) > 0).astype('float32')
         )
-        # A_flat is only used at __init__ time (compute_shift_indices), not stored.
 
         # ── 2. Stream fusion (EfficientGCN-exact concat) ─────────────────
         self.fusion = StreamFusionConcat(
@@ -292,29 +343,40 @@ class LAST_Lite(nn.Module):
         )
 
         # ── 3. Build stages ──────────────────────────────────────────────
-        # One StaticGCN per stage, shared by all blocks within that stage.
-        # Registered in self.stage_gcns so optimizer / state_dict sees them.
+        # DropPath rate linearly increases from 0 → drop_path_rate across all blocks
+        total_blocks = sum(num_blocks)
+        block_idx_global = 0
+
+        # One CTRLightGCN per stage, shared by all blocks within that stage.
         self.stages     = nn.ModuleList()
-        self.stage_gcns = nn.ModuleList()   # index matches stage index
+        self.stage_gcns = nn.ModuleList()
         prev_ch = stem_ch
         T_cur   = T
 
         for stage_idx in range(len(channels)):
             stage_ch = channels[stage_idx]
 
-            # Create the shared GCN for this stage (operates at stage_ch)
-            stage_gcn = StaticGCN(
+            # Create the shared GCN for this stage
+            stage_gcn = CTRLightGCN(
                 channels=stage_ch,
-                A=A,                  # (K, V, V) normalised adjacency
+                A=A,
                 num_joints=num_joints,
+                num_groups=num_gcn_groups,
             )
             self.stage_gcns.append(stage_gcn)
 
             stage_blocks = nn.ModuleList()
             for blk_idx in range(num_blocks[stage_idx]):
-                blk_in     = prev_ch  if blk_idx == 0 else stage_ch
+                blk_in     = prev_ch   if blk_idx == 0 else stage_ch
                 blk_out    = stage_ch
                 blk_stride = strides[stage_idx] if blk_idx == 0 else 1
+
+                # Linear DropPath schedule: 0.0 → drop_path_rate
+                dp_rate = (
+                    drop_path_rate * block_idx_global / max(total_blocks - 1, 1)
+                    if total_blocks > 1 else 0.0
+                )
+                block_idx_global += 1
 
                 stage_blocks.append(ShiftFuseBlock(
                     in_channels=blk_in,
@@ -328,10 +390,13 @@ class LAST_Lite(nn.Module):
                     use_joint_embed=use_joint_embed,
                     use_frame_gate=use_frame_gate,
                     use_bilateral=use_bilateral,
-                    gcn=stage_gcn,    # shared reference — not re-registered
+                    use_multiscale_tcn=use_multiscale,
+                    num_tcn_branches=num_tcn_branches,
+                    drop_path_prob=dp_rate,
+                    block_dropout=block_dropout,
+                    gcn=stage_gcn,
                 ))
 
-                # Update T after the first (stride) block
                 if blk_idx == 0:
                     T_cur = T_cur // blk_stride
 
@@ -383,7 +448,6 @@ class LAST_Lite(nn.Module):
                     if s.dim() == 5:
                         s = s[..., 0]       # take primary body (M=0)
                     streams.append(s)
-            # Pad with zeros if some streams are missing (e.g. 3-stream dicts)
             while len(streams) < 4:
                 streams.append(torch.zeros_like(streams[0]))
         else:

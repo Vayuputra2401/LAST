@@ -1,5 +1,6 @@
-# ShiftFuse-GCN Nano model configuration (~60K params)
+# ShiftFuse-GCN Nano model configuration
 # Edge-deployable, INT8-quantisable.
+# Round 4: CTRLightGCN (G=2), DropPath (max 0.10), block_dropout 0.05
 model:
   name: shiftfuse_nano
   variant: nano
@@ -17,6 +18,10 @@ model:
   max_hop: 1
   use_dct_gate: true
   use_joint_embed: true
-  use_frame_gate: true
+  use_frame_gate: false         # Disabled: redundant with FrozenDCTGate
   use_bilateral: true
-  dropout: 0.1
+  use_multiscale_tcn: false     # EpSepTCN(k=5) for nano param budget
+  num_gcn_groups: 2             # CTRLightGCN groups (nano budget)
+  drop_path_rate: 0.10          # max stochastic depth rate (linear schedule)
+  block_dropout: 0.05           # backbone intermediate dropout
+  dropout: 0.15                 # classifier head dropout (was 0.1)

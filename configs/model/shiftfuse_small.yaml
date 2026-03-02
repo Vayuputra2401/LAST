@@ -1,5 +1,6 @@
-# ShiftFuse-GCN Small model configuration (~120-191K params)
-# Primary edge target: beats EfficientGCN-B0 (88.3% @ 150K) with different arch.
+# ShiftFuse-GCN Small model configuration
+# Primary edge target: beats EfficientGCN-B0 (90.2% @ 290K) with 3× fewer params.
+# Round 4: CTRLightGCN (G=4), DropPath (max 0.15), MultiScaleEpSepTCN, block_dropout 0.10
 model:
   name: shiftfuse_small
   variant: small
@@ -17,6 +18,11 @@ model:
   max_hop: 2
   use_dct_gate: true
   use_joint_embed: true
-  use_frame_gate: true
+  use_frame_gate: false         # Disabled: redundant with FrozenDCTGate
   use_bilateral: true
-  dropout: 0.2
+  use_multiscale_tcn: true      # k=3/k=5/MaxPool branches for small
+  num_tcn_branches: 3
+  num_gcn_groups: 4             # CTRLightGCN groups (full refinement)
+  drop_path_rate: 0.15          # max stochastic depth rate (linear schedule)
+  block_dropout: 0.10           # backbone intermediate dropout
+  dropout: 0.30                 # classifier head dropout (was 0.2)

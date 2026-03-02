@@ -4,7 +4,7 @@
 
 ## Part 1: What Makes LAST-Base and LAST-Lite Novel
 
-### LAST-v2 — Novel Contributions
+### LAST-Base — Novel Contributions
 
 | Component | What It Does | Why It's Novel |
 |-----------|-------------|----------------|
@@ -14,18 +14,17 @@
 | **ST_JointAtt with α=0 zero-init** | Factorized T+S attention gated by per-channel learnable scalar | Zero-init residual gate means no dead-gate collapse problem — model starts as identity, attention grows during training |
 | **LinearAttention in deep stages** | Transformer-style global temporal context, O(T) not O(T²) | Early stages use TCN (local), deep stages use LinearAttention (global) — hybrid matches where global context actually matters |
 
-### LAST-E — Novel Contributions
+### LAST-Lite — Novel Contributions
 
 | Component | What It Does | Why It's Novel |
 |-----------|-------------|----------------|
-| **Early StreamFusion with per-channel weights** | Fuses 3 streams at input via shared stem + (3, C0) softmax weight matrix — backbone runs 1× | MIB (EfficientGCN, LAST-v2) runs backbone 3× — 3× the compute. LAST-E makes backbone costs independent of stream count |
-| **Per-channel stream weights (not scalar)** | (3, C0) matrix — channel 7 can prefer velocity, channel 23 can prefer bone | Old approach: 3 scalars shared across all channels. Per-channel lets each feature dimension specialize to the best modality |
-| **DirectionalGCNConv with single conv** | Same 3-component adaptive graph as LAST-v2 but with ONE shared conv instead of K+2 separate convs | Saves K+1 times the conv params vs AdaptiveGraphConv — makes the 3-component graph affordable even at 103K total budget |
-| **Per-channel α softmax on physical subsets** | (K, C) weight matrix → softmax per channel over K subsets | Each channel independently decides how much centripetal vs centrifugal vs self-loop to weight — no prior work does per-channel directional specialization |
-| **MultiScaleTCN split-channel** | Splits channels in half, each half gets its own dilation (1 or 2), concat | 17-frame receptive field for free — single full-channel branch would need 2× pointwise params. Saves C²/2 per block |
-| **Variant-progressive ST_JointAtt** | Attention only in later stages (nano: stage3 only; base: all stages) | Attention is expensive per param at small C — skipping it in early stages makes nano viable at 103K |
+| **BRASP (Body-Region-Aware Spatial Shift)** | Routes channels through anatomical regions (torso/arms/legs) with zero parameters — pure index permutation | No prior lightweight skeleton model uses anatomical channel routing at zero cost |
+| **BSE (Bilateral Symmetry Encoding)** | Computes L-R joint differences + symmetry velocity; antisymmetric injection (2C+1 params) | First model to explicitly model bilateral symmetry as a discriminative feature |
+| **FDCR (Frozen DCT Frequency Routing)** | Learnable per-frequency mask on frozen DCT basis — channel specialization in frequency domain (C×T params) | Frequency-domain channel specialization unexplored in all prior skeleton GCNs |
+| **StaticGCN (stage-shared)** | Shared A_physical + A_learned per stage placed after block residual | Weight sharing across blocks within a stage prevents C² param explosion; placement after residual preserves gradient flow |
+| **StreamFusionConcat** | Fuses 4 streams at input via concat + Conv1×1 — backbone runs 1× | EfficientGCN-exact fusion; backbone costs independent of stream count |
 
-**The core thesis of LAST-E** — "input-level fusion + adaptive graph at reduced cost" — has not been directly explored before. Most efficient models sacrifice either the adaptive graph (use fixed topology) or stream fusion (use single stream). LAST-E does both without sacrificing either.
+**The core thesis of LAST-Lite** — "ultra-low-param skeleton GCN with complementary novel inductive biases" — achieves near-EfficientGCN-B0 accuracy at 28× fewer parameters (247K vs 290K for B0 lite; 79K nano).
 
 ---
 
@@ -123,9 +122,9 @@ Replace A_learned with this A_dynamic_semantic in DirectionalGCNConv/AdaptiveGra
 ---
 
 ### Idea C: **Progressive Cross-Scale Re-fusion (PCRF)**
-*Addresses the limitation of one-shot early fusion in LAST-E*
+*Addresses the limitation of one-shot early fusion in LAST-Lite*
 
-**The insight:** LAST-E fuses streams once at input (Stage 0). But at different depths:
+**The insight:** LAST-Lite fuses streams once at input (Stage 0). But at different depths:
 - Stage 1 (low-level): joint positions give the structural skeleton — most informative early on
 - Stage 2 (mid-level): bone angles give direction — useful for trajectory understanding
 - Stage 3 (high-level): velocity gives temporal dynamics — motion fingerprint matters most for classification
@@ -298,12 +297,12 @@ x_back = torch.matmul(x_gated, self.dct.T)                  # → time domain
 For research/accuracy models where per-sample compute is acceptable:
 
 ```
-LAST-v3 Block = DirectionalGCNConv        (existing)
-              + FrequencyGate             (Idea A, ~5K params per block, per-sample)
-              + ActionPrototypeGraph      (Idea B, replaces A_learned, 9375 params total)
-              + IntraRegionAttention      (Idea D, 4× cheaper than full attention)
-              + MultiScaleTCN            (existing)
-              + ST_JointAtt              (existing)
+LAST-Base Block = CrossTemporalPrototypeGCN  (temporal-aware + class-conditioned)
+               + FreqTemporalGate           (Idea A, DCT-based per-sample gating)
+               + ActionPrototypeGraph       (Idea B, K=15 prototype adjacencies)
+               + PartitionedTemporalAttn    (SkateFormer-style 4-type attention)
+               + HierarchicalBodyRegion     (Idea D, intra/inter-region attention)
+               + MultiScaleTCN             (existing)
 ```
 
 ### Recommended Synthesis 2: ShiftFuse-GCN Block (Lite — Fixed Compute)
