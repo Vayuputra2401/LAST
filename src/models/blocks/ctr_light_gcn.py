@@ -122,6 +122,14 @@ class CTRLightGCN(nn.Module):
             # Per-group adjacency = physical (shared) + learnable correction
             A_g = self.A_physical + self.A_group[g]   # (V, V)
 
+            # Row-normalise A_g (D⁻¹ normalisation).
+            # A_physical = sum of K individually normalised subsets, so its row
+            # sums ≈ K (K=3 for max_hop=1, K=5 for max_hop=2). Without this step
+            # the einsum magnifies feature values by ~K×, mismatching the
+            # Kaiming-init scale of the group_convs and causing BN instability.
+            row_sum = A_g.sum(dim=-1, keepdim=True).clamp(min=1e-6)
+            A_g = A_g / row_sum                       # row sums → 1.0
+
             # Aggregate neighbours for this group
             # einsum: A_g[v,w] * x_groups[g][b,c,t,w] → (B, C//G, T, V)
             x_agg = torch.einsum('vw,bctw->bctv', A_g, x_groups[g])

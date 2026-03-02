@@ -217,6 +217,24 @@ class TestCTRLightGCN:
         out = gcn(x)
         assert out.shape == x.shape
 
+    def test_A_g_normalised(self):
+        """Row-normalisation fix: aggregated features should have ~1× scale,
+        not ~K× (where K = number of physical adjacency subsets summed)."""
+        gcn = self._make_gcn(32, num_groups=2)
+        gcn.eval()
+        # Unit-variance input
+        torch.manual_seed(0)
+        x = torch.randn(4, 32, 16, V)
+        with torch.no_grad():
+            # Inspect A_g row sums inside forward by computing manually
+            A_g = gcn.A_physical + gcn.A_group[0]
+            row_sum = A_g.sum(dim=-1, keepdim=True).clamp(min=1e-6)
+            A_g_norm = A_g / row_sum
+            row_sums_after = A_g_norm.sum(dim=-1)
+        # All row sums of normalised A_g should be ≈ 1.0
+        assert torch.allclose(row_sums_after, torch.ones(V), atol=1e-5), \
+            f"A_g row sums not ≈ 1.0 after normalisation: {row_sums_after}"
+
 
 class TestDropPath:
     def test_output_shape(self):

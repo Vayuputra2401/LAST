@@ -251,8 +251,8 @@ class ShiftFuseBlock(nn.Module):
         out = self.frame_gate(out)
 
         out = self.drop_path(out)        # stochastic depth on main path
-        out = res + out                  # block outer residual
-        out = self.block_drop(out)       # backbone intermediate dropout
+        out = self.block_drop(out)       # dropout on main path only (before residual)
+        out = res + out                  # block outer residual — identity untouched
 
         if self.gcn is not None:
             out = self.gcn(out)          # spatial refinement (CTRLightGCN has own residual)

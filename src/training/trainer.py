@@ -123,10 +123,22 @@ class Trainer:
         self.accum_steps = self.train_cfg.get('gradient_accumulation_steps', 1)
 
         # ── Optimizer ───────────────────────────────────────────────────────
-        # Three param groups:
+        # Two param groups:
         #   decay:    conv/linear weights → weight_decay applied
-        #   no_decay: bias, BN, LayerNorm, alpha gates, A_learned matrices
+        #   no_decay: bias, BN/LN scale+bias, alpha gates, A_learned matrices
         #             → weight_decay=0 (these should not be shrunk toward 0)
+        #
+        # BN gammas inside nn.Sequential are indexed by position (e.g.
+        # 'pw_conv.1.weight', 'expand_conv.1.weight') — the string 'bn' does
+        # NOT appear in those names, so name-based matching misses them.
+        # Fix: collect all BN/LN param ids via isinstance BEFORE the name loop.
+        _bn_param_ids: set = set()
+        for m in self.model.modules():
+            if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d,
+                               nn.LayerNorm, nn.GroupNorm)):
+                for p in m.parameters():
+                    _bn_param_ids.add(id(p))
+
         decay, no_decay = [], []
         for name, param in self.model.named_parameters():
             if not param.requires_grad:
@@ -138,7 +150,8 @@ class Trainer:
             #   - AdaptiveGraphConv A_learned matrices (WD fights edge learning)
             #   - DirectionalGCNConv node_proj (dynamic adj embedding projection)
             if (
-                'bias' in name
+                id(param) in _bn_param_ids   # catches BN/LN params in Sequential
+                or 'bias' in name
                 or 'bn' in name
                 or 'norm' in name
                 or 'alpha' in name          # ST_JointAtt alpha + alpha_dyn gate scalars

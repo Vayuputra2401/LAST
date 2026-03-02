@@ -31,7 +31,7 @@ training:
   gradient_accumulation_steps: 1
 
   # Regularization
-  label_smoothing: 0.1        # Round 4: tightened from 0.05
+  label_smoothing: 0.0        # Mixup/CutMix already produce soft targets; LS compounds and over-smooths
   gradient_clip: 5.0
 
   # Mixup + Temporal CutMix
