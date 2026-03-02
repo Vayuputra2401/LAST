@@ -51,9 +51,9 @@ class Graph:
             adjacency[self.hop_dis == hop] = 1
         normalize_adjacency = normalize_digraph(adjacency)
 
-        # For v3: use raw 0/1 adjacency for partitioning so that
+        # raw_partitions=True: use raw 0/1 adjacency for partitioning so that
         # normalize_symdigraph can be applied exactly once downstream.
-        # For v1/v2 backward compat: default uses normalize_digraph output.
+        # Default (False): uses normalize_digraph output for backward compat.
         partition_src = adjacency if self.raw_partitions else normalize_adjacency
 
         if strategy == 'uniform':
@@ -121,7 +121,7 @@ def normalize_symdigraph(A):
     """Symmetric normalization: D^{-1/2} A D^{-1/2}.
 
     Better gradient flow than D^{-1}A (asymmetric) because both
-    sides of the adjacency are scaled equally.  Used by LAST-E v3.
+    sides of the adjacency are scaled equally.  Used by LAST-Lite.
     """
     Dl = np.sum(A, 0)
     num_node = A.shape[0]

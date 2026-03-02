@@ -2,9 +2,9 @@
 LAST Training Script
 
 Usage:
-    python scripts/train.py --model base_e_v3 --dataset ntu60
-    python scripts/train.py --model small_e_v3 --dataset ntu60 --epochs 5 --batch_size 8
-    python scripts/train.py --model base --dataset ntu60 --resume E:\\LAST-runs\\run-...\\checkpoints\\best_model.pth
+    python scripts/train.py --model shiftfuse_small --dataset ntu60
+    python scripts/train.py --model shiftfuse_nano --dataset ntu60 --epochs 5 --batch_size 8
+    python scripts/train.py --model shiftfuse_small --dataset ntu60 --resume E:\\LAST-runs\\run-...\\checkpoints\\best_model.pth
 """
 
 import sys
@@ -172,11 +172,8 @@ def _run_checkpoint_averaging(model, val_loader, run_dir, n_checkpoints, device)
 
 def main():
     parser = argparse.ArgumentParser(description='Train LAST model')
-    parser.add_argument('--model', type=str, default='base',
-                       choices=['base', 'small', 'large', 'nano_e', 'base_e', 'small_e', 'large_e',
-                                'nano_e_v2', 'small_e_v2', 'base_e_v2', 'large_e_v2',
-                                'nano_e_v3', 'small_e_v3', 'base_e_v3', 'large_e_v3',
-                                'shiftfuse_nano', 'shiftfuse_small'],
+    parser.add_argument('--model', type=str, default='shiftfuse_small',
+                       choices=['shiftfuse_nano', 'shiftfuse_small'],
                        help='Model variant (default: base)')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
                        help='Dataset (default: ntu60)')
@@ -324,22 +321,7 @@ def main():
     num_classes = config['data']['dataset'].get('num_classes', 60 if args.dataset == 'ntu60' else 120)
     num_joints = config['data']['dataset']['num_joints']
     
-    if args.model.endswith('_e_v3'):
-        variant = args.model.replace('_e_v3', '')
-        print(f"\n  Creating LAST-E v3 model (Variant: {variant})...")
-        from src.models.last_e_v3 import LAST_E_v3
-        model = LAST_E_v3(
-            num_classes=num_classes,
-            variant=variant,
-            dropout=config['model'].get('dropout'),
-            drop_path_rate=config['model'].get('drop_path_rate'),
-            use_st_att=config['model'].get('use_st_att'),
-        )
-        # Store IB loss weight for trainer
-        config['training']['ib_loss_weight'] = config.get('model', {}).get(
-            'ib_loss_weight', config['training'].get('ib_loss_weight', 0.01)
-        )
-    elif args.model.startswith('shiftfuse_'):
+    if args.model.startswith('shiftfuse_'):
         variant = args.model.replace('shiftfuse_', '')
         T = config['data']['dataset']['max_frames']
         print(f"\n  Creating ShiftFuse-GCN (Variant: {variant}, T={T})...")
@@ -364,18 +346,8 @@ def main():
     # Check if MIB or standard input
     data_type = config['data']['dataset'].get('data_type', 'npy')
     
-    if data_type == 'mib':
-        # MIB input is a dict of 3 streams, each (N, C, T, V, M)
-        # FLOPs counter might need adjustment or just test with one stream x 3?
-        # Let's mock a single stream for FLOPs first or update count_flops
-        # For simplicity, we just use one stream shape to check backbone size * 3? 
-        # ActuallyLAST-E v3 shares backbone. But inference runs backbone 3 times.
-        # So FLOPs = 3 * Backbone + Head.
-        # We'll rely on the simple FLOPs estimator handling a standard input, 
-        # ensuring the model can handle a single tensor if passed.
-        input_shape = (3, input_frames, num_joints, 2)
-    else:
-        input_shape = (3, input_frames, num_joints, 2)
+    # Input shape for FLOPs estimation (single tensor; model handles dict internally)
+    input_shape = (3, input_frames, num_joints, 2)
     
     print(f"  Measuring FLOPs on input {input_shape}...")
     model_stats = count_flops(model, input_shape, device)

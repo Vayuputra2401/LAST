@@ -125,7 +125,7 @@ Input: Dict{'joint': (B,3,T,V,M), 'velocity': (B,3,T,V,M),
 
 For EACH stream (trained independently, ensembled at inference):
 
-  StreamFusion (from LAST-E):
+  StreamFusion:
     |- Per-stream DataBN
     |- Shared stem Conv2d(3, C0, 1)
     Output: (B, C0, T, V)

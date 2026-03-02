@@ -1,10 +1,8 @@
-"""Dry-run verification of the LAST v2 training pipeline."""
+"""Dry-run verification of the LAST-Lite training pipeline."""
 import sys
 import os
 import yaml
-import pickle
 import tempfile
-import numpy as np
 import torch
 
 # Add src to path
@@ -17,87 +15,59 @@ from src.data.transforms import get_train_transform, get_val_transform
 
 def main():
     print("=" * 70)
-    print("  LAST v2 — DRY RUN VERIFICATION")
+    print("  LAST-Lite — DRY RUN VERIFICATION")
     print("=" * 70)
     errors = []
 
     # ── 1. Config Loading ────────────────────────────────────────────────
-    # 1. Load Defaults (Global/Training)
+    # 1. Load training defaults for ShiftFuse
     training_config_path = os.path.join(
-        os.path.dirname(__file__), '..', 'configs', 'training', 'default.yaml'
+        os.path.dirname(__file__), '..', 'configs', 'training', 'shiftfuse.yaml'
     )
     with open(training_config_path, 'r') as f:
         config = yaml.safe_load(f)
 
     # 2. Load Specifics (Model/Data/Env)
-    # This returns {'environment': ..., 'data': ..., 'model': ...}
-    specific_config = load_config(dataset='ntu60', model='base')
-    
+    specific_config = load_config(dataset='ntu60', model='shiftfuse_small')
+
     # 3. Merge: Specifics override Defaults
     config.update(specific_config)
-    
-    # Ensure dataset is MIB for V2
-    if config['model'].get('version') == 'v2' and config['data']['dataset']['data_type'] != 'mib':
-        print("WARNING: Model is v2 but data_type is not 'mib'. Overriding for check.")
-        config['data']['dataset']['data_type'] = 'mib'
 
-    print(f"[1] Config Loaded: Model={config['model']['name']}, Data={config['data']['dataset']['data_type']}")
+    print(f"[1] Config Loaded: Model=shiftfuse_small, Data={config['data']['dataset']['data_type']}")
 
     # ── 2. Model Creation ────────────────────────────────────────────────
     num_classes = config['data']['dataset'].get('num_classes', 60)
     num_joints = config['data']['dataset']['num_joints']
-    model_version = config['model'].get('version', 'v1')
-    
-    if model_version == 'e_v2':
-        from src.models.last_e_v2 import LAST_E_v2
-        variant = config['model'].get('variant', 'base')
-        model = LAST_E_v2(
-            num_classes=num_classes,
-            variant=variant,
-            dropout=config['model'].get('dropout', 0.3),
-            use_freq_gate=config['model'].get('use_freq_gate', True),
-            num_groups=config['model'].get('num_groups', 4),
-            drop_path_rate=config['model'].get('drop_path_rate'),
-        )
-        print(f"[2] Model Created: {model.count_parameters():,} params (e_v2 {variant})")
-    elif model_version == 'e':
-        from src.models.last_e import LAST_E
-        variant = config['model'].get('variant', 'base')
-        model = LAST_E(
-            num_classes=num_classes,
-            variant=variant,
-            dropout=config['model'].get('dropout', 0.3),
-        )
-        print(f"[2] Model Created: {model.count_parameters():,} params (e {variant})")
-    else:
-        from src.models.last_v2 import LAST_v2
-        model = LAST_v2(num_classes=num_classes, variant='base')
-        print(f"[2] Model Created: {model.count_parameters():,} params (v2)")
+    T = config['data']['dataset']['max_frames']
+
+    from src.models.shiftfuse_gcn import LAST_Lite
+    model = LAST_Lite(
+        num_classes=num_classes,
+        variant='small',
+        T=T,
+        num_joints=num_joints,
+        dropout=config['model'].get('dropout'),
+    )
+    print(f"[2] Model Created: {model.count_parameters():,} params (shiftfuse_small)")
 
     # ── 3. Transforms ────────────────────────────────────────────────────
-    # Update config to disable normalization for MIB (already done in preprocess_data.py)
-    if config['data']['dataset']['data_type'] == 'mib':
-        config['data']['dataset']['preprocessing']['normalize'] = False
-        
+    config['data']['dataset']['preprocessing']['normalize'] = False
     merged_config = {'dataset': config['data']['dataset'], 'training': config['training']}
     train_transform = get_train_transform(merged_config)
     val_transform = get_val_transform(merged_config)
-    
-    # Test valid transform check
-    # Create dummy raw skeleton data (T, V, C) to test transform flow 
-    # Transforms expect (C, T, V) usually or (T, V, C) depending on implementation
-    # Let's trust get_train_transform works as verified in verify_data_v2
     print(f"[3] Transforms Initialized")
 
     # ── 4. Data Files Check ──────────────────────────────────────────────
     data_base = config['environment']['paths']['data_base']
-    processed_path = os.path.join(data_base, 'LAST-60-v2', 'data', 'processed_v2')
-    
+    _env_folder = config.get('environment', {}).get('paths', {}).get('data_folder')
+    folder_name = _env_folder if _env_folder else "LAST-60"
+    processed_path = os.path.join(data_base, folder_name, "data", "processed")
+
     data_type = config['data']['dataset']['data_type']
     expected_files = []
-    
+
     if data_type == 'mib':
-        streams = ['joint', 'velocity', 'bone']
+        streams = ['joint', 'velocity', 'bone', 'bone_velocity']
         splits = ['train', 'val']
         for s in splits:
             for st in streams:
@@ -105,18 +75,16 @@ def main():
             expected_files.append(f"{s}_label.pkl")
     else:
         expected_files = ['train_data.npy', 'train_label.pkl', 'val_data.npy', 'val_label.pkl']
-        
-    missing = []
-    missing = []
-    # Files are inside the split folder (e.g., xsub)
+
     split_type = config['data']['dataset']['split_type']
     target_path = os.path.join(processed_path, split_type)
-    
+
+    missing = []
     for f in expected_files:
         fp = os.path.join(target_path, f)
         if not os.path.exists(fp):
             missing.append(f)
-    
+
     if missing:
         errors.append(f"Missing data files in {target_path}: {missing}")
         print(f"[4] Data Check: FAILED. Missing {len(missing)} files.")
@@ -126,24 +94,24 @@ def main():
     # ── 5. Dataset & Dataloader ──────────────────────────────────────────
     try:
         ds = SkeletonDataset(
-            data_path=processed_path, 
+            data_path=processed_path,
             data_type=data_type,
-            max_frames=300, 
-            num_joints=num_joints, 
+            max_frames=config['data']['dataset']['max_frames'],
+            num_joints=num_joints,
             transform=train_transform,
-            split='train', 
+            split='train',
             split_type='xsub'
         )
         sample, label = ds[0]
         print(f"[5] Dataset: Loaded {len(ds)} samples.")
-        
+
         if isinstance(sample, dict):
             print(f"    Sample is Dict: {list(sample.keys())}")
             for k, v in sample.items():
                 print(f"      {k}: {v.shape}")
         else:
             print(f"    Sample shape: {sample.shape}")
-            
+
     except Exception as e:
         errors.append(f"Dataset Init Failed: {str(e)}")
         print(f"[5] Dataset: FAILED. {e}")
@@ -153,13 +121,13 @@ def main():
     trainer = Trainer(model, config, tempfile.mkdtemp())
     trainer.model.eval()
     device = trainer.device
-    
+
     # Batchify
     if isinstance(sample, dict):
         batch = {k: v.unsqueeze(0).to(device) for k, v in sample.items()}
     else:
         batch = sample.unsqueeze(0).to(device)
-        
+
     try:
         with torch.no_grad():
             out = trainer.model(batch)
@@ -172,11 +140,11 @@ def main():
     # ── 7. Summary ───────────────────────────────────────────────────────
     print("=" * 70)
     if errors:
-        print(f"❌ DRY RUN FAILED with {len(errors)} errors:")
+        print(f"DRY RUN FAILED with {len(errors)} errors:")
         for e in errors:
             print(f"  - {e}")
     else:
-        print("✅ DRY RUN PASSED")
+        print("DRY RUN PASSED")
         print("   Pipeline is ready for training.")
     print("=" * 70)
 

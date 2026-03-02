@@ -1,5 +1,5 @@
 """
-MotionGate & HybridGate — Novel channel attention for LAST-E v3.
+MotionGate & HybridGate — Novel channel attention.
 
 MotionGate:
     Temporal-difference-based channel gating.  Computes per-channel motion
@@ -22,7 +22,7 @@ import torch.nn as nn
 
 
 class MotionGate(nn.Module):
-    """Motion-Aware Channel Gate (LAST-E v3 novel contribution).
+    """Motion-Aware Channel Gate.
 
     Args:
         channels:  Number of input/output channels.

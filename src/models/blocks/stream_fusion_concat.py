@@ -1,5 +1,5 @@
 """
-StreamFusionConcat — EfficientGCN-style concatenation fusion for LAST-E v3.
+StreamFusionConcat — EfficientGCN-style concatenation fusion.
 
 Replaces softmax-coupled StreamFusionV2. Instead of competing per-channel
 softmax weights (zero-sum gradient interference), concatenates all streams

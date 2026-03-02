@@ -27,7 +27,8 @@
       "Bash(\"C:\\\\Users\\\\pathi\\\\envs\\\\ai_research\\\\Scripts\\\\python\" tests/check_preprocessed_data.py)",
       "Bash(\"C:\\\\Users\\\\pathi\\\\envs\\\\ai_research\\\\Scripts\\\\python\" -m pytest tests/test_shiftfuse.py -v)",
       "Bash(C:/Users/pathi/envs/ai_research/Scripts/python tests/test_shiftfuse.py)",
-      "Bash(C:/Users/pathi/envs/ai_research/Scripts/python -m pytest tests/test_shiftfuse.py -v)"
+      "Bash(C:/Users/pathi/envs/ai_research/Scripts/python -m pytest tests/test_shiftfuse.py -v)",
+      "Bash(ls src/models/last_e_v3.py configs/model/last_e_v3_*.yaml configs/training/cosine_v3.yaml Docs/LAST_E_v3_Plan.md Docs/last_e_v3_hyperparams.md)"
     ],
     "deny": [],
     "ask": []

@@ -1,10 +1,9 @@
 """
-Load and inspect a LAST model variant.
+Load and inspect a LAST-Lite (ShiftFuse-GCN) model variant.
 
 Usage:
-    python scripts/load_model.py --model base --dataset ntu60
-    python scripts/load_model.py --model small --dataset ntu60
-    python scripts/load_model.py --model base_e --dataset ntu60
+    python scripts/load_model.py --model shiftfuse_small --dataset ntu60
+    python scripts/load_model.py --model shiftfuse_nano --dataset ntu60
 """
 
 import sys
@@ -18,10 +17,10 @@ from src.utils.config import load_config
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Load and inspect a LAST model')
-    parser.add_argument('--model', type=str, default='base_e_v3',
-                       choices=['nano_e_v3', 'small_e_v3', 'base_e_v3', 'large_e_v3'],
-                       help='Model variant (default: base_e_v3)')
+    parser = argparse.ArgumentParser(description='Load and inspect a LAST-Lite model')
+    parser.add_argument('--model', type=str, default='shiftfuse_small',
+                       choices=['shiftfuse_nano', 'shiftfuse_small'],
+                       help='Model variant (default: shiftfuse_small)')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
                        help='Dataset to configure num_classes (default: ntu60)')
     args = parser.parse_args()
@@ -31,22 +30,21 @@ def main():
 
     # Model Params
     num_classes = config['data']['dataset'].get('num_classes', 60 if args.dataset == 'ntu60' else 120)
+    num_joints = config['data']['dataset']['num_joints']
+    T = config['data']['dataset']['max_frames']
 
     # Create model
-    if args.model.endswith('_e_v3'):
-        variant = args.model.replace('_e_v3', '')
-        print(f"Creating LAST-E v3 model (Variant: {variant})...")
-        from src.models.last_e_v3 import LAST_E_v3
-        model = LAST_E_v3(
-            num_classes=num_classes,
-            variant=variant,
-            dropout=config['model'].get('dropout', 0.3),
-            drop_path_rate=config['model'].get('drop_path_rate'),
-            use_st_att=config['model'].get('use_st_att'),
-        )
-        model_label = f"LAST-E-v3-{variant.capitalize()}"
-    else:
-        raise ValueError(f"Unsupported model variant: {args.model}")
+    variant = args.model.replace('shiftfuse_', '')
+    print(f"Creating LAST-Lite / ShiftFuse-GCN (Variant: {variant}, T={T})...")
+    from src.models.shiftfuse_gcn import LAST_Lite
+    model = LAST_Lite(
+        num_classes=num_classes,
+        variant=variant,
+        T=T,
+        num_joints=num_joints,
+        dropout=config['model'].get('dropout'),
+    )
+    model_label = f"LAST-Lite-{variant.capitalize()}"
 
     num_params = model.count_parameters()
 
@@ -62,14 +60,15 @@ def main():
     model = model.to(device)
     model.eval()
 
-    # MIB input (dict)
-    N, C, T, V = 2, 3, 64, 25
+    # 4-stream input (dict)
+    N, C, T_in, V = 2, 3, T, 25
     x = {
-        'joint':    torch.randn(N, C, T, V).to(device),
-        'velocity': torch.randn(N, C, T, V).to(device),
-        'bone':     torch.randn(N, C, T, V).to(device),
+        'joint':         torch.randn(N, C, T_in, V).to(device),
+        'velocity':      torch.randn(N, C, T_in, V).to(device),
+        'bone':          torch.randn(N, C, T_in, V).to(device),
+        'bone_velocity': torch.randn(N, C, T_in, V).to(device),
     }
-    print(f"  Input:  MIB Dict (joint, velocity, bone) — each {tuple(x['joint'].shape)}")
+    print(f"  Input:  4-stream Dict (joint, velocity, bone, bone_velocity) — each {tuple(x['joint'].shape)}")
 
     with torch.no_grad():
         out = model(x)

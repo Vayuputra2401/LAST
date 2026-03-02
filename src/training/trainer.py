@@ -152,8 +152,8 @@ class Trainer:
                 or 'joint_embed' in name    # JointEmbedding semantic table (LAST-Lite)
                 or 'sym_weight' in name     # BSE bilateral symmetry weights (LAST-Lite)
                 or 'sym_vel_weight' in name # BSE bilateral velocity weights (LAST-Lite)
-                or 'edge' in name            # SpatialGCN edge importance (v3)
-                or 'stream_weights' in name  # StreamFusion blend logits (v2/v3)
+                or 'edge' in name            # SpatialGCN edge importance
+                or 'stream_weights' in name  # StreamFusion blend logits
             ):
                 no_decay.append(param)
             else:
@@ -260,21 +260,10 @@ class Trainer:
             )
 
         # ── Loss ────────────────────────────────────────────────────────────
-        # LAST-v2 forward() returns log(mean_softmax) — log-probabilities.
-        # NLLLoss(log_prob, target) = -log_prob[target] — correct for this output.
-        # CrossEntropyLoss would apply log_softmax on top, double-softmax → wrong.
-        # All other models (LAST-E, single-stream) return raw logits → CrossEntropyLoss.
-        if type(self.model).__name__ == 'LAST_v2':
-            # LAST-v2 forward() returns log(mean_softmax) — log-probabilities.
-            # Use label-smoothed NLL so regularization is preserved (nn.NLLLoss
-            # has no label_smoothing parameter).
-            self.criterion = _LabelSmoothedNLLLoss(
-                smoothing=self.train_cfg['label_smoothing']
-            )
-        else:
-            self.criterion = nn.CrossEntropyLoss(
-                label_smoothing=self.train_cfg['label_smoothing']
-            )
+        # LAST-Lite returns raw logits → CrossEntropyLoss with label smoothing.
+        self.criterion = nn.CrossEntropyLoss(
+            label_smoothing=self.train_cfg['label_smoothing']
+        )
 
         # ── Mixed Precision ─────────────────────────────────────────────────
         self.use_amp = self.train_cfg.get('use_amp', False)
@@ -391,7 +380,7 @@ class Trainer:
             if self.use_amp:
                 with torch.amp.autocast('cuda', dtype=self.amp_dtype):
                     raw_out = self.model(batch_data)
-                    # LAST-E v3 returns (logits, ib_loss) during training
+                    # Some models return (logits, aux_loss) during training
                     if isinstance(raw_out, tuple):
                         outputs, aux_loss = raw_out
                     else:

@@ -74,20 +74,11 @@ class ConfigLoader:
             Model config dict
         """
         # Handle short names:
-        #   'base'    → 'last_base'    → last_base.yaml   (v2 models)
-        #   'base_e'  → 'last_e_base'  → last_e_base.yaml (LAST-E models)
+        #   'shiftfuse_nano'  → 'shiftfuse_nano.yaml'
+        #   'shiftfuse_small' → 'shiftfuse_small.yaml'
         if not model_name.startswith('last_'):
             if model_name.startswith('shiftfuse_'):
                 pass                                    # 'shiftfuse_nano' → 'shiftfuse_nano.yaml'
-            elif model_name.endswith('_e_v3'):
-                variant = model_name[:-5]               # 'base_e_v3' → 'base'
-                model_name = f'last_e_v3_{variant}'     # → 'last_e_v3_base'
-            elif model_name.endswith('_e_v2'):
-                variant = model_name[:-5]               # 'base_e_v2' → 'base'
-                model_name = f'last_e_v2_{variant}'     # → 'last_e_v2_base'
-            elif model_name.endswith('_e'):
-                variant = model_name[:-2]               # 'base_e' → 'base'
-                model_name = f'last_e_{variant}'        # → 'last_e_base'
             else:
                 model_name = f'last_{model_name}'       # → 'last_base'
             

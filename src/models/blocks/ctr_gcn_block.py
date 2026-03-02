@@ -1,9 +1,8 @@
 """
-CTR-GCN-aligned building blocks for LAST-E v2.
+CTR-GCN-aligned building blocks.
 
-This module implements the core architectural components that align LAST-E
-with SOTA skeleton action recognition models while preserving edge-deployment
-efficiency.
+Core architectural components from CTR-GCN adapted for lightweight
+skeleton action recognition with edge-deployment efficiency.
 
 Key components:
   - DropPath:          Stochastic depth regularization (linear ramp)
@@ -75,7 +74,7 @@ class CTRLightGCNConv(nn.Module):
     one adjacency topology, split channels into G groups and let each group
     learn its own topology refinement via input-dependent Q/K projections.
 
-    This fixes the P1 gradient-flow bottleneck identified in the LAST-E audit:
+    This fixes a gradient-flow bottleneck in naive multi-adjacency GCNs:
     the original DirectionalGCNConv sums 5 adjacency components through a
     single 1x1 conv, giving each component only ~C/5 effective channels.
     CTRLightGCNConv gives each group its own refined topology, then concatenates.
@@ -380,13 +379,11 @@ class FreqTemporalGate(nn.Module):
 
 class CTRGCNBlock(nn.Module):
     """
-    CTR-GCN-aligned block for LAST-E v2.
+    CTR-GCN-aligned block for lightweight skeleton action recognition.
 
     Structure:
         CTRLightGCNConv → BN+ReLU → [FreqTemporalGate] → [ST_JointAtt]
         → MultiScaleTCN4 → DropPath(main) + skip → ReLU
-
-    This replaces LightGCNBlock from LAST-E v1.
 
     Args:
         in_channels:    Input channels.

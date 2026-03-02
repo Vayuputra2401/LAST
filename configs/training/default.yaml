@@ -4,8 +4,8 @@
 # Batch size guidance (with AMP + adaptive graph):
 #   Kaggle T4  (16GB): batch_size: 8,  accum: 4  → effective 32
 #   GCP P100   (16GB): batch_size: 16, accum: 1  → effective 16
-#   Lambda A10 (23GB, LAST-v2 base):   batch_size: 64  (3 streams × 9.2M params)
-#   Lambda A10 (23GB, LAST-E any):     batch_size: 128 (tiny model, ample headroom)
+#   Lambda A10 (23GB, LAST-Base):       batch_size: 64  (large model)
+#   Lambda A10 (23GB, LAST-Lite any):  batch_size: 128 (tiny model, ample headroom)
 
 training:
   # Optimizer (SGD + Nesterov is SOTA for GCNs like CTR-GCN)
@@ -64,7 +64,7 @@ training:
 
 # Model Configuration
 model:
-  version: "v2"      # "v2" (LAST-v2) or "e" (LAST-E efficient)
+  version: "v2"      # model version identifier
   variant: "small"   # Options: small, base, large
   num_classes: 60    # 60 or 120 (Overridden by CLI if needed)
 

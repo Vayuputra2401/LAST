@@ -48,7 +48,7 @@ class StaticGCN(nn.Module):
         super().__init__()
 
         # ── Static adjacency ────────────────────────────────────────────
-        # (K, V, V) buffer — not a parameter, same as LAST-E convention.
+        # (K, V, V) buffer — not a parameter.
         self.register_buffer('A', A)
 
         # ── Trainable topology correction ────────────────────────────────
@@ -68,7 +68,7 @@ class StaticGCN(nn.Module):
         Return symmetric D^{-1/2} |A_learned| D^{-1/2}.
 
         abs  → non-negative edge weights
-        D^{-1/2} … D^{-1/2} → symmetric normalisation (same as LAST-E v3)
+        D^{-1/2} … D^{-1/2} → symmetric normalisation
         """
         A = torch.abs(self.A_learned)                                # (V, V)
         D = A.sum(dim=1).clamp(min=1e-6)                             # (V,)

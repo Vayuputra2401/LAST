@@ -7,8 +7,8 @@ pretraining, hyperparameters, scheduling, and ablation experiments.
 
 ## 1. Full Pipeline Overview
 
-> **Note:** Our existing trained model (LAST-E v3, 720K params) serves as a mid-size teacher
-> for distillation if LAST-Base is not yet ready. It is NOT part of the new experiments.
+> **Note:** LAST-Base (planned, ~4.2M params) will serve as the teacher for distillation.
+> LAST-Lite standalone training is the current focus.
 
 ```
 Phase 0: Preprocessing

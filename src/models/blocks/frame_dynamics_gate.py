@@ -8,8 +8,8 @@ model to weight frames differently based on their position in the sequence
 This is the temporal analog of JointEmbedding: both add positional/identity
 awareness at very low parameter cost.
 
-Unlike MotionGate (LAST-E v3) which computes gates from data (temporal
-differences), FrameDynamicsGate uses a fixed learned gate per position —
+Unlike MotionGate which computes gates from data (temporal differences),
+FrameDynamicsGate uses a fixed learned gate per position —
 data-independent and edge-friendly.
 
 Implementation: a single (1, C, T, 1) parameter, directly used as the gate

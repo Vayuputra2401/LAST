@@ -1,205 +1,209 @@
 # 05 — Training
 
-## Optimizer
+## Optimiser
 
 **SGD** with momentum and Nesterov acceleration:
+
 ```yaml
 optimizer: sgd
+lr: 0.1
 momentum: 0.9
 nesterov: true
-weight_decay: 0.0004
+weight_decay: 0.0005
 ```
 
-**Weight decay exclusion** — the following parameter groups have WD=0:
-- Bias parameters (`bias`)
-- Batch normalization weights and biases
-- `alpha` parameters (ST_JointAtt gate weights + SpatialGCN subset blending weights)
-- `A_learned` (adaptive adjacency in LAST-v2)
-- `pool_gate` (gated head blend parameter)
-- `edge` (learnable edge weights in SpatialGCN)
+### Weight Decay Exclusion
 
-This prevents regularization from suppressing learned structural parameters that should be
-free to diverge from zero initialization.
+The following parameter groups are excluded from weight decay (WD=0) to prevent regularisation from suppressing learned structural parameters that should be free to diverge from zero initialisation:
+
+| Parameter pattern | Component | Rationale |
+|-------------------|-----------|-----------|
+| `bias` | All layers | Standard practice |
+| `bn`, `norm` | BatchNorm weights/biases | BN affine params should not be decayed |
+| `alpha`, `alpha_dyn` | Graph blending weights | Structural balance parameters |
+| `A_learned` | StaticGCN topology correction | Trainable adjacency should be unconstrained |
+| `pool_gate` | Gated head blend | Should be free to learn optimal GAP/GMP mix |
+| `freq_mask` | FDCR frequency mask | Frequency preferences should be unconstrained |
+| `gate_logit` | FrameDynamicsGate | Temporal gating should not be regularised |
+| `joint_embed` | JointEmbedding | Per-joint bias should be unconstrained |
+| `sym_weight`, `sym_vel_weight` | BSE bilateral weights | Symmetry encoding should not be regularised |
+| `node_proj` | Dynamic graph projection | Embedding projection |
 
 ---
 
-## Learning Rate Schedules
+## Learning Rate Schedule
 
-Three scheduler options, configurable via `--scheduler`:
-
-### Option 1: `cosine_warmup` (Phase A default)
+### `multistep_warmup` (LAST-Lite default)
 
 ```
 Phase 1: LinearLR warmup
-  epochs 0–4 (5 epochs)
+  epochs 0-4 (5 epochs)
   lr: 0.01 → 0.1
 
-Phase 2: CosineAnnealingLR
-  epochs 5–89 (85 epochs)
-  lr: 0.1 → 0.0001
+Phase 2: MultiStepLR
+  milestones: [60, 90]  (global epochs, adjusted internally)
+  gamma: 0.1
+  epoch 5-59:  lr = 0.1
+  epoch 60-89: lr = 0.01
+  epoch 90-119: lr = 0.001
 ```
 
-Smooth decay, no LR cliffs. Implemented as `SequentialLR(LinearLR, CosineAnnealingLR)`.
+Implemented as `SequentialLR(LinearLR, MultiStepLR)`. The milestones in the config are **global epochs**; the trainer internally adjusts them to MultiStepLR-relative by subtracting warmup_epochs.
 
-### Option 2: `cosine_warmup_restart` (Phase D — SGDR)
+The 5-epoch warmup is essential for LAST-Lite's gate stability: FDCR freq_mask and BSE gate are initialised near zero, and a warmup period allows the gates to stabilise before the main learning rate kicks in.
 
-```
-Phase 1: LinearLR warmup
-  epochs 0–4 (5 epochs)
-  lr: 0.01 → 0.1
-
-Phase 2: CosineAnnealingWarmRestarts (SGDR)
-  T_0 = 30 (first cycle period)
-  T_mult = 1 (constant cycle length)
-  eta_min = 0.0001
-
-  Cycle 1: epochs 5–35, lr: 0.1 → 0.0001
-  Cycle 2: epochs 35–65, lr: 0.1 → 0.0001 (restart)
-  Cycle 3: epochs 65–95, lr: 0.1 → 0.0001 (restart)
-```
-
-SGDR acts as **implicit regularization** — periodic warm restarts shake the model out of
-sharp minima, encouraging convergence to flatter regions of the loss landscape. Used by
-EfficientGCN. Configurable via:
-```bash
---set training.restart_period=30 training.restart_mult=1
-```
-
-### Option 3: `multistep_warmup` (legacy, not recommended)
+### `cosine_warmup` (alternative)
 
 ```
-Phase 1: LinearLR warmup
-Phase 2: MultiStepLR at milestones [50, 65], gamma=0.1
+Phase 1: LinearLR warmup (5 epochs)
+Phase 2: CosineAnnealingLR (remaining epochs)
+  lr: 0.1 → min_lr (0.0001)
 ```
 
-Creates aggressive 10× LR cliffs that shock BN stats and cause premature convergence.
-**Not used for v3 training.**
+Smooth decay without LR cliffs. Useful for longer training runs.
 
 ---
 
-## Training Hyperparameters
+## LAST-Lite Training Hyperparameters
 
-### Phase A+B+D Combined (Current Run)
+### Round 3 Configuration (current)
 
-| Parameter | Value | Config key |
-|-----------|-------|------------|
-| Epochs | 90 | `epochs` |
-| Batch size | 32 | `batch_size` |
-| Effective batch | 64 | `batch_size × gradient_accumulation_steps` |
-| Input frames | 64 | `input_frames` |
-| Label smoothing | 0.1 | `label_smoothing` |
-| Gradient clip | 1.0 | `gradient_clip` |
-| Drop path rate | 0.15 | `model.drop_path_rate` |
-| use_st_att | [F, F, T] | `model.use_st_att` |
-| Scheduler | SGDR | `cosine_warmup_restart` |
-| AMP | enabled | `--amp` |
+| Parameter | Value | Config key | Notes |
+|-----------|-------|------------|-------|
+| Epochs | 120 | `epochs` | Extended from 90 (Round 2) |
+| Batch size | 64 | `batch_size` | Single GPU, no accumulation |
+| Input frames | 64 | `input_frames` | |
+| Label smoothing | 0.05 | `label_smoothing` | Reduced from 0.1 (Round 2) |
+| Weight decay | 0.0005 | `weight_decay` | Reduced from 0.001 (Round 2) |
+| Gradient clip | 5.0 | `gradient_clip` | ShiftFuse has no adaptive modules needing tight clip |
+| Scheduler | multistep_warmup | `scheduler` | 5-epoch warmup + milestones [60, 90] |
+| Warmup LR | 0.01 | `warmup_start_lr` | |
+| AMP | enabled | `use_amp` | Mixed precision |
+| Seed | 42 | `seed` | Reproducibility |
 
-### Regularization Stack
+### Regularisation Stack
 
-| Technique | Config | Effect |
-|-----------|--------|--------|
-| Dropout (head) | 0.3 | Prevents classifier overfitting |
-| DropPath | 0.15 (linear ramp) | Forces gradient flow through skip connections |
-| Label smoothing | 0.1 | Prevents overconfident logits |
-| Weight decay | 0.0004 | L2 penalty on conv weights |
-| IB loss | weight=0.01 | Information bottleneck regularization (base/large) |
-| Gradient accumulation | 2× | Effective batch 64 for better gradient estimates |
+| Technique | LAST-Lite nano | LAST-Lite small | Rationale |
+|-----------|---------------|----------------|-----------|
+| Dropout (head) | 0.1 | 0.2 | Light — small models need capacity |
+| Label smoothing | 0.05 | 0.05 | Prevents overconfident logits |
+| Weight decay | 0.0005 | 0.0005 | L2 on conv weights only |
+| Gradient clip | 5.0 | 5.0 | Safety net, rarely triggered |
+
+**No DropPath**: LAST-Lite has no adaptive modules to co-adapt, making stochastic depth unnecessary.
+
+**No gradient accumulation**: Models are small enough to fit in batch 64 on a single T4 GPU.
+
+### Round 2 → Round 3 Corrections
+
+Round 2 revealed that nano (79.75%) beat small (78.84%) because small was **over-regularised**:
+
+| Parameter | Round 2 | Round 3 | Diagnosis |
+|-----------|---------|---------|-----------|
+| Label smoothing | 0.1 | 0.05 | Too aggressive for small model |
+| Weight decay | 0.001 | 0.0005 | Over-regularised small's extra capacity |
+| Small dropout | 0.3 | 0.2 | Triple-whammy with LS + WD |
+| Epochs | 90 | 120 | Small was still improving at epoch 90 |
+| Milestones | [60, 80] | [60, 90] | Third phase 90-120 at LR=0.001 for fine-tuning |
 
 ---
 
 ## AMP (Automatic Mixed Precision)
 
-Enable with `--amp` flag. Uses `torch.cuda.amp.GradScaler` for FP16 forward + backward.
-- ~40% VRAM reduction on all GPUs
-- No observed accuracy degradation in preliminary tests
-- Required on Kaggle T4 (16GB) for base variant at batch_size=32
+Enabled with `use_amp: true` in config. Uses `torch.amp.GradScaler` for FP16 forward/backward.
+
+- ~40% VRAM reduction on T4
+- No observed accuracy degradation
+- **Critical**: FDCR matmul is explicitly cast to fp32 before execution to prevent AMP fp16 accumulation errors (~1-2% accuracy impact if not handled)
 
 ---
 
 ## Training Commands
 
+### LAST-Lite small (uses YAML defaults directly)
+
 ```bash
-# Phase A+B+D (current — Kaggle T4)
-python scripts/train.py \
-  --model base_e_v3 --dataset ntu60 --split_type xsub \
-  --epochs 90 --batch_size 32 --lr 0.1 \
-  --weight_decay 0.0004 --dropout 0.3 \
-  --scheduler cosine_warmup_restart --min_lr 0.0001 \
-  --amp --workers 2 --seed 42 --env kaggle \
-  --set training.gradient_clip=1.0 \
-       training.gradient_accumulation_steps=2 \
-       training.warmup_epochs=5 \
-       training.warmup_start_lr=0.01 \
-       training.label_smoothing=0.1 \
-       training.ib_loss_weight=0.01 \
-       training.save_interval=10 \
-       training.nesterov=true \
-       training.momentum=0.9 \
-       training.restart_period=30 \
-       training.restart_mult=1 \
-       model.drop_path_rate=0.15 \
-       model.use_st_att=false,false,true
+python scripts/train.py --model shiftfuse_small --dataset ntu60 --split_type xsub \
+    --env kaggle --amp --avg_checkpoints 5
+```
 
-# Local — smoke test (2 epochs)
-python scripts/train.py --model nano_e_v3 --dataset ntu60 --epochs 2 --batch_size 4
+### LAST-Lite nano (CLI overrides for lighter regularisation)
 
-# Override data root (e.g., for different dataset location)
-python scripts/train.py --model base_e_v3 --dataset ntu60 --env kaggle \
-  --data_root /kaggle/input/my-custom-dataset
+```bash
+python scripts/train.py --model shiftfuse_nano --dataset ntu60 --split_type xsub \
+    --env kaggle --amp --avg_checkpoints 5 \
+    --weight_decay 0.0003 --set training.label_smoothing=0.03
+```
+
+### Local smoke test
+
+```bash
+python scripts/train.py --model shiftfuse_nano --dataset ntu60 --epochs 2 --batch_size 4
 ```
 
 ### All --model choices
 
 | Flag | Model | Params |
 |------|-------|--------|
-| `nano_e_v3` | LAST-E v3 nano | 83K |
-| `small_e_v3` | LAST-E v3 small | 345K |
-| `base_e_v3` | LAST-E v3 base | 720K |
-| `large_e_v3` | LAST-E v3 large | 1.08M |
-| `base` | LAST-v2 base | ~9.2M |
+| `shiftfuse_nano` | LAST-Lite nano | 80,234 |
+| `shiftfuse_small` | LAST-Lite small | 247,548 |
 
 ---
 
 ## Trainer Implementation
 
-**File:** `src/training/trainer.py`
+**File**: `src/training/trainer.py`
 
 Key features:
-- **Two-level NaN guard**: pre-forward input check + post-forward loss check with BN reset
-- **AMP GradScaler** — automatically skips step on gradient overflow
-- **GPU-side metric accumulation** — `.item()` called once at epoch end
-- **Gradient accumulation** — configurable via `gradient_accumulation_steps`
-- **Checkpoint save** — model, optimizer, scheduler, scaler, epoch, best_acc to `.pth`
-- **Three scheduler options** — `cosine_warmup`, `cosine_warmup_restart` (SGDR), `multistep_warmup`
+- **Two-level NaN guard**: pre-forward input check + post-forward loss check with BN snapshot/restore
+- **AMP GradScaler**: automatically skips optimiser step on gradient overflow
+- **GPU-side metric accumulation**: `.item()` called once at epoch end to minimise CPU-GPU sync
+- **Validation clamping**: val loss clamped to +/-30 to prevent NaN propagation
+- **NaN counter**: tracks consecutive NaN batches, raises if threshold exceeded
+- **Checkpoint averaging**: averages top-N checkpoints at end of training for better generalisation
+
+### Config Auto-Selection
+
+The training script automatically selects the correct training config based on model name:
+- `shiftfuse_*` models → `configs/training/shiftfuse.yaml`
+- All others → `configs/training/default.yaml`
+
+### CLI Override System
+
+**File**: `src/utils/config.py`
+
+Supports dot-notation overrides with auto-casting:
+
+```bash
+--set training.label_smoothing=0.05      # → float
+--set model.use_bilateral=true           # → bool
+--set training.milestones=60,90          # → [60, 90]
+```
+
+Direct CLI flags: `--lr`, `--weight_decay`, `--dropout`, `--scheduler`, `--milestones`, `--min_lr`, `--epochs`, `--batch_size`.
 
 ---
 
-## Config System
+## Checkpoint Averaging
 
-**File:** `src/utils/config.py`
+At the end of training, the top-N checkpoints (by validation accuracy) are averaged for improved generalisation:
 
-Environment auto-detection:
-- `--env` flag provided → use that environment
-- `/kaggle` exists in filesystem → uses `configs/environment/kaggle.yaml`
-- Otherwise → uses `configs/environment/local.yaml`
-
-CLI overrides via `--set KEY=VALUE` (dot-notation, auto-cast):
 ```bash
---set training.lr=0.1           # → float 0.1
---set model.use_st_att=false,false,true  # → [False, False, True]
---set training.nesterov=true    # → bool True
+--avg_checkpoints 5   # Average best 5 checkpoints
 ```
+
+The averaged model is evaluated on the validation set and saved as the final model. This typically provides a 0.3-0.5% accuracy boost over the single best checkpoint.
 
 ---
 
 ## Training Pipeline
 
-| Step | Model | Phase | Environment | Status |
-|------|-------|-------|-------------|--------|
-| 1 | LAST-E v3 base | A+B+D (regularization + ablation + SGDR) | Kaggle T4 | **Running** |
-| 2 | LAST-E v3 base | Evaluate convergence | Kaggle T4 | Pending |
-| 3 | LAST-E v3 all variants | Full variant sweep | Kaggle T4 | Pending |
-| 4 | LAST-v2 base | Teacher training | Kaggle T4 | Pending |
-| 5 | LAST-E v3 → LAST-Lite | Knowledge distillation | Kaggle T4 | Planned |
-| 6 | LAST-Lite | MaskCLR pretraining (if gap exists) | Kaggle T4 | Planned |
-| 7 | LAST-Lite | INT8 quantization + edge deployment | Local | Planned |
+| Step | Model | Description | Status |
+|------|-------|-------------|--------|
+| 1 | LAST-Lite nano (Round 1) | Initial training, 90 epochs, baseline config | Done (80.77%) |
+| 2 | LAST-Lite nano+small (Round 2) | Regularisation + augmentation | Done (nano 79.75%, small 78.84%) |
+| 3 | LAST-Lite nano+small (Round 3) | Corrected hyperparameters + BSE | **Next** |
+| 4 | LAST-Base | Teacher training | Planned |
+| 5 | LAST-Base → LAST-Lite | Knowledge distillation | Planned |
+| 6 | LAST-Lite | MaskCLR pretraining (if gap exists) | Planned |
+| 7 | LAST-Lite | INT8 quantisation + edge deployment | Planned |

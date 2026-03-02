@@ -1,5 +1,5 @@
 """
-SpatialGCN — Multi-hop spatial graph convolution for LAST-E v3.
+SpatialGCN — Multi-hop spatial graph convolution.
 
 Ported from EfficientGCN with key improvements:
     1. Symmetric D^{-1/2}AD^{-1/2} normalised adjacency (via full-graph degree).

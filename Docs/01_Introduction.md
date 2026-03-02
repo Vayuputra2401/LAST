@@ -2,73 +2,81 @@
 
 ## Problem Statement
 
-Human action recognition from 3D skeleton sequences is a core computer vision task with applications
-in human-computer interaction, surveillance, sports analysis, and healthcare monitoring. Unlike RGB
-video, skeleton data is compact, viewpoint-invariant, and robust to illumination and background noise.
+Skeleton-based action recognition from 3D joint sequences is a core task in human activity understanding, with direct applications in human-computer interaction, surveillance, rehabilitation monitoring, and sports analytics. Skeleton data offers compelling advantages over RGB video: it is compact, viewpoint-invariant, privacy-preserving, and robust to variations in illumination, background clutter, and appearance.
 
-The key challenge is the **efficiency vs. accuracy tension**: high-accuracy GCN models (CTR-GCN,
-InfoGCN, HD-GCN) require 1.5–10M parameters and are impractical on edge hardware. Lightweight models
-(EfficientGCN-B0) sacrifice significant accuracy. There is no existing work that achieves both
-sub-1M parameter count *and* competitive accuracy with rich novel architectural contributions.
+Graph Convolutional Networks (GCNs) have emerged as the dominant paradigm for skeleton-based recognition, modelling the human body as a spatio-temporal graph where joints are nodes and bones are edges. However, the field faces a fundamental **efficiency-accuracy tension**: state-of-the-art methods (CTR-GCN, InfoGCN, HD-GCN, HI-GCN) achieve 92--93% top-1 accuracy on NTU RGB+D 60 but require 1.5--3.5M parameters and substantial per-sample adaptive computation (learned adjacencies, attention mechanisms, dynamic graph inference). At the other extreme, EfficientGCN-B0 achieves 90.2% at 290K parameters but provides no novel architectural contributions beyond compound scaling of a standard GCN.
+
+No existing work simultaneously achieves (i) sub-250K parameter count, (ii) competitive accuracy approaching the 90% mark, and (iii) introduces genuinely novel architectural primitives with theoretical motivation grounded in human skeletal structure.
 
 ---
 
-## Why 3 Streams (MIB)?
+## Why Multiple Streams?
 
-The Motion-Interaction-Bone (MIB) decomposition captures complementary kinematic signals:
+Human motion is a multi-faceted signal. A single coordinate representation cannot capture all discriminative information. Following the multi-stream paradigm established by 2s-AGCN and refined by EfficientGCN, we decompose each skeleton sequence into four complementary kinematic streams:
 
-| Stream   | Input                          | Signal captured                         |
-|----------|--------------------------------|-----------------------------------------|
-| Joint (J)| Coords relative to spine base  | Absolute pose configuration             |
-| Velocity (V)| Frame-diff J_{t+1} − J_t   | Temporal dynamics, motion speed         |
-| Bone (B) | J_child − J_parent             | Limb orientations, body structure       |
+| Stream | Key | Derivation | Signal |
+|--------|-----|------------|--------|
+| Joint | `joint` | 3D coordinates centred at spine base | Absolute pose configuration |
+| Velocity | `velocity` | J(t+1) - J(t) (temporal difference) | Motion speed and direction |
+| Bone | `bone` | J(child) - J(parent) per skeleton edge | Limb orientation and length |
+| Bone velocity | `bone_velocity` | B(t+1) - B(t) (temporal diff of bone) | Limb angular velocity |
 
-Concatenating or fusing all three streams consistently outperforms single-stream models by 1–3%
-on NTU60/120. LAST-v2 processes all three independently; LAST-E fuses them at input to run a
-single backbone.
+All four streams are fused at the input level via a learned channel-wise concatenation, enabling a single lightweight backbone to jointly reason over complementary kinematic cues.
 
 ---
 
 ## Contributions
 
-1. **LAST-v2 (Teacher)** — A high-accuracy 9.2M-parameter model with three independent per-stream
-   backbones, AdaptiveGraphConv (physical + learned + dynamic adjacency), ST_JointAtt spatial
-   attention, and LinearAttention for temporal modeling. Designed for maximum accuracy as the
-   teacher in knowledge distillation.
+This work presents **LAST** (Lightweight Action recognition via Shift-based Topology), a two-model framework comprising a high-accuracy research model and a novel edge-deployable architecture:
 
-2. **LAST-E v3 (Student) family** — Four efficiency variants (nano/small/base/large) spanning
-   83K–1.08M parameters. Built on EfficientGCN-derived SpatialGCN with full-graph D⁻½AD⁻½
-   normalization and multi-subset partitioning. Key innovations:
-   - **StreamFusion**: per-channel (3, C₀) softmax-weighted blend replaces 3× backbone cost
-   - **SpatialGCN**: full-graph degree-normalized, multi-hop K=5 subset partitioning (N1 fix)
-   - **EpSepTCN**: MobileNetV2-style inverted-bottleneck separable temporal convolution
-   - **MotionGate / HybridGate**: temporal-difference channel gating (novel — no prior work)
-   - **ST_JointAtt**: factorized spatial-temporal attention with zero-init residual gate
-   - **Gated GAP+GMP head**: learnable per-channel blend of average and max pooling
-   - **DropPath**: stochastic depth regularization with linear ramp
+### 1. LAST-Lite (ShiftFuse-GCN) — Main Contribution
 
-3. **LAST-Lite (Edge) family** — Two fixed-computation variants (nano_lite/small_lite) designed
-   for edge deployment. Same graph structure as LAST-E v3 but with all adaptive modules removed
-   (no MotionGate, ST_JointAtt, subset_att, learnable edge). Pure convolution, trivially
-   quantizable. Target: ~60K–180K params, INT8 deployable at <5ms on Jetson Nano.
+A fixed-computation skeleton GCN family achieving competitive accuracy at sub-250K parameters. LAST-Lite introduces **four novel architectural primitives**, each addressing a distinct modelling gap in prior skeleton GCNs:
 
-4. **Novel architectural ideas** for future research:
-   - **Frequency-Aware Temporal Gate (FATG)**: DCT-domain per-channel frequency attention
-   - **Action-Prototype Graph (APG)**: class-conditioned topology via prototype blending
-   - **Progressive Cross-Scale Re-fusion (PCRF)**: stream re-injection at different backbone depths
-   - **Hierarchical Body-Region Attention (HBRA)**: anatomical partition → 4× cheaper attention
-   - **Causal + Bidirectional Training (CBTF)**: 50% causal masking for predictive representations
+- **BRASP (Body-Region-Aware Spatial Shift)**: Anatomically-partitioned zero-parameter spatial mixing. Channels are grouped by body region (arms, legs, torso, cross-body) and shifted only among graph neighbours within their assigned region. This encodes body-part semantics as a structural inductive bias at zero computational cost. *No prior skeleton GCN uses anatomy-guided channel routing.*
 
-5. **Training pipeline** — Knowledge distillation (LAST-E v3 → LAST-Lite), optional MaskCLR
-   self-supervised pretraining, INT8 quantization, and ONNX/TensorRT edge deployment.
+- **BSE (Bilateral Symmetry Encoding)**: Explicit modelling of left-right skeletal symmetry. For each of 10 symmetric joint pairs, BSE computes the bilateral difference and its temporal derivative, weights them per-channel, and injects the signal antisymmetrically (left joints receive +signal, right joints receive -signal). This enables the network to distinguish symmetric (clapping), anti-phase (walking), and asymmetric (drinking) actions. Cost: 2C + 1 parameters per block. *No prior work explicitly models bilateral symmetry as a learned feature.*
+
+- **FDCR (Frozen DCT Frequency Routing)**: Data-independent frequency-domain channel specialisation. Each channel learns a sigmoid mask over DCT frequency bins, allowing different channels to specialise for low-frequency (slow, periodic) vs. high-frequency (fast, impulsive) temporal patterns. The DCT basis is frozen (zero parameters), and the learnable mask costs C x T parameters per block. *Frequency-domain processing is unexplored in skeleton GCNs.*
+
+- **StaticGCN with A_learned**: A lightweight stage-shared graph convolution combining K fixed adjacency subsets with a trainable topology correction matrix (V x V = 625 parameters). One StaticGCN instance is shared across all blocks within a stage, eliminating redundant graph parameters. The learned adjacency uses symmetric normalisation (D^{-1/2}|A|D^{-1/2}) and is zero-initialised for stable training.
+
+Two model variants are provided:
+
+| Variant | Parameters | Architecture |
+|---------|-----------|--------------|
+| LAST-Lite nano | 80,234 | channels=[32,48,64], blocks=[1,1,1] |
+| LAST-Lite small | 247,548 | channels=[48,72,96], blocks=[1,2,2] |
+
+### 2. LAST-Base — High-Accuracy Research Model (Planned)
+
+A large-capacity model (~4.2M params per stream, 4-stream ensemble) designed to beat the current SOTA (HI-GCN, 93.3% NTU-60 xsub). LAST-Base integrates cross-temporal topology refinement, action-prototype graph conditioning, frequency-domain gating, and partitioned spatio-temporal attention into a unified block. It also serves as the teacher for knowledge distillation into LAST-Lite.
+
+### 3. Knowledge Distillation Pipeline (Planned)
+
+A structured distillation path from LAST-Base to LAST-Lite, with optional MaskCLR self-supervised pretraining for additional representation learning at small scale.
+
+---
+
+## Design Philosophy
+
+LAST-Lite is built on the principle that **structural inductive biases can replace learned adaptive mechanisms** at small model scales. Where prior lightweight GCNs (EfficientGCN, Shift-GCN) use generic modules scaled down from larger models, LAST-Lite introduces domain-specific primitives that encode knowledge about human skeletal structure directly into the architecture:
+
+1. **Body regions matter** (BRASP): Arms, legs, and torso have distinct kinematic roles. Routing information flow by body part is more informative than random channel mixing.
+
+2. **Bilateral symmetry is discriminative** (BSE): The human body is bilaterally symmetric, and the degree and dynamics of left-right symmetry directly distinguish action categories.
+
+3. **Temporal frequency separates action types** (FDCR): Periodic actions (walking, waving) and impulsive actions (punching, throwing) occupy different frequency bands. Channel-wise frequency specialisation captures this without per-sample computation.
+
+4. **Graph topology can be shared and corrected** (StaticGCN): A single graph convolution per stage, shared across blocks, is sufficient when augmented with a small learnable correction matrix.
+
+These four principles yield a model family that achieves ~80% top-1 accuracy on NTU-60 xsub in early standalone training (Round 2), with substantial headroom expected from corrected hyperparameters (Round 3) and knowledge distillation.
 
 ---
 
 ## Target Venue
 
-**ECCV 2026**
-- Abstract deadline: February 26, 2026
-- Paper deadline: March 5, 2026
+**ECCV 2026** (or equivalent top-tier venue)
 
 ---
 
@@ -76,10 +84,12 @@ single backbone.
 
 | Section | File | Content |
 |---------|------|---------|
-| 02 | [Related Work](02_Related_Work.md) | SOTA comparison, generational landscape |
-| 03 | [Architecture](03_Architecture.md) | LAST-v2 + LAST-E v3 + LAST-Lite design |
-| 04 | [Data Pipeline](04_Data_Pipeline.md) | MIB streams, NTU60/120, preprocessing |
-| 05 | [Training](05_Training.md) | Optimizer, schedulers, SGDR, commands |
+| 02 | [Related Work](02_Related_Work.md) | SOTA landscape, generational analysis |
+| 03 | [Architecture](03_Architecture.md) | LAST-Lite block design, LAST-Base overview |
+| 04 | [Data Pipeline](04_Data_Pipeline.md) | 4-stream preprocessing, augmentation |
+| 05 | [Training](05_Training.md) | Optimiser, scheduler, regularisation |
 | 06 | [Distillation](06_Distillation.md) | KD + MaskCLR pretraining plan |
-| 07 | [Experiments](07_Experiments.md) | Param counts, results, ablation plan |
-| 08 | [Environment Setup](08_Environment_Setup.md) | Local / Kaggle / GCP setup |
+| 07 | [Experiments](07_Experiments.md) | Results, ablations, SOTA comparison |
+| 08 | [Environment Setup](08_Environment_Setup.md) | Local / Kaggle setup |
+| A1 | [Experiment-LAST-Lite](Experiment-LAST-Lite.md) | Detailed LAST-Lite experiment log |
+| A2 | [Experiment-LAST-Base](Experiment-LAST-Base.md) | Detailed LAST-Base experiment log |

@@ -1,17 +1,13 @@
 """Model module exports"""
 
-from .last_e_v3 import (
-    LAST_E_v3,
-    create_last_e_v3_nano,
-    create_last_e_v3_small,
-    create_last_e_v3_base,
-    create_last_e_v3_large,
+from .shiftfuse_gcn import (
+    LAST_Lite,
+    create_shiftfuse_nano,
+    create_shiftfuse_small,
 )
 
 __all__ = [
-    'LAST_E_v3',
-    'create_last_e_v3_nano',
-    'create_last_e_v3_small',
-    'create_last_e_v3_base',
-    'create_last_e_v3_large',
+    'LAST_Lite',
+    'create_shiftfuse_nano',
+    'create_shiftfuse_small',
 ]

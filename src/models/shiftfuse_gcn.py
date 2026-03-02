@@ -264,7 +264,7 @@ class LAST_Lite(nn.Module):
         self.stream_names = ['joint', 'velocity', 'bone', 'bone_velocity']
 
         # ── 1. Graph adjacency ───────────────────────────────────────────
-        # Build K-subset adjacency (same convention as LAST-E v3).
+        # Build K-subset adjacency (spatial multi-hop subsets).
         # raw_partitions=True → clean 0/1 subsets, no double normalisation.
         self.graph = Graph(
             layout=graph_layout,

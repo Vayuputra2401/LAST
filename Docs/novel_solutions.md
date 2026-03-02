@@ -2,7 +2,7 @@
 
 ---
 
-## Part 1: What Makes LAST-E and LAST-v2 Novel
+## Part 1: What Makes LAST-Base and LAST-Lite Novel
 
 ### LAST-v2 — Novel Contributions
 
@@ -293,7 +293,7 @@ x_back = torch.matmul(x_gated, self.dct.T)                  # → time domain
 
 ---
 
-### Recommended Synthesis 1: LAST-E v3 Block (Base/Large — Adaptive)
+### Recommended Synthesis 1: LAST-Base Block (Research — Adaptive)
 
 For research/accuracy models where per-sample compute is acceptable:
 
@@ -327,7 +327,7 @@ ShiftFuse Block = BodyRegionShift          (Idea F, 0 params, zero-cost spatial 
 
 ## Part 4: Priority Ranking for Implementation
 
-### For LAST-E v3 (Adaptive — Research)
+### For LAST-Base (Adaptive — Research)
 
 | Rank | Idea | Params Added | Expected Gain | Risk | For Base? | For Lite? |
 |------|------|-------------|---------------|------|-----------|-----------|

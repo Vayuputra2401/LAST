@@ -1,5 +1,5 @@
 """
-EpSepTCN — Expanded Separable Temporal Convolution for LAST-E v3.
+EpSepTCN — Expanded Separable Temporal Convolution.
 
 Ported from EfficientGCN's Temporal_Sep_Layer.  MobileNetV2-style inverted
 bottleneck:

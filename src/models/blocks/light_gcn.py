@@ -232,7 +232,7 @@ class MultiScaleTCN(nn.Module):
 
 class LightGCNBlock(nn.Module):
     """
-    Lightweight GCN Block for LAST-E student model — v2.
+    Lightweight GCN Block for skeleton action recognition.
 
     Structure:
         DirectionalGCNConv → BN+ReLU → [optional ST_JointAtt]

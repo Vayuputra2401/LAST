@@ -1,189 +1,135 @@
-# 06 — Distillation & Pretraining
+# 06 — Distillation and Pretraining
 
 ## Overview
 
-The deployment pipeline has three paths, used selectively:
+The training pipeline has three paths, applied selectively based on standalone accuracy:
 
 ```
 Path A: Supervised Training Only
-  LAST-E v3 base → train → standalone accuracy
+  LAST-Lite → train with labels → standalone accuracy
 
 Path B: Knowledge Distillation (KD)
-  LAST-E v3 base (teacher, frozen) → distill → LAST-Lite nano/small (student)
+  LAST-Base (teacher, frozen) → distill → LAST-Lite (student)
 
-Path C: MaskCLR Pretraining + KD
-  MaskCLR self-supervised pretrain LAST-Lite → then Path B (distill from teacher)
+Path C: Self-Supervised Pretraining + KD
+  MaskCLR pretrain LAST-Lite → then Path B
 ```
 
-**Decision tree:** Path A first. If accuracy is sufficient (>75% val), proceed to Path B.
-If Path B leaves a >3% gap to EfficientGCN at same params, add Path C (MaskCLR).
+**Decision tree**: Path A first. If accuracy is sufficient (>85% val), publish standalone results. If Path A leaves a gap to EfficientGCN-B0 (90.2%), add Path B. If Path B still falls short, add Path C.
 
 ---
 
-## Part 1: Knowledge Distillation (LAST-E v3 → LAST-Lite)
+## Part 1: Knowledge Distillation (LAST-Base → LAST-Lite)
 
 ### Strategy
 
-Teacher and student share the same graph structure (SpatialGCN with D⁻½AD⁻½ normalization),
-so feature-level mimicry is highly effective — spatial features have compatible semantics at
-each stage.
+The teacher (LAST-Base) and student (LAST-Lite) operate on the same 4-stream input and share the same graph structure (K-subset adjacency with symmetric normalisation). This structural alignment makes feature-level mimicry highly effective — spatial features have compatible geometric semantics at each stage boundary.
 
 ### Loss Function
 
 ```
-L = α × CE(student_logits, labels)                         # hard label loss
-  + β × τ² × KL(softmax(student/τ), softmax(teacher/τ))    # soft label loss
-  + γ × Σ_i MSE(proj_i(student_feat[i]), teacher_feat[i])  # feature mimicry (per stage)
+L = alpha * CE(student_logits, labels)                              # hard label loss
+  + beta  * tau^2 * KL(softmax(student/tau), softmax(teacher/tau))  # soft label loss
+  + gamma * Sum_i MSE(proj_i(student_feat[i]), teacher_feat[i])     # feature mimicry
 ```
 
 Where:
-- `α` — hard label weight (standard CE)
-- `β = 1 - α` — soft label weight (teacher knowledge)
-- `τ` — temperature (softens distributions; higher = softer)
-- `γ` — feature mimicry weight (0 = logit-only distillation)
-- `proj_i` — 1×1 conv aligning student→teacher channel dims per stage
+- `alpha` — hard label weight (standard cross-entropy)
+- `beta = 1 - alpha` — soft label weight (teacher knowledge transfer)
+- `tau` — temperature (softens probability distributions; higher = softer)
+- `gamma` — feature mimicry weight
+- `proj_i` — 1x1 conv aligning student channel dimensions to teacher per stage
 
 ### Recommended Hyperparameters
 
-| Student | α | β | τ | γ | Rationale |
-|---------|---|---|---|---|-----------|
-| nano_lite (60K) | 0.3 | 0.7 | 4.0 | 0.1 | Big capacity gap — rely heavily on teacher |
-| small_lite (180K) | 0.5 | 0.5 | 4.0 | 0.1 | Balanced — student can learn independently |
+| Student | alpha | beta | tau | gamma | Rationale |
+|---------|-------|------|-----|-------|-----------|
+| LAST-Lite nano (80K) | 0.3 | 0.7 | 4.0 | 0.1 | Large capacity gap — rely heavily on teacher |
+| LAST-Lite small (248K) | 0.5 | 0.5 | 4.0 | 0.1 | Balanced — student has enough capacity to learn independently |
 
-Temperature τ=4.0 is robust across model sizes. Feature mimicry γ=0.1 (light) because
-same-family architectures already align well; heavy mimicry (γ=1.0) can over-constrain.
+Temperature tau=4.0 is robust across model sizes. Feature mimicry gamma=0.1 (light) because the architectural families share the same graph structure and stage boundaries; heavy mimicry (gamma >= 0.5) risks over-constraining the student.
 
 ### Teacher Configuration
 
-- **Model:** LAST-E v3 base (720K params, best checkpoint)
-- **Mode:** `eval()` + `torch.no_grad()` — frozen
-- **Run live:** Teacher forward-only on T4 adds ~30% batch overhead, acceptable
-  (720K model is lightweight). Pre-computing logits requires ~1.4GB storage and
-  complicates the pipeline.
+- **Model**: LAST-Base (planned, ~4.2M params per stream)
+- **Mode**: `eval()` + `torch.no_grad()` — frozen during distillation
+- **Feature extraction points**: output of each stage (3 feature maps per stream)
+- **Live computation**: teacher forward pass adds ~30% batch overhead — acceptable since LAST-Base is much smaller than transformer-based teachers
 
-### Why Feature Mimicry Works Here
+### Feature Mimicry Alignment
 
-Teacher (LAST-E v3 base) and student (LAST-Lite) share:
-- Same N1-normalized adjacency structure
-- Same graph partitioning (K=5 or K=3 subsets)
-- Same EpSepTCN temporal module
-- Same 3-stage progression
+| Stage | LAST-Lite small | LAST-Base | Projection |
+|-------|----------------|-----------|------------|
+| 1 | (B, 48, 64, 25) | (B, 128, 64, 25) | Conv1x1(48 -> 128) |
+| 2 | (B, 72, 32, 25) | (B, 256, 32, 25) | Conv1x1(72 -> 256) |
+| 3 | (B, 96, 16, 25) | (B, 384, 16, 25) | Conv1x1(96 -> 384) |
 
-The only difference is the student REMOVES adaptive modules (gates, attention). Feature
-dimensions align at each stage — only a 1×1 channel projection is needed.
+Temporal and spatial dimensions align naturally (same strides, same V=25). Only channel dimensions need projection.
 
 ---
 
 ## Part 2: MaskCLR Self-Supervised Pretraining
 
-### What is MaskCLR?
+### Motivation
 
-Combines **masked autoencoding** (MAE for skeletons) with **contrastive learning** (CLR):
+Self-supervised pretraining benefits **small models more** than large ones. A 248K-parameter model cannot memorise all 40K training samples, but pretrained features give it a better initialisation point:
 
-```
-Phase 1: Self-supervised pretrain (no labels)
-  ├── Mask 50–75% of joints across temporal frames
-  ├── Train encoder to reconstruct masked joints (MAE objective)
-  ├── Create augmented views of same sequence
-  └── Pull same-sequence embeddings close, push different apart (InfoNCE)
+| Aspect | Large Model (>1M) | Small Model (<250K) |
+|--------|-------------------|---------------------|
+| Labelled data capacity | Can memorise NTU-60 | Underfits — insufficient capacity |
+| Self-supervised gain | Marginal (+0.5%) | **Significant (+2-4%)** |
 
-Phase 2: Supervised fine-tune (with labels)
-  ├── Take pretrained encoder
-  ├── Add classification head
-  └── Fine-tune (or distill from teacher with pretrained init)
-```
+### MaskCLR Design
 
-### Why MaskCLR for LAST-Lite
+Combines **masked autoencoding** (MAE) with **contrastive learning** (CLR):
 
-Self-supervised pretraining benefits **small models MORE** than large ones:
+1. **Masked reconstruction**: Mask 50-75% of joints across temporal frames. Train encoder to reconstruct masked joints. Uses **graph-aware masking** — masks entire body regions (arm, leg) rather than random joints, forcing the GCN to infer missing parts via adjacency structure.
 
-| Aspect | Large Model (720K) | Small/Lite Model (60–180K) |
-|--------|-------------------|---------------------------|
-| Labeled data capacity | Can memorize NTU-60's 40K samples | Underfits — not enough capacity |
-| Self-supervised benefit | Marginal (+0.5%) | **Significant (+2–4%)** |
-| Why | Already has enough params for all patterns | Pretrained features give better starting point |
+2. **Contrastive learning**: Create augmented views of the same sequence. Pull same-sequence embeddings close, push different-sequence embeddings apart (InfoNCE loss).
 
-### LAST-Specific MaskCLR Design
+3. **Temporal block masking**: Mask contiguous frame blocks rather than random frames, forcing temporal reasoning about motion continuity.
 
-1. **Graph-aware masking** — mask by body region (entire arm/leg) instead of random joints
-   → forces GCN to infer missing parts via adjacency structure
-2. **Temporal block masking** — mask contiguous frame blocks (not random)
-   → forces temporal reasoning about motion continuity
-3. **N1-normalized encoder** — uses LAST's D⁻½AD⁻½ adjacency
-   → pretrained representations are LAST-specific, not transferable to EfficientGCN
+### When to Apply
 
-### Implementation Sketch
+| Condition | Action |
+|-----------|--------|
+| LAST-Lite small standalone >= 88% | Skip MaskCLR |
+| LAST-Lite small + KD >= 90% | Skip MaskCLR |
+| LAST-Lite small + KD < 88% | Add MaskCLR pretraining |
 
-```python
-class MaskCLRPretrainer:
-    def __init__(self, encoder, mask_ratio=0.5, temperature=0.07):
-        self.encoder = encoder          # LAST-Lite (no classification head)
-        self.decoder = nn.Linear(C_last, 3 * V)  # reconstruct masked joints
-        self.projector = nn.Linear(C_last, 128)   # contrastive projection
-        self.mask_ratio = mask_ratio
-        self.temp = temperature
-
-    def forward(self, x):
-        # x: (B, 3, T, V)
-        view1 = augment(x)     # random rotate, scale, noise
-        view2 = augment(x)     # different augmentation
-
-        view1_masked, mask1 = graph_aware_mask(view1, self.mask_ratio)
-        view2_masked, mask2 = graph_aware_mask(view2, self.mask_ratio)
-
-        z1 = self.encoder(view1_masked)  # (B, C, T', V)
-        z2 = self.encoder(view2_masked)
-
-        # Reconstruction loss (MAE)
-        recon = self.decoder(z1.mean(dim=2))
-        L_recon = MSE(recon[mask1], x[mask1])
-
-        # Contrastive loss (InfoNCE)
-        h1 = self.projector(z1.mean(dim=[2,3]))  # (B, 128)
-        h2 = self.projector(z2.mean(dim=[2,3]))
-        L_clr = NT_Xent(h1, h2, self.temp)
-
-        return L_recon + 0.5 * L_clr
-```
-
-### When to Use MaskCLR
-
-**Decision criteria:**
-- If distillation alone achieves LAST-Lite small ≥ 88% (≥ EfficientGCN-B0): **skip MaskCLR**
-- If LAST-Lite small ≤ 85% after distillation: **add MaskCLR pretraining**
-- MaskCLR pretraining takes ~4 hours on T4 for one variant — acceptable cost to try
+MaskCLR pretraining takes ~4 hours on T4 for one variant — acceptable cost to try.
 
 ---
 
 ## Part 3: Expected Accuracy Gains
 
-### LAST-Lite small (~180K params)
+### LAST-Lite small (247,548 params)
 
-| Training Path | Est. Accuracy | vs EfficientGCN-B0 (88.3%) |
-|---------------|--------------|---------------------------|
-| Standalone (no pretraining, no KD) | ~84–86% | -2 to -4% |
-| + Knowledge distillation from v3 teacher | ~87–89% | -1 to +1% |
-| + MaskCLR pretrain + KD | ~89–91% | **+1 to +3%** |
+| Training Path | Est. Accuracy | vs EfficientGCN-B0 (90.2%) |
+|--------------|--------------|---------------------------|
+| Standalone (Round 3, corrected reg) | ~84-87% | -3 to -6% |
+| + Knowledge distillation from LAST-Base | ~88-90% | -2 to 0% |
+| + MaskCLR pretrain + KD | ~90-92% | **0 to +2%** |
 
-### LAST-Lite nano (~60K params)
+### LAST-Lite nano (80,234 params)
 
 | Training Path | Est. Accuracy | Notes |
-|---------------|--------------|-------|
-| Standalone | ~80–83% | Very limited capacity |
-| + KD | ~84–86% | Teacher soft labels help most here |
-| + MaskCLR + KD | ~86–88% | Significant gain from pretraining |
+|--------------|--------------|-------|
+| Standalone (Round 3) | ~82-84% | Limited capacity |
+| + KD from LAST-Base | ~85-87% | Teacher soft labels help most here |
+| + MaskCLR + KD | ~87-89% | Significant gain from pretraining |
 
 ---
 
 ## Part 4: Post-Distillation Edge Pipeline
 
 ```
-LAST-Lite small (180K, FP32, ~87–91% acc)
-  → INT8 Post-Training Quantization (~45KB, <1% acc drop)
-  → ONNX export → TensorRT (Jetson) / TFLite (mobile/Coral) / CoreML (iOS)
+LAST-Lite small (248K, FP32, ~88-92% acc)
+  → INT8 Post-Training Quantisation (~62KB, <1% acc drop)
+  → ONNX export → TensorRT (Jetson) / TFLite (mobile) / CoreML (iOS)
 
   No pruning needed — models are already tiny.
-  INT8 provides 4× size compression: 720KB → 180KB (enough for any edge device).
+  INT8 provides 4x size compression.
 ```
 
 ---
@@ -195,9 +141,8 @@ LAST-Lite small (180K, FP32, ~87–91% acc)
 | Distillation trainer | `src/training/distill_trainer.py` | Planned |
 | Distillation training script | `scripts/train_distill.py` | Planned |
 | MaskCLR pretrainer | `src/training/maskclr.py` | Planned |
-| MaskCLR pretraining script | `scripts/pretrain_maskclr.py` | Planned |
-| Distillation config | `configs/distillation/default.yaml` | Planned |
 | ONNX export script | `scripts/export_onnx.py` | Planned |
+| LAST-Base teacher model | `src/models/last_base.py` | Planned |
 
 ---
 
@@ -205,12 +150,11 @@ LAST-Lite small (180K, FP32, ~87–91% acc)
 
 | Step | Action | Prerequisite | Status |
 |------|--------|-------------|--------|
-| 1 | Train LAST-E v3 base (Phase A+B+D) | — | **Running** |
-| 2 | Evaluate val accuracy, check overfitting gap | Step 1 converges | Pending |
-| 3 | Train all v3 variants (nano/small/large) | Step 2 validates approach | Pending |
-| 4 | Implement LAST-Lite variant configs | Step 2 | Planned |
-| 5 | Distill LAST-E v3 base → LAST-Lite small/nano | Step 3 provides teacher | Planned |
-| 6 | Evaluate: is LAST-Lite small ≥ 88%? | Step 5 | Planned |
-| 7 | (If needed) MaskCLR pretrain → re-distill | Step 6 shows gap | Planned |
-| 8 | INT8 quantization + ONNX export | Best Lite checkpoint | Planned |
-| 9 | Edge deployment demo (Jetson/mobile) | Step 8 | Planned |
+| 1 | Train LAST-Lite standalone (Round 3) | BSE + corrected hyperparameters | **Next** |
+| 2 | Evaluate Round 3 accuracy | Step 1 | Pending |
+| 3 | Implement LAST-Base model | Step 2 analysis | Planned |
+| 4 | Train LAST-Base teacher | Step 3 | Planned |
+| 5 | Distill LAST-Base → LAST-Lite small/nano | Step 4 | Planned |
+| 6 | Evaluate: is LAST-Lite small >= 90%? | Step 5 | Planned |
+| 7 | (If needed) MaskCLR pretrain → re-distill | Step 6 | Planned |
+| 8 | INT8 quantisation + ONNX export | Best Lite checkpoint | Planned |
