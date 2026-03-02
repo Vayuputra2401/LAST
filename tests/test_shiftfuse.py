@@ -218,22 +218,18 @@ class TestCTRLightGCN:
         assert out.shape == x.shape
 
     def test_A_g_normalised(self):
-        """Row-normalisation fix: aggregated features should have ~1× scale,
-        not ~K× (where K = number of physical adjacency subsets summed)."""
+        """Row-normalisation: A_physical is normalised at __init__ (not per-forward).
+        This avoids the unstable normalisation Jacobian that caused NaN explosion."""
         gcn = self._make_gcn(32, num_groups=2)
-        gcn.eval()
-        # Unit-variance input
-        torch.manual_seed(0)
-        x = torch.randn(4, 32, 16, V)
+        # A_physical should have row sums = 1.0 immediately after construction
+        row_sums = gcn.A_physical.sum(dim=-1)
+        assert torch.allclose(row_sums, torch.ones(V), atol=1e-5), \
+            f"A_physical row sums not ≈ 1.0 at init: {row_sums}"
+        # At init A_group = 0 → A_g = A_physical, so A_g is also unit-scale
         with torch.no_grad():
-            # Inspect A_g row sums inside forward by computing manually
             A_g = gcn.A_physical + gcn.A_group[0]
-            row_sum = A_g.sum(dim=-1, keepdim=True).clamp(min=1e-6)
-            A_g_norm = A_g / row_sum
-            row_sums_after = A_g_norm.sum(dim=-1)
-        # All row sums of normalised A_g should be ≈ 1.0
-        assert torch.allclose(row_sums_after, torch.ones(V), atol=1e-5), \
-            f"A_g row sums not ≈ 1.0 after normalisation: {row_sums_after}"
+        assert torch.allclose(A_g.sum(dim=-1), torch.ones(V), atol=1e-5), \
+            "A_g row sums not ≈ 1.0 at init (A_group should be zero)"
 
 
 class TestDropPath:

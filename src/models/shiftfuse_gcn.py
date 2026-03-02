@@ -97,7 +97,7 @@ MODEL_VARIANTS_SHIFTFUSE = {
         'num_tcn_branches':   3,
         'num_gcn_groups':     4,       # CTRLightGCN groups (full)
         'drop_path_rate':     0.15,    # max stochastic depth rate
-        'block_dropout':      0.10,    # intermediate backbone dropout
+        'block_dropout':      0.05,    # intermediate backbone dropout (was 0.10; reduced by audit Fix 5)
         'dropout':            0.30,    # classifier head dropout
     },
 }

@@ -82,10 +82,14 @@ class CTRLightGCN(nn.Module):
         V = num_joints
 
         # ── Static adjacency (shared across all groups) ──────────────────
-        # Sum K subsets → single (V, V) reference adjacency.
-        # Each group adds its own learned correction on top.
+        # Sum K subsets → single (V, V) reference adjacency, then row-normalise
+        # once at init so A_physical has row sums = 1.0.
+        # Doing this at init (not per-forward) avoids the normalization Jacobian
+        # ∂(A_g/row_sum)/∂A_group = (I·row_sum - A_g⊗1)/row_sum² which becomes
+        # large/unstable when A_group corrections partially cancel A_physical rows.
         A_sum = A.sum(dim=0)                   # (V, V) — sum over K subsets
-        self.register_buffer('A_physical', A_sum)
+        row_sum = A_sum.sum(dim=-1, keepdim=True).clamp(min=1e-6)
+        self.register_buffer('A_physical', A_sum / row_sum)   # row sums = 1.0
 
         # ── Per-group learned adjacency corrections ───────────────────────
         # Zero-init → starts as pure static GCN.
@@ -119,16 +123,10 @@ class CTRLightGCN(nn.Module):
 
         outs = []
         for g in range(self.G):
-            # Per-group adjacency = physical (shared) + learnable correction
+            # Per-group adjacency = physical (shared, pre-normalised) + learnable correction
+            # A_physical was row-normalised at init (row sums = 1.0).
+            # A_group starts at zero → initial A_g is already unit-scale.
             A_g = self.A_physical + self.A_group[g]   # (V, V)
-
-            # Row-normalise A_g (D⁻¹ normalisation).
-            # A_physical = sum of K individually normalised subsets, so its row
-            # sums ≈ K (K=3 for max_hop=1, K=5 for max_hop=2). Without this step
-            # the einsum magnifies feature values by ~K×, mismatching the
-            # Kaiming-init scale of the group_convs and causing BN instability.
-            row_sum = A_g.sum(dim=-1, keepdim=True).clamp(min=1e-6)
-            A_g = A_g / row_sum                       # row sums → 1.0
 
             # Aggregate neighbours for this group
             # einsum: A_g[v,w] * x_groups[g][b,c,t,w] → (B, C//G, T, V)
