@@ -72,14 +72,8 @@ class EpSepTCN(nn.Module):
             nn.BatchNorm2d(channels),
         )
 
-        # Residual path
-        if stride == 1:
-            self.residual = nn.Identity()
-        else:
-            self.residual = nn.Sequential(
-                nn.Conv2d(channels, channels, 1, stride=(stride, 1), bias=False),
-                nn.BatchNorm2d(channels),
-            )
+        # No internal residual — ShiftFuseBlock's outer residual handles skip.
+        # Stride is applied by depth_conv when stride > 1.
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -88,11 +82,10 @@ class EpSepTCN(nn.Module):
         Returns:
             out: (B, C, T', V) where T' = T // stride
         """
-        res = self.residual(x)
         out = self.act(self.expand_conv(x))
         out = self.act(self.depth_conv(out))
         out = self.point_conv(out)
-        return out + res
+        return out
 
 
 class MultiScaleEpSepTCN(nn.Module):
@@ -172,14 +165,7 @@ class MultiScaleEpSepTCN(nn.Module):
             nn.BatchNorm2d(channels),
         )
 
-        # ── Outer residual ────────────────────────────────────────────────
-        if stride == 1:
-            self.residual = nn.Identity()
-        else:
-            self.residual = nn.Sequential(
-                nn.Conv2d(channels, channels, 1, stride=(stride, 1), bias=False),
-                nn.BatchNorm2d(channels),
-            )
+        # No internal residual — ShiftFuseBlock's outer residual handles skip.
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -188,7 +174,6 @@ class MultiScaleEpSepTCN(nn.Module):
         Returns:
             out: (B, C, T', V) where T' = T // stride
         """
-        res = self.residual(x)
         # Split channels into branches
         x_splits = x.chunk(self.num_branches, dim=1)   # each (B, C//nb, T, V)
 
@@ -207,4 +192,4 @@ class MultiScaleEpSepTCN(nn.Module):
 
         out = torch.cat(branch_outs, dim=1)    # (B, C, T', V)
         out = self.mix_conv(out)
-        return out + res
+        return out

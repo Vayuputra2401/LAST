@@ -1,12 +1,12 @@
 # Training config for ShiftFuse-GCN (LAST-Lite)
 #
-# Round 4 — plateau breaker: CTRLightGCN + DropPath + Mixup/CutMix + cosine schedule
-#   Previous (Round 3): multistep_warmup, LS=0.05, no augmentation → 81% wall
-#   Changes:
-#     - cosine_warmup replaces multistep (smoother decay, no sharp re-memorization)
-#     - label_smoothing 0.1 (was 0.05)
-#     - mixup_alpha 0.2 + cutmix_prob 0.5 (first augmentation for LAST-Lite)
-#     - DropPath + block_dropout now in model config (no trainer change needed)
+# v5 — bug fixes + de-regularization:
+#   - Removed block_dropout (DropPath is sufficient)
+#   - Reduced Mixup alpha 0.2→0.1, CutMix prob 0.5→0.3 (less aggressive)
+#   - Reduced head dropout (nano 0.15→0.10, small 0.30→0.20)
+#   - Removed EpSepTCN/MultiScaleTCN internal residuals (50% gradient to novel components, up from 33%)
+#   - label_smoothing stays 0.0 (Mixup already produces soft targets)
+#   - Added IB loss support (ib_loss_weight)
 #
 # All values can be overridden at the command line:
 #   --epochs 120 --set training.label_smoothing=0.05
@@ -17,28 +17,29 @@ training:
   lr: 0.1
   momentum: 0.9
   nesterov: true
-  weight_decay: 0.0005
+  weight_decay: 0.0004          # v5: slightly reduced from 0.0005
 
-  # Scheduler — cosine warmup for smooth decay (replaces multistep)
+  # Scheduler — cosine warmup for smooth decay
   scheduler: cosine_warmup
   warmup_epochs: 5
   warmup_start_lr: 0.01
   min_lr: 0.0001
 
   # Duration
-  epochs: 120
+  epochs: 150              # v5: extended from 120 — temporal attention gate and AdaptiveCTRGCN
+                           # Q/K convs need ~20-30 extra epochs to fully activate from their
+                           # small-init values (sigmoid(-4)=0.018, alpha=0.1→tanh=0.10)
   batch_size: 64
   gradient_accumulation_steps: 1
 
   # Regularization
-  label_smoothing: 0.0        # Mixup/CutMix already produce soft targets; LS compounds and over-smooths
+  label_smoothing: 0.0          # Mixup/CutMix already produce soft targets; LS compounds and over-smooths
   gradient_clip: 5.0
 
-  # Mixup + Temporal CutMix
-  # Mixed targets are soft float one-hot blends (compatible with label_smoothing)
-  mixup_alpha: 0.2            # Beta(alpha, alpha) lambda; 0.0 = disabled
-  cutmix_prob: 0.5            # prob of CutMix vs Mixup per batch; 0.0 = disabled
-  cutmix_alpha: 1.0           # Beta(alpha, alpha) for CutMix lambda
+  # Mixup + Temporal CutMix (v5: reduced from 0.2/0.5 to avoid over-regularization)
+  mixup_alpha: 0.1              # Beta(alpha, alpha) lambda; 0.0 = disabled
+  cutmix_prob: 0.3              # prob of CutMix vs Mixup per batch; 0.0 = disabled
+  cutmix_alpha: 1.0             # Beta(alpha, alpha) for CutMix lambda
 
   # Input
   input_frames: 64
@@ -59,5 +60,5 @@ training:
   # Reproducibility
   seed: 42
 
-  # IB loss (ShiftFuse has no information bottleneck loss)
-  ib_loss_weight: 0.0
+  # IB loss weight (v5: enable with ib_loss_weight > 0 when model returns aux_loss)
+  ib_loss_weight: 0.01

@@ -1,6 +1,6 @@
 # ShiftFuse-GCN Small model configuration
 # Primary edge target: beats EfficientGCN-B0 (90.2% @ 290K) with 3× fewer params.
-# Round 4: CTRLightGCN (G=4), DropPath (max 0.15), MultiScaleEpSepTCN, block_dropout 0.10
+# v5: removed block_dropout, reduced head dropout 0.30→0.20
 model:
   name: shiftfuse_small
   variant: small
@@ -24,5 +24,4 @@ model:
   num_tcn_branches: 3
   num_gcn_groups: 4             # CTRLightGCN groups (full refinement)
   drop_path_rate: 0.15          # max stochastic depth rate (linear schedule)
-  block_dropout: 0.05           # backbone intermediate dropout (was 0.10; reduced to avoid over-regularisation)
-  dropout: 0.30                 # classifier head dropout (was 0.2)
+  dropout: 0.20                 # classifier head dropout (v5: reduced from 0.30)
