@@ -1,16 +1,18 @@
 """
-Integration tests for ShiftFuse-GCN (LAST-Lite).
+Integration tests for ShiftFuse-GCN (LAST-Lite v7).
 
 Covers:
-  - Forward pass shape: dict input → (B, num_classes)
+  - Forward pass shape: dict input → (B, num_classes)  [eval]
+  - Training forward: returns ([logit_j, logit_v, logit_b, logit_bv], ib_loss)
   - Tensor (non-dict) input handling
   - 5D input handling (B, C, T, V, M) → takes M=0 body
-  - Param count targets: nano < 81K (~74K actual), small < 250K (~162K actual)
+  - Param count targets: nano ≤ 100K, small ≤ 300K
   - BodyRegionShift: zero learnable parameters
   - FrozenDCTGate: dct/idct buffers are not trainable (require_grad=False)
   - JointEmbedding: correct output shape (no-op at zero-init)
   - FrameDynamicsGate: correct output shape
   - CTRLightGCN: output shape, param count, per-group adjacency parameters
+  - MultiScaleAdaptiveGCN: K-subset separate buffers, output shape, param count
   - BilateralSymmetryEncoding: antisymmetric injection, torso unchanged
   - DropPath: stochastic depth (0 params, identity at eval)
   - All individual blocks: input → output shape preserved
@@ -41,6 +43,7 @@ from src.models.blocks.frame_dynamics_gate import FrameDynamicsGate
 from src.models.blocks.bilateral_symmetry import BilateralSymmetryEncoding
 from src.models.blocks.static_gcn import StaticGCN
 from src.models.blocks.ctr_light_gcn import CTRLightGCN
+from src.models.blocks.adaptive_ctr_gcn import MultiScaleAdaptiveGCN
 from src.models.blocks.drop_path import DropPath
 from src.models.graph import Graph, normalize_symdigraph_full
 
@@ -232,6 +235,63 @@ class TestCTRLightGCN:
             "A_g row sums not ≈ 1.0 at init (A_group should be zero)"
 
 
+class TestMultiScaleAdaptiveGCN:
+    """Tests for K-subset MultiScaleAdaptiveGCN (v7 replacement for AdaptiveCTRGCN)."""
+
+    def _make_gcn(self, channels=48, num_groups=4):
+        g = Graph(layout='ntu-rgb+d', strategy='spatial', max_hop=1, raw_partitions=True)
+        A = torch.tensor(normalize_symdigraph_full(g.A), dtype=torch.float32)
+        return MultiScaleAdaptiveGCN(
+            channels=channels, A=A, num_joints=V, num_groups=num_groups
+        )
+
+    def test_output_shape(self):
+        gcn = self._make_gcn(48, 4)
+        x   = torch.randn(B, 48, T, V)
+        out = gcn(x)
+        assert out.shape == x.shape, f"Expected {x.shape}, got {out.shape}"
+
+    def test_k_separate_buffers(self):
+        """K=3 subsets must be stored as separate buffers A_0, A_1, A_2."""
+        gcn = self._make_gcn(48, 4)
+        assert hasattr(gcn, 'A_0'), "MultiScaleAdaptiveGCN must have buffer A_0"
+        assert hasattr(gcn, 'A_1'), "MultiScaleAdaptiveGCN must have buffer A_1"
+        assert hasattr(gcn, 'A_2'), "MultiScaleAdaptiveGCN must have buffer A_2"
+        # Buffers must NOT require grad
+        assert not gcn.A_0.requires_grad
+        assert not gcn.A_1.requires_grad
+        assert not gcn.A_2.requires_grad
+
+    def test_k_subsets_row_normalised(self):
+        gcn = self._make_gcn(48, 4)
+        for k in range(gcn.K):
+            Ak = getattr(gcn, f'A_{k}')
+            row_sums = Ak.sum(dim=-1)
+            assert (row_sums <= 1.0 + 1e-4).all(), \
+                f"A_{k} row sums exceed 1.0"
+
+    def test_k_independent_convs(self):
+        """K independent group convolutions — one per subset."""
+        gcn = self._make_gcn(48, 4)
+        assert len(gcn.convs) == gcn.K, \
+            f"Expected {gcn.K} convs, got {len(gcn.convs)}"
+
+    def test_alpha_is_parameter(self):
+        gcn = self._make_gcn(48, 4)
+        assert gcn.alpha.requires_grad, "alpha must be a trainable parameter"
+        assert gcn.alpha.shape == (1,)
+
+    def test_backwards_compat_alias(self):
+        """AdaptiveCTRGCN alias must still import and instantiate."""
+        from src.models.blocks.adaptive_ctr_gcn import AdaptiveCTRGCN
+        g = Graph(layout='ntu-rgb+d', strategy='spatial', max_hop=1, raw_partitions=True)
+        A = torch.tensor(normalize_symdigraph_full(g.A), dtype=torch.float32)
+        gcn = AdaptiveCTRGCN(channels=48, A=A, num_joints=V)
+        x   = torch.randn(B, 48, T, V)
+        out = gcn(x)
+        assert out.shape == x.shape
+
+
 class TestDropPath:
     def test_output_shape(self):
         dp  = DropPath(drop_prob=0.1)
@@ -376,14 +436,34 @@ class TestLASTLite:
     def test_nano_param_budget(self):
         model = create_shiftfuse_nano(NUM_CLASSES)
         n = model.count_parameters()
-        # Round 4: CTRLightGCN G=2 + no FrameDynamicsGate → ~73,789
-        assert n < 81_000, f"nano should be < 81K params, got {n:,}"
+        # v7: MultiStreamStem + 4 heads + MultiScaleAdaptiveGCN G=4 + ChannelSE → ≤100K
+        assert n <= 100_000, f"nano should be ≤ 100K params, got {n:,}"
 
     def test_small_param_budget(self):
         model = create_shiftfuse_small(NUM_CLASSES)
         n = model.count_parameters()
-        # Round 4: CTRLightGCN G=4 + MultiScaleEpSepTCN + no FrameDynamicsGate → ~162,181
-        assert n < 250_000, f"small should be < 250K params, got {n:,}"
+        # v7: extra blocks [1,3,3] + 4 heads + MultiScaleAdaptiveGCN + ChannelSE → ≤300K
+        assert n <= 300_000, f"small should be ≤ 300K params, got {n:,}"
+
+    def test_train_forward_multihead(self):
+        """Training forward returns (list of 4 logit tensors, ib_loss scalar)."""
+        model = create_shiftfuse_small(NUM_CLASSES)
+        model.train()
+        logits, ib_loss = model(_mib())
+        assert isinstance(logits, list), "Training output[0] must be a list"
+        assert len(logits) == 4, f"Expected 4 heads, got {len(logits)}"
+        for i, l in enumerate(logits):
+            assert l.shape == (B, NUM_CLASSES), \
+                f"Head {i}: expected ({B},{NUM_CLASSES}), got {l.shape}"
+        assert isinstance(ib_loss, torch.Tensor), "ib_loss must be a tensor"
+        assert ib_loss.ndim == 0, "ib_loss must be a scalar"
+
+    def test_stream_weights_param(self):
+        """stream_weights must exist as a trainable parameter with shape (4,)."""
+        model = create_shiftfuse_nano(NUM_CLASSES)
+        assert hasattr(model, 'stream_weights'), "Model must have stream_weights"
+        assert model.stream_weights.shape == (4,)
+        assert model.stream_weights.requires_grad
 
     def test_no_nan_output(self):
         model = create_shiftfuse_small(NUM_CLASSES)
@@ -413,12 +493,12 @@ if __name__ == '__main__':
 
     # ── Param report ────────────────────────────────────────────────
     print(SEP)
-    print('PARAM COUNT')
+    print('PARAM COUNT (v7: late fusion + K-subset GCN + SE)')
     print(SEP)
     nano  = create_shiftfuse_nano(60)
     small = create_shiftfuse_small(60)
-    print(f'  nano  params: {nano.count_parameters():>10,}  (budget < 81,000, expected ~73,789)')
-    print(f'  small params: {small.count_parameters():>10,}  (budget < 250,000, expected ~162,181)')
+    print(f'  nano  params: {nano.count_parameters():>10,}  (budget ≤ 100,000)')
+    print(f'  small params: {small.count_parameters():>10,}  (budget ≤ 300,000)')
     print()
 
     # ── Block-level param breakdown ─────────────────────────────────
@@ -463,23 +543,23 @@ if __name__ == '__main__':
             shapes[name] = tuple(out.shape) if isinstance(out, torch.Tensor) else '(tuple)'
         return hook
 
-    small.fusion.register_forward_hook(make_hook('StreamFusionConcat'))
+    small.fusion.register_forward_hook(make_hook('MultiStreamStem'))
     # Stage hooks
     for si, stage in enumerate(small.stages):
         for bi, blk in enumerate(stage):
             blk.register_forward_hook(make_hook(f'Stage{si+1}_Block{bi+1}'))
-        small.stage_gcns[si].register_forward_hook(make_hook(f'Stage{si+1}_CTRLightGCN'))
+        small.stage_gcns[si].register_forward_hook(make_hook(f'Stage{si+1}_AdaptiveGCN'))
 
     with torch.no_grad():
         logits = small(streams_in)
 
-    print(f'  StreamFusionConcat : {shapes["StreamFusionConcat"]}')
+    print(f'  MultiStreamStem    : {shapes["MultiStreamStem"]}  (4B stacked)')
     for si in range(len(small.stages)):
         for bi in range(len(small.stages[si])):
             k = f'Stage{si+1}_Block{bi+1}'
             if k in shapes:
                 print(f'  {k:<22}: {shapes[k]}')
-        k2 = f'Stage{si+1}_CTRLightGCN'
+        k2 = f'Stage{si+1}_AdaptiveGCN'
         if k2 in shapes:
             print(f'  {k2:<22}: {shapes[k2]}')
     print(f'  Output (logits)    : {tuple(logits.shape)}')

@@ -58,6 +58,8 @@ dataset:
     temporal_flip_p: 0.0  # Disabled: NTU60 actions are strongly directional
                           # (stand-up ≠ sit-down, drink ≠ un-drink). p=0.5 mislabels
                           # ~45/60 classes under temporal reversal → caps train acc at ~52%.
+    joint_mask_ratio: 0.20  # v7: zero out 5/25 random joints consistently across streams
+                            # Forces model to use global body context (CTR-GCN / InfoGCN trick)
 
 dataloader:
   batch_size: 32

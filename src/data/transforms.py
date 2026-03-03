@@ -336,6 +336,45 @@ class RandomTemporalSpeed:
         return f"RandomTemporalSpeed(speed_range={self.speed_range}, p={self.p})"
 
 
+class RandomJointMask:
+    """Mask a random subset of joints to zero — applied consistently across all MIB streams.
+
+    Forces the model to use global body context rather than memorising per-joint
+    discriminative patterns. Used in CTR-GCN, InfoGCN, BlockGCN (+0.3–0.5%).
+
+    Must be used inside MIBTransform (shared joint indices across all streams).
+
+    Args:
+        mask_ratio: Fraction of joints to zero out (default 0.20 → 5/25 joints).
+        num_joints: Total skeleton joints (default 25).
+    """
+
+    def __init__(self, mask_ratio: float = 0.20, num_joints: int = 25):
+        self.n_mask   = max(1, int(num_joints * mask_ratio))
+        self.num_joints = num_joints
+
+    def sample_joints(self) -> torch.Tensor:
+        """Sample indices of joints to mask (called once per sample, shared across streams)."""
+        return torch.randperm(self.num_joints)[:self.n_mask]
+
+    @staticmethod
+    def apply(x: torch.Tensor, joints: torch.Tensor) -> torch.Tensor:
+        """Zero out the specified joints in x.
+
+        Args:
+            x:      (C, T, V, M) skeleton tensor.
+            joints: 1-D int tensor of joint indices to zero.
+        Returns:
+            x with specified joints zeroed, shape unchanged.
+        """
+        x = x.clone()
+        x[:, :, joints, :] = 0.0
+        return x
+
+    def __repr__(self) -> str:
+        return f"RandomJointMask(n_mask={self.n_mask}/{self.num_joints})"
+
+
 class MIBTransform:
     """
     Geometrically consistent augmentation for Multi-Input Branch (MIB) data.
@@ -391,6 +430,7 @@ class MIBTransform:
         temporal_flip_p: float = 0.0,
         temporal_speed_p: float = 0.0,
         temporal_speed_range: tuple = (0.8, 1.2),
+        joint_mask_ratio: float = 0.0,
         is_training: bool = True,
     ):
         self.target_frames = target_frames
@@ -411,6 +451,10 @@ class MIBTransform:
         self.temporal_speed_range = tuple(temporal_speed_range)
         self.is_training = is_training
         self._speed_aug = RandomTemporalSpeed(temporal_speed_range, p=temporal_speed_p)
+        # RandomJointMask — disabled when ratio=0
+        self._joint_mask = (
+            RandomJointMask(joint_mask_ratio) if joint_mask_ratio > 0 else None
+        )
 
     # ------------------------------------------------------------------
     # Helpers that accept pre-sampled scalars so we can reuse parameters
@@ -507,6 +551,10 @@ class MIBTransform:
             _T_ref  = next(iter(streams.values())).shape[1]
             speed_T_sub, speed_start = self._speed_aug.sample_params(_T_ref)
             do_speed = speed_T_sub < _T_ref
+            # Joint mask: sample ONCE (shared across all streams for consistency)
+            joints_to_mask = (
+                self._joint_mask.sample_joints() if self._joint_mask else None
+            )
 
         # ---- Apply identical geometric transforms to every stream ----
         out = {}
@@ -524,6 +572,9 @@ class MIBTransform:
                 stream_noise_std = self.noise_std.get(name, 0.01)
                 if stream_noise_std > 0:
                     x = x + torch.randn_like(x) * stream_noise_std
+                # Joint masking — zero the same joints in all streams
+                if joints_to_mask is not None:
+                    x = RandomJointMask.apply(x, joints_to_mask)
 
             # Subsampling/padding is already done precisely in preprocess_data.py
             # So no crop needed here during validation or training.
@@ -598,6 +649,7 @@ def get_train_transform(config: dict):
                 temporal_flip_p=aug.get('temporal_flip_p', 0.0),
                 temporal_speed_p=aug.get('temporal_speed_p', 0.0),
                 temporal_speed_range=tuple(aug.get('temporal_speed_range', (0.8, 1.2))),
+                joint_mask_ratio=float(aug.get('joint_mask_ratio', 0.0)),
                 is_training=True,
             )
         else:

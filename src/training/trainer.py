@@ -459,7 +459,12 @@ class Trainer:
                         outputs, aux_loss = raw_out
                     else:
                         outputs, aux_loss = raw_out, None
-                    loss = self.criterion(outputs, target)
+                    # Multi-head output (4-stream late fusion): mean CE + ensemble
+                    if isinstance(outputs, list):
+                        loss = sum(self.criterion(o, target) for o in outputs) / len(outputs)
+                        outputs = torch.stack(outputs, dim=0).mean(dim=0)
+                    else:
+                        loss = self.criterion(outputs, target)
                     if aux_loss is not None:
                         ib_w = self.train_cfg.get('ib_loss_weight', 0.01)
                         loss = loss + ib_w * aux_loss
@@ -469,7 +474,12 @@ class Trainer:
                     outputs, aux_loss = raw_out
                 else:
                     outputs, aux_loss = raw_out, None
-                loss = self.criterion(outputs, target)
+                # Multi-head output (4-stream late fusion): mean CE + ensemble
+                if isinstance(outputs, list):
+                    loss = sum(self.criterion(o, target) for o in outputs) / len(outputs)
+                    outputs = torch.stack(outputs, dim=0).mean(dim=0)
+                else:
+                    loss = self.criterion(outputs, target)
                 if aux_loss is not None:
                     ib_w = self.train_cfg.get('ib_loss_weight', 0.01)
                     loss = loss + ib_w * aux_loss

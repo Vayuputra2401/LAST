@@ -1,38 +1,34 @@
 """
-AdaptiveCTRGCN — Per-Sample Adaptive Channel-Topology-Refinement GCN.
+MultiScaleAdaptiveGCN — K-Subset Multi-Scale Spatial GCN.
 
-Upgrade from CTRLightGCN: adds per-sample Q/K attention-based topology
-refinement so each input gets a dynamically adjusted adjacency matrix.
+Combines the ST-GCN paradigm (K separate adjacency subsets, one weight matrix
+per subset) with CTR-GCN-style per-sample adaptive topology (Q/K attention).
 
-Design
-------
-  For each group g ∈ {0, ..., G-1}:
-    Q_g = Conv1×1(x_g).mean(T)       (B, C//G, V) — joint queries
-    K_g = Conv1×1(x_g).mean(T)       (B, C//G, V) — joint keys
-    A_adaptive_g = softmax(Q_g^T @ K_g / sqrt(d))  (B, V, V) — per-sample
-    A_g = A_physical + α_g * A_adaptive_g           data-dependent topology
-    x_agg_g = A_g @ x_group_g
-    h_g = GroupConv_g(x_agg_g)
+Key upgrade over the previous AdaptiveCTRGCN:
+  OLD: K=3 subsets summed into ONE adjacency → single weight matrix for all hops
+  NEW: K=3 subsets kept SEPARATE → K independent weight matrices
+       "self-loop / centripetal / centrifugal" each learn distinct spatial ops
 
-  out = x + BN(concat([h_0, ..., h_{G-1}]))
+Design (per forward):
+  1. Shared Q/K projections over x → per-sample V×V attention map A_dyn
+  2. For each subset k ∈ {0, ..., K-1}:
+       A_k = A_physical_k + alpha * A_dyn   (static + adaptive blend)
+       x_agg_k = A_k @ x                   (graph aggregation)
+       h_k = GroupConv_k(x_agg_k)          (per-subset group conv)
+  3. out = x + BN(sum_k h_k)               (residual + BN)
 
-Key difference from CTRLightGCN:
-  - CTRLightGCN: A_group[g] is a fixed (V,V) parameter — same for every sample
-  - AdaptiveCTRGCN: A_adaptive_g is computed per sample via Q/K attention
-  - Both share A_physical as the static backbone
-
-Param count per stage (channels C, joints V=25, groups G, reduce_ratio r=4):
-  Group convs:   G × (C//G)² = C²/G  params
-  Q/K projections: G × 2 × Conv1×1(C//G, C//G//r) = 2C²/(G·r)  params
-  α gates:       G  params
-  BN:            2C  params
-  ───────────────────────────────────────────
-  Total ≈ C²/G + 2C²/(G·r) + 2C + G
-
-  Example — small, G=4, r=4:
-    C=48:  576 + 288 + 96 + 4 = 964
-    C=72:  1296 + 648 + 144 + 4 = 2,092
-    C=96:  2304 + 1152 + 192 + 4 = 3,652
+Param count per stage (channels C, joints V=25, groups G, K subsets):
+  Q/K projections:   2 × C × (d_k × G)  where d_k = C // (G × 4)
+  K group convs:     K × G × (C//G)²   = K × C²/G
+  BN:                2C
+  alpha:             1  (scalar, shared across all K and G)
+  ────────────────────────────────────────────────────────
+  Example — small, C=96, G=4, K=3:
+    Q/K:    2 × 96 × (6×4) = 4,608
+    convs:  3 × 4 × 576    = 6,912
+    BN:     192
+    alpha:  1
+    total:  11,713
 """
 
 import torch
@@ -40,18 +36,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class AdaptiveCTRGCN(nn.Module):
-    """Per-sample adaptive channel-topology-refinement GCN.
+class MultiScaleAdaptiveGCN(nn.Module):
+    """K-subset spatial GCN + shared per-sample adaptive topology.
 
     One instance is created per stage and shared by reference across all blocks
-    in that stage — same weight-sharing as CTRLightGCN / StaticGCN.
+    in that stage (same weight-sharing pattern as before).
 
     Args:
-        channels:      C — number of input/output feature channels.
-        A:             (K, V, V) float tensor — pre-normalised static adjacency.
-        num_joints:    V — skeleton joints (default 25).
-        num_groups:    G — channel groups (default 4; use 2 for nano).
-        reduce_ratio:  r — channel reduction for Q/K (default 4).
+        channels:     C — input/output feature channels.
+        A:            (K, V, V) float tensor — pre-computed raw adjacency subsets.
+                      Each subset is row-normalised inside __init__.
+        num_joints:   V (default 25).
+        num_groups:   G — channel groups per subset conv (default 4; use 2 for nano).
+        reduce_ratio: r — channel reduction for Q/K attention (default 4).
     """
 
     def __init__(
@@ -66,41 +63,34 @@ class AdaptiveCTRGCN(nn.Module):
         assert channels % num_groups == 0, (
             f"channels ({channels}) must be divisible by num_groups ({num_groups})"
         )
+        K, V, _ = A.shape
+        self.K = K
         self.G = num_groups
-        self.C_g = channels // num_groups
-        V = num_joints
-        self.d_k = max(self.C_g // reduce_ratio, 1)  # attention dim
 
-        # ── Static adjacency (shared, row-normalised) ─────────────────────
-        A_sum = A.sum(dim=0)
-        row_sum = A_sum.sum(dim=-1, keepdim=True).clamp(min=1e-6)
-        self.register_buffer('A_physical', A_sum / row_sum)
+        # ── K separate row-normalised adjacency buffers ───────────────────────
+        for k in range(K):
+            Ak = A[k].clone().float()
+            row_sum = Ak.sum(-1, keepdim=True).clamp(min=1e-6)
+            self.register_buffer(f'A_{k}', Ak / row_sum)   # row sums = 1.0
 
-        # ── Per-group Q/K projections for sample-dependent topology ───────
-        self.query_convs = nn.ModuleList([
-            nn.Conv2d(self.C_g, self.d_k, 1, bias=False)
-            for _ in range(num_groups)
-        ])
-        self.key_convs = nn.ModuleList([
-            nn.Conv2d(self.C_g, self.d_k, 1, bias=False)
-            for _ in range(num_groups)
+        # ── K independent group convolutions (one per subset) ────────────────
+        self.convs = nn.ModuleList([
+            nn.Conv2d(channels, channels, 1, groups=num_groups, bias=False)
+            for _ in range(K)
         ])
 
-        # ── Per-group gate: blends physical + adaptive topology ───────────
-        # Init at 0.1: tanh(0.1)≈0.10 → query/key convs get ~10% gradient from
-        # epoch 1. Zero-init (tanh(0)=0) gives zero gradient to query_convs and
-        # key_convs for the entire warm-up, making them dead weights initially.
-        self.alpha = nn.ParameterList([
-            nn.Parameter(torch.full((1,), 0.1)) for _ in range(num_groups)
-        ])
+        # ── Shared Q/K for per-sample adaptive topology ───────────────────────
+        # d_k = attention dim per group; shared across all K subsets
+        self.d_k = max(1, channels // (num_groups * reduce_ratio))
+        self.query = nn.Conv2d(channels, self.d_k * num_groups, 1, bias=False)
+        self.key   = nn.Conv2d(channels, self.d_k * num_groups, 1, bias=False)
 
-        # ── Per-group spatial projection ──────────────────────────────────
-        self.group_convs = nn.ModuleList([
-            nn.Conv2d(self.C_g, self.C_g, 1, bias=False)
-            for _ in range(num_groups)
-        ])
+        # ── Scalar gate: blends physical + adaptive adjacency ─────────────────
+        # Init 0.1 → tanh(0.1)≈0.10 → Q/K convs get ~10% gradient from epoch 1.
+        # Zero-init causes dead Q/K weights throughout warmup.
+        self.alpha = nn.Parameter(torch.full((1,), 0.1))   # no_decay in trainer
 
-        # ── BN over full channel dim ──────────────────────────────────────
+        # ── BN over full channel dim ──────────────────────────────────────────
         self.bn = nn.BatchNorm2d(channels)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -111,32 +101,26 @@ class AdaptiveCTRGCN(nn.Module):
             out: (B, C, T, V)
         """
         B, C, T, V = x.shape
-        x_groups = x.chunk(self.G, dim=1)
 
-        outs = []
-        for g in range(self.G):
-            xg = x_groups[g]  # (B, C_g, T, V)
+        # ── Shared per-sample adaptive topology ──────────────────────────────
+        q = self.query(x).mean(dim=2)           # (B, d_k*G, V)  — pool over T
+        k = self.key(x).mean(dim=2)             # (B, d_k*G, V)
+        q = q.view(B, self.G, self.d_k, V)      # (B, G, d_k, V)
+        k = k.view(B, self.G, self.d_k, V)
+        A_dyn = torch.einsum('bgdv,bgdw->bgvw', q, k) / (self.d_k ** 0.5)
+        A_dyn = F.softmax(A_dyn, dim=-1).mean(dim=1)   # (B, V, V) avg over groups
 
-            # Per-sample adaptive adjacency via Q/K attention
-            # Pool over T to get per-joint features
-            q = self.query_convs[g](xg).mean(dim=2)  # (B, d_k, V)
-            k = self.key_convs[g](xg).mean(dim=2)    # (B, d_k, V)
+        alpha = torch.tanh(self.alpha)          # scalar in (-1, 1)
 
-            # (B, V, V) attention — each sample gets its own topology
-            A_adaptive = torch.bmm(
-                q.permute(0, 2, 1),   # (B, V, d_k)
-                k,                     # (B, d_k, V)
-            ) / (self.d_k ** 0.5)
-            A_adaptive = F.softmax(A_adaptive, dim=-1)  # row-normalised
+        # ── K-subset aggregation ──────────────────────────────────────────────
+        out = torch.zeros_like(x)
+        for k_idx in range(self.K):
+            A_k = getattr(self, f'A_{k_idx}').unsqueeze(0) + alpha * A_dyn   # (B, V, V)
+            x_agg = torch.einsum('bvw,bctw->bctv', A_k, x)                   # (B, C, T, V)
+            out = out + self.convs[k_idx](x_agg)
 
-            # Blend: static + gated adaptive
-            alpha_g = torch.tanh(self.alpha[g])  # [-1, 1], starts at 0
-            A_g = self.A_physical.unsqueeze(0) + alpha_g * A_adaptive  # (B, V, V)
+        return x + self.bn(out)   # residual
 
-            # Aggregate neighbours: A_g[b,v,w] * xg[b,c,t,w] → (B, C_g, T, V)
-            x_agg = torch.einsum('bvw,bctw->bctv', A_g, xg)
 
-            outs.append(self.group_convs[g](x_agg))
-
-        x_agg_all = torch.cat(outs, dim=1)
-        return x + self.bn(x_agg_all)
+# ── Backwards-compatibility alias ────────────────────────────────────────────
+AdaptiveCTRGCN = MultiScaleAdaptiveGCN

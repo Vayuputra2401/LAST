@@ -1,15 +1,15 @@
 # Training config for ShiftFuse-GCN (LAST-Lite)
 #
-# v5 — bug fixes + de-regularization:
-#   - Removed block_dropout (DropPath is sufficient)
-#   - Disabled Mixup/CutMix: new components (TemporalAttn, AdaptiveCTRGCN, IB loss) need hard labels
-#   - Reduced head dropout (nano 0.15→0.10, small 0.30→0.20)
-#   - Removed EpSepTCN/MultiScaleTCN internal residuals (50% gradient to novel components, up from 33%)
-#   - label_smoothing stays 0.0 (DropPath+Dropout provide sufficient regularization)
-#   - Added IB loss support (ib_loss_weight)
+# v7 — 4-stream late fusion + spatial-first blocks:
+#   - batch_size: 64 → 16, gradient_accumulation_steps: 1 → 4
+#     (backbone sees 4 streams × 16 = 64 samples per stacked-batch call → same GPU memory)
+#   - epochs: 150 → 180 (extra blocks + new components need more time to activate)
+#   - Mixup re-enabled: alpha=0.1 (v5 proved 83.33% > v6 no-Mixup 83.02% — light Mixup confirmed better)
+#   - IB loss continues at weight=0.01 (stable across v5-v6)
+#   - label_smoothing stays 0.0 (DropPath+Dropout+Mixup provide sufficient regularization)
 #
 # All values can be overridden at the command line:
-#   --epochs 120 --set training.label_smoothing=0.05
+#   --epochs 180 --set training.label_smoothing=0.05
 
 training:
   # Optimizer
@@ -26,25 +26,23 @@ training:
   min_lr: 0.0001
 
   # Duration
-  epochs: 150              # v5: extended from 120 — temporal attention gate and AdaptiveCTRGCN
-                           # Q/K convs need ~20-30 extra epochs to fully activate from their
-                           # small-init values (sigmoid(-4)=0.018, alpha=0.1→tanh=0.10)
-  batch_size: 64
-  gradient_accumulation_steps: 1
+  epochs: 180              # v7: extended from 150 — extra blocks ([1,3,3] vs [1,2,2]) and
+                           # late-fusion heads need more time to specialise
+  batch_size: 16           # v7: 64→16; backbone stacks 4 streams → 4×16=64 effective samples
+                           # per call → same GPU memory as old batch=64
+  gradient_accumulation_steps: 4  # effective batch = 16 × 4 = 64 (unchanged)
 
   # Regularization
   label_smoothing: 0.0          # Mixup/CutMix already produce soft targets; LS compounds and over-smooths
   gradient_clip: 5.0
 
-  # Mixup + Temporal CutMix — DISABLED for v5
-  # Reasons:
-  #   1. TemporalAttention gate (sigmoid(-4)=0.018) needs hard labels to get clean gradient signal
-  #      in early epochs; mixed targets blur the learning signal for the novel Q/K/V weights
-  #   2. IB prototype loss is based on hard class assignments — soft Mixup targets conflict
-  #   3. AdaptiveCTRGCN per-sample topology benefits more from data diversity than label smoothing
-  #   4. DropPath + head dropout already provide structural regularisation
-  mixup_alpha: 0.0              # 0.0 = disabled
-  cutmix_prob: 0.0              # 0.0 = disabled
+  # Mixup — RE-ENABLED for v7
+  # v5 (Mixup 0.1): 83.33% > v6 (no Mixup): 83.02%  (+0.31pp confirmed)
+  # Light Mixup acts as a soft label regularizer that complements DropPath+Dropout.
+  # IB prototype loss is computed on clean hard-label batches BEFORE Mixup blending,
+  # so there is no conflict between IB and soft targets.
+  mixup_alpha: 0.1              # Light Mixup — confirmed +0.31pp vs disabled
+  cutmix_prob: 0.0              # CutMix disabled (Mixup alone is better at this scale)
   cutmix_alpha: 1.0             # unused; kept for CLI compatibility
 
   # Input
