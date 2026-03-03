@@ -2,10 +2,10 @@
 #
 # v5 — bug fixes + de-regularization:
 #   - Removed block_dropout (DropPath is sufficient)
-#   - Reduced Mixup alpha 0.2→0.1, CutMix prob 0.5→0.3 (less aggressive)
+#   - Disabled Mixup/CutMix: new components (TemporalAttn, AdaptiveCTRGCN, IB loss) need hard labels
 #   - Reduced head dropout (nano 0.15→0.10, small 0.30→0.20)
 #   - Removed EpSepTCN/MultiScaleTCN internal residuals (50% gradient to novel components, up from 33%)
-#   - label_smoothing stays 0.0 (Mixup already produces soft targets)
+#   - label_smoothing stays 0.0 (DropPath+Dropout provide sufficient regularization)
 #   - Added IB loss support (ib_loss_weight)
 #
 # All values can be overridden at the command line:
@@ -36,10 +36,16 @@ training:
   label_smoothing: 0.0          # Mixup/CutMix already produce soft targets; LS compounds and over-smooths
   gradient_clip: 5.0
 
-  # Mixup + Temporal CutMix (v5: reduced from 0.2/0.5 to avoid over-regularization)
-  mixup_alpha: 0.1              # Beta(alpha, alpha) lambda; 0.0 = disabled
-  cutmix_prob: 0.3              # prob of CutMix vs Mixup per batch; 0.0 = disabled
-  cutmix_alpha: 1.0             # Beta(alpha, alpha) for CutMix lambda
+  # Mixup + Temporal CutMix — DISABLED for v5
+  # Reasons:
+  #   1. TemporalAttention gate (sigmoid(-4)=0.018) needs hard labels to get clean gradient signal
+  #      in early epochs; mixed targets blur the learning signal for the novel Q/K/V weights
+  #   2. IB prototype loss is based on hard class assignments — soft Mixup targets conflict
+  #   3. AdaptiveCTRGCN per-sample topology benefits more from data diversity than label smoothing
+  #   4. DropPath + head dropout already provide structural regularisation
+  mixup_alpha: 0.0              # 0.0 = disabled
+  cutmix_prob: 0.0              # 0.0 = disabled
+  cutmix_alpha: 1.0             # unused; kept for CLI compatibility
 
   # Input
   input_frames: 64
@@ -55,7 +61,7 @@ training:
   # Logging
   log_interval: 20
   eval_interval: 1
-  save_interval: 10
+  save_interval: 5           # v6: finer granularity → last-5 average covers ep130-150 window
 
   # Reproducibility
   seed: 42
