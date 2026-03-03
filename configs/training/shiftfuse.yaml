@@ -64,5 +64,5 @@ training:
   # Reproducibility
   seed: 42
 
-  # IB loss weight (v5: enable with ib_loss_weight > 0 when model returns aux_loss)
-  ib_loss_weight: 0.01
+  # IB loss weight (v7: 0.01→0.001; InfoGCN ref=0.0001; 0.01 was 5-10% CE gradient → too strong)
+  ib_loss_weight: 0.001

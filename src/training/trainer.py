@@ -169,7 +169,7 @@ class Trainer:
                 or 'edge' in name            # SpatialGCN edge importance
                 or 'stream_weights' in name  # StreamFusion blend logits
                 or 'class_prototypes' in name # IB loss class-conditional prototypes (v5)
-                or 'temporal_attn.gate' in name  # LightweightTemporalAttention gate (v5)
+                or 'temporal_attn.' in name  # LightweightTemporalAttention (Q/K/V/proj + gate) (v7)
                 or 'bilateral.gate' in name  # BSE residual gate scalar (v5)
             ):
                 no_decay.append(param)

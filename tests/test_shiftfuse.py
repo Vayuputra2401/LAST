@@ -115,14 +115,14 @@ class TestFrozenDCTGate:
         n = sum(p.numel() for p in gate.parameters())
         assert n == C_test * T_test, f"Expected {C_test * T_test}, got {n}"
 
-    def test_residual_adds_frequency_component(self):
-        # Init -2.0 → sigmoid(-2) ≈ 0.119 → x_back ≈ 0.119x ≠ 0
-        # Output = x + x_back must differ from x
+    def test_dct_near_identity_at_init(self):
+        # Init +4.0 → sigmoid(4.0) ≈ 0.982 → output ≈ 0.982x (near-identity, no internal residual)
         gate = FrozenDCTGate(channels=8, T=16)
         x = torch.randn(1, 8, 16, 4)
         out = gate(x)
-        # Output must be x + x_back (residual), not just x
-        assert not torch.allclose(out, x), "Expected output to include frequency component"
+        # Output should be close to x (within 5%) since mask ≈ 0.982
+        rel_err = (out - x).abs().mean() / x.abs().mean()
+        assert rel_err < 0.05, f"Expected near-identity at init, rel_err={rel_err:.4f}"
 
 
 class TestJointEmbedding:
