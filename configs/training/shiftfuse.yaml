@@ -14,7 +14,7 @@
 training:
   # Optimizer
   optimizer: sgd
-  lr: 0.1
+  lr: 0.05                       # v9: 0.1→0.05; float32 attention softmax fix removes NaN
   momentum: 0.9
   nesterov: true
   weight_decay: 0.0004          # v5: slightly reduced from 0.0005
@@ -22,7 +22,7 @@ training:
   # Scheduler — cosine warmup for smooth decay
   scheduler: cosine_warmup
   warmup_epochs: 5
-  warmup_start_lr: 0.01
+  warmup_start_lr: 0.005
   min_lr: 0.0001
 
   # Duration

@@ -107,8 +107,9 @@ class MultiScaleAdaptiveGCN(nn.Module):
         k = self.key(x).mean(dim=2)             # (B, d_k*G, V)
         q = q.view(B, self.G, self.d_k, V)      # (B, G, d_k, V)
         k = k.view(B, self.G, self.d_k, V)
-        A_dyn = torch.einsum('bgdv,bgdw->bgvw', q, k) / (self.d_k ** 0.5)
-        A_dyn = F.softmax(A_dyn, dim=-1).mean(dim=1)   # (B, V, V) avg over groups
+        # float32 for softmax stability under AMP float16
+        A_dyn = torch.einsum('bgdv,bgdw->bgvw', q.float(), k.float()) / (self.d_k ** 0.5)
+        A_dyn = F.softmax(A_dyn, dim=-1).to(x.dtype).mean(dim=1)   # (B, V, V) avg over groups
 
         alpha = torch.tanh(self.alpha)          # scalar in (-1, 1)
 

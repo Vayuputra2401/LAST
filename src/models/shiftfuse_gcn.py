@@ -486,6 +486,12 @@ class LAST_Lite(nn.Module):
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 
+        # Override: classifier FC heads use small normal init so logits are near-zero at epoch 0.
+        # Xavier on Linear(C, num_classes) gives logit std ≈ 1.0+ → softmax saturates to 1-2 classes.
+        for head in self.stream_heads:
+            nn.init.normal_(head.fc.weight, 0, 0.01)
+            nn.init.constant_(head.fc.bias, 0)
+
     # -----------------------------------------------------------------------
 
     def count_parameters(self) -> int:

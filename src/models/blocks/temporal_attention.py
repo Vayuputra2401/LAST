@@ -81,9 +81,9 @@ class LightweightTemporalAttention(nn.Module):
         k = self.key(x_t)      # (B, T, d_k)
         v = self.value(x_t)    # (B, T, d_k)
 
-        # (B, T, T) attention weights
-        attn = torch.bmm(q, k.transpose(1, 2)) / (self.d_k ** 0.5)
-        attn = F.softmax(attn, dim=-1)
+        # (B, T, T) attention weights — float32 for softmax stability under AMP float16
+        attn = torch.bmm(q.float(), k.float().transpose(1, 2)) / (self.d_k ** 0.5)
+        attn = F.softmax(attn, dim=-1).to(q.dtype)
         attn = self.attn_drop(attn)
 
         # Attend → project back to C
