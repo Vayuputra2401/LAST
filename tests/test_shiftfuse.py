@@ -1,12 +1,12 @@
 """
-Integration tests for ShiftFuse-GCN (LAST-Lite v7).
+Integration tests for ShiftFuse-GCN (LAST-Lite v9 CleanFuse).
 
 Covers:
   - Forward pass shape: dict input → (B, num_classes)  [eval]
   - Training forward: returns ([logit_j, logit_v, logit_b, logit_bv], ib_loss)
   - Tensor (non-dict) input handling
   - 5D input handling (B, C, T, V, M) → takes M=0 body
-  - Param count targets: nano ≤ 100K, small ≤ 300K
+  - Param count reporting (no hard budget limit in v9 — param-free design)
   - BodyRegionShift: zero learnable parameters
   - FrozenDCTGate: dct/idct buffers are not trainable (require_grad=False)
   - JointEmbedding: correct output shape (no-op at zero-init)
@@ -15,6 +15,8 @@ Covers:
   - MultiScaleAdaptiveGCN: K-subset separate buffers, output shape, param count
   - BilateralSymmetryEncoding: antisymmetric injection, torso unchanged
   - DropPath: stochastic depth (0 params, identity at eval)
+  - pw_conv conditional: Identity when in==out, Sequential when channels differ
+  - TemporalAttention gate init: 0.0 (sigmoid(0)=0.5, active from epoch 1)
   - All individual blocks: input → output shape preserved
   - Dry run: data shape trace through entire model
 """
@@ -44,6 +46,7 @@ from src.models.blocks.bilateral_symmetry import BilateralSymmetryEncoding
 from src.models.blocks.static_gcn import StaticGCN
 from src.models.blocks.ctr_light_gcn import CTRLightGCN
 from src.models.blocks.adaptive_ctr_gcn import MultiScaleAdaptiveGCN
+from src.models.blocks.ep_sep_tcn import MultiScaleEpSepTCN
 from src.models.blocks.drop_path import DropPath
 from src.models.graph import Graph, normalize_symdigraph_full
 
@@ -292,6 +295,50 @@ class TestMultiScaleAdaptiveGCN:
         assert out.shape == x.shape
 
 
+class TestMultiScaleEpSepTCN:
+    """Tests for 4-branch dilated TCN (v8: TSM + d=2 + d=4 + MaxPool)."""
+
+    def test_output_shape_stride1(self):
+        tcn = MultiScaleEpSepTCN(channels=48, stride=1, num_branches=4)
+        x   = torch.randn(B, 48, T, V)
+        out = tcn(x)
+        assert out.shape == (B, 48, T, V), f"Expected (B,48,T,V), got {out.shape}"
+
+    def test_output_shape_stride2(self):
+        tcn = MultiScaleEpSepTCN(channels=48, stride=2, num_branches=4)
+        x   = torch.randn(B, 48, T, V)
+        out = tcn(x)
+        assert out.shape == (B, 48, T // 2, V), f"Expected T//2, got {out.shape}"
+
+    def test_tsm_zero_params(self):
+        """TSM branch contributes 0 learnable params (only BN shared in tsm_downsample)."""
+        tcn = MultiScaleEpSepTCN(channels=48, stride=1, num_branches=4)
+        # tsm_downsample is BN(C//4) = 2*(48//4) = 24 params (gamma+beta)
+        tsm_params = sum(p.numel() for p in tcn.tsm_downsample.parameters())
+        assert tsm_params == 2 * (48 // 4), f"TSM BN params: {tsm_params}"
+
+    def test_4branch_fewer_params_than_3branch(self):
+        """4-branch (TSM replaces d=1 conv) should have fewer params than 3-branch legacy."""
+        t4 = MultiScaleEpSepTCN(channels=48, stride=1, num_branches=4)
+        t3 = MultiScaleEpSepTCN(channels=48, stride=1, num_branches=3)
+        n4 = sum(p.numel() for p in t4.parameters())
+        n3 = sum(p.numel() for p in t3.parameters())
+        assert n4 < n3, f"4-branch ({n4}) should use fewer params than 3-branch ({n3})"
+
+    def test_dilation4_receptive_field(self):
+        """d=4 branch must produce non-zero output (actual computation)."""
+        tcn = MultiScaleEpSepTCN(channels=48, stride=1, num_branches=4)
+        x   = torch.randn(B, 48, T, V)
+        out = tcn(x)
+        assert not torch.allclose(out, torch.zeros_like(out)), "Output should be non-zero"
+
+    def test_channels_div4_assertion(self):
+        """Should raise AssertionError when channels not divisible by 4."""
+        import pytest
+        with pytest.raises(AssertionError):
+            MultiScaleEpSepTCN(channels=50, stride=1, num_branches=4)
+
+
 class TestDropPath:
     def test_output_shape(self):
         dp  = DropPath(drop_prob=0.1)
@@ -433,17 +480,45 @@ class TestLASTLite:
             out = model(x)
         assert out.shape == (B, NUM_CLASSES)
 
-    def test_nano_param_budget(self):
+    def test_nano_param_count_report(self):
+        """v9: no hard param budget — just verify model builds and count is positive."""
         model = create_shiftfuse_nano(NUM_CLASSES)
         n = model.count_parameters()
-        # v7: MultiStreamStem + 4 heads + MultiScaleAdaptiveGCN G=4 + ChannelSE → ≤100K
-        assert n <= 100_000, f"nano should be ≤ 100K params, got {n:,}"
+        assert n > 0, "nano should have at least some parameters"
+        print(f"\n  nano params: {n:,}")
 
-    def test_small_param_budget(self):
+    def test_small_param_count_report(self):
+        """v9: no hard param budget — just verify model builds and count is positive."""
         model = create_shiftfuse_small(NUM_CLASSES)
         n = model.count_parameters()
-        # v7: extra blocks [1,3,3] + 4 heads + MultiScaleAdaptiveGCN + ChannelSE → ≤300K
-        assert n <= 300_000, f"small should be ≤ 300K params, got {n:,}"
+        assert n > 0, "small should have at least some parameters"
+        print(f"\n  small params: {n:,}")
+
+    def test_pw_conv_is_identity_within_stage(self):
+        """Within-stage blocks (same channels, stride=1) must have Identity pw_conv."""
+        model = create_shiftfuse_small(NUM_CLASSES)
+        # small blocks=[1,2,3]; stage 1 has 1 block (transition), stage 2 has 2 blocks
+        # Stage 2 block index 1 (second block, in==out==channels[1], stride=1)
+        stage2_blocks = model.stages[1]  # ModuleList
+        if len(stage2_blocks) > 1:
+            blk = stage2_blocks[1]
+            assert isinstance(blk.pw_conv, torch.nn.Identity), \
+                "Within-stage block (in==out) must have Identity pw_conv"
+
+    def test_pw_conv_is_conv_at_stage_transition(self):
+        """Stage-transition blocks (in≠out) must have Sequential pw_conv (Conv+BN+Act)."""
+        model = create_shiftfuse_small(NUM_CLASSES)
+        # Stage 1 block 0: stem_channels → channels[0] (24→64), always a transition
+        blk = model.stages[0][0]
+        assert isinstance(blk.pw_conv, torch.nn.Sequential), \
+            "Transition block (in≠out) must have Sequential pw_conv"
+
+    def test_temporal_attn_gate_init(self):
+        """TemporalAttention gate must be initialized to 0.0 (sigmoid(0)=0.5)."""
+        from src.models.blocks.temporal_attention import LightweightTemporalAttention
+        attn = LightweightTemporalAttention(channels=64)
+        assert float(attn.gate.item()) == 0.0, \
+            f"Gate must be 0.0 at init, got {attn.gate.item()}"
 
     def test_train_forward_multihead(self):
         """Training forward returns (list of 4 logit tensors, ib_loss scalar)."""
@@ -493,17 +568,17 @@ if __name__ == '__main__':
 
     # ── Param report ────────────────────────────────────────────────
     print(SEP)
-    print('PARAM COUNT (v7: late fusion + K-subset GCN + SE)')
+    print('PARAM COUNT (v9: CleanFuse — EfficientGCN B0 channel ratio, no param limit)')
     print(SEP)
     nano  = create_shiftfuse_nano(60)
     small = create_shiftfuse_small(60)
-    print(f'  nano  params: {nano.count_parameters():>10,}  (budget ≤ 100,000)')
-    print(f'  small params: {small.count_parameters():>10,}  (budget ≤ 300,000)')
+    print(f'  nano  params: {nano.count_parameters():>10,}  (channels [32,64,128], 1:2:4 ratio)')
+    print(f'  small params: {small.count_parameters():>10,}  (channels [64,128,256], 1:2:4 ratio)')
     print()
 
     # ── Block-level param breakdown ─────────────────────────────────
     print(SEP)
-    print('BLOCK PARAM BREAKDOWN (small variant, stage channels=[48,72,96])')
+    print('BLOCK PARAM BREAKDOWN (small variant, stage channels=[64,128,256])')
     print(SEP)
     g     = Graph(layout='ntu-rgb+d', strategy='spatial', max_hop=1, raw_partitions=True)
     A_sym = torch.tensor(normalize_symdigraph_full(g.A), dtype=torch.float32)

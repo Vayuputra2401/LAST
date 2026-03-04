@@ -22,7 +22,8 @@
 | **BSE (Bilateral Symmetry Encoding)** | Computes L-R joint differences + symmetry velocity; antisymmetric injection (2C+1 params) | First model to explicitly model bilateral symmetry as a discriminative feature |
 | **FDCR (Frozen DCT Frequency Routing)** | Learnable per-frequency mask on frozen DCT basis — channel specialization in frequency domain (C×T params) | Frequency-domain channel specialization unexplored in all prior skeleton GCNs |
 | **StaticGCN (stage-shared)** | Shared A_physical + A_learned per stage placed after block residual | Weight sharing across blocks within a stage prevents C² param explosion; placement after residual preserves gradient flow |
-| **StreamFusionConcat** | Fuses 4 streams at input via concat + Conv1×1 — backbone runs 1× | EfficientGCN-exact fusion; backbone costs independent of stream count |
+| **MultiStreamStem + 4-head late fusion** | 4 independent stems, shared backbone (stacked batch), 4 classification heads, softmax-weighted ensemble | EfficientGCN uses late fusion but no per-head IB loss; v7 adds stream-specialized heads with class prototype guidance |
+| **4-branch Dilated TCN (TSM + d=2,4 + MaxPool)** | TSM (0-param) replaces d=1 conv; dilations 2 and 4 give 5/9-frame receptive fields; MaxPool captures transitions | EfficientGCN uses {d=1,2,4,MaxPool}; ours replaces d=1 with zero-param TSM — same coverage, fewer params |
 
 **The core thesis of LAST-Lite** — "ultra-low-param skeleton GCN with complementary novel inductive biases" — achieves near-EfficientGCN-B0 accuracy at 28× fewer parameters (247K vs 290K for B0 lite; 79K nano).
 

@@ -58,11 +58,11 @@ class LightweightTemporalAttention(nn.Module):
 
         self.attn_drop = nn.Dropout(dropout)
 
-        # Gate: sigmoid(-4) ≈ 0.018 → attention at ~2% strength at init.
-        # Non-zero init is critical: tanh(0)=0 would give zero gradient to all
-        # Q/K/V/proj weights, making them permanently dead.
-        # Must be in no_decay (trainer '.gate' keyword) so WD doesn't suppress it.
-        self.gate = nn.Parameter(torch.full((1,), -4.0))
+        # Gate: sigmoid(0) = 0.5 → attention at 50% strength from epoch 1.
+        # Model can push gate toward 1.0 (if attention helps) or 0 (if not).
+        # With xavier init for Q/K/V/proj, attention logits are informative from ep1.
+        # Must be in no_decay (trainer 'temporal_attn.' keyword) so WD doesn't suppress it.
+        self.gate = nn.Parameter(torch.zeros(1))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

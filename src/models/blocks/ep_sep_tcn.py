@@ -8,18 +8,30 @@ bottleneck:
     1. Expand:    Conv2d(C → rC, 1×1) + BN + act
     2. Depthwise: Conv2d(rC → rC, (k,1), groups=rC) + BN + act
     3. Pointwise: Conv2d(rC → C, 1×1) + BN
-    4. Residual:  identity or strided 1×1 conv
+    4. Residual:  handled by outer ShiftFuseBlock (no inner residual)
 
 MultiScaleEpSepTCN
 ------------------
-Parallel multi-branch variant for the 'small' model:
-    Branch 0: k=3  (local gestures, 3-frame receptive field)
-    Branch 1: k=5  (mid-range motion, 5-frame receptive field)
-    Branch 2: MaxPool(k=3) (sharp temporal transitions)
-Each branch processes C // num_branches channels (depthwise, near-zero cost).
-Concat → project back to C via pointwise conv.
-Effective receptive field: up to 5 frames vs 5 for single EpSepTCN,
-but covers 3 temporal scales simultaneously.
+Parallel multi-branch temporal convolution.  Three modes:
+
+  num_branches=2  (nano legacy):
+    Branch 0: EpSep k=3
+    Branch 1: EpSep k=5
+
+  num_branches=3  (small legacy):
+    Branch 0: EpSep k=3
+    Branch 1: EpSep k=5
+    Branch 2: MaxPool(k=3)
+
+  num_branches=4  (v8 — EfficientGCN+Shift-GCN style, recommended):
+    Branch 0: TSM — 0-param temporal shift (±1 frame)  ← replaces d=1 conv
+    Branch 1: EpSep k=3, dilation=2  (5-frame receptive field)
+    Branch 2: EpSep k=3, dilation=4  (9-frame receptive field)
+    Branch 3: MaxPool(k=3)
+    → Receptive fields: [1-frame shift, 5f, 9f, 3f pooling]
+    → Param saving: TSM has 0 params vs d=1 branch; net cost ≈ old 3-branch
+
+All branches split C channels equally (C // num_branches per branch).
 """
 
 import torch
@@ -89,20 +101,15 @@ class EpSepTCN(nn.Module):
 
 
 class MultiScaleEpSepTCN(nn.Module):
-    """Multi-scale parallel temporal convolution (small variant).
+    """Multi-scale parallel temporal convolution.
 
-    Three parallel branches at different temporal scales, each operating on
-    a channel split. Captures local gestures (k=3), mid-range motion (k=5),
-    and sharp transitions (MaxPool) simultaneously.
-
-    All branches share the same expand/project outer structure; only the
-    depthwise kernel differs. Total params ≈ EpSepTCN (same channel budget).
+    Supports three branch configurations; see module docstring for details.
 
     Args:
         channels:     Input/output channels.
-        stride:       Temporal stride (applied to branches 0 and 1).
+        stride:       Temporal stride (applied to all branches).
         expand_ratio: EpSepTCN-style channel expansion (default: 2).
-        num_branches: 2 = (k=3, k=5) for nano; 3 = (k=3, k=5, MaxPool) for small.
+        num_branches: 2 / 3 (legacy) or 4 (v8 dilated+TSM, recommended).
         act:          Activation function (default: nn.Hardswish).
     """
 
@@ -111,7 +118,7 @@ class MultiScaleEpSepTCN(nn.Module):
         channels: int,
         stride: int = 1,
         expand_ratio: int = 2,
-        num_branches: int = 3,
+        num_branches: int = 4,
         act: nn.Module = None,
     ):
         super().__init__()
@@ -120,11 +127,66 @@ class MultiScaleEpSepTCN(nn.Module):
         )
         self.num_branches = num_branches
         self.act = act if act is not None else nn.Hardswish(inplace=True)
-        C_b = channels // num_branches   # channels per branch
-        inner = C_b * expand_ratio
-        kernels = [3, 5][:num_branches]  # (k=3), (k=5), MaxPool uses branch 2 slot
 
-        # ── Shared expand (per branch, operates on C_b channels) ─────────
+        if num_branches == 4:
+            self._init_4branch(channels, stride, expand_ratio)
+        else:
+            self._init_legacy(channels, stride, expand_ratio, num_branches)
+
+        # Final pointwise mix — shared across all modes
+        self.mix_conv = nn.Sequential(
+            nn.Conv2d(channels, channels, 1, bias=False),
+            nn.BatchNorm2d(channels),
+        )
+
+    # ------------------------------------------------------------------ #
+    #  4-branch init  (TSM + d=2 + d=4 + MaxPool)                        #
+    # ------------------------------------------------------------------ #
+    def _init_4branch(self, channels: int, stride: int, expand_ratio: int):
+        C_b   = channels // 4
+        inner = C_b * expand_ratio
+
+        # Branch 0 — TSM: 0-param temporal shift; AvgPool to handle stride
+        if stride > 1:
+            self.tsm_downsample = nn.Sequential(
+                nn.AvgPool2d((stride, 1), stride=(stride, 1)),
+                nn.BatchNorm2d(C_b),
+            )
+        else:
+            self.tsm_downsample = nn.BatchNorm2d(C_b)
+
+        # Branch 1 — EpSep k=3, dilation=2  (pad = d*(k-1)//2 = 2)
+        self.d2_expand  = nn.Sequential(nn.Conv2d(C_b, inner, 1, bias=False), nn.BatchNorm2d(inner))
+        self.d2_depth   = nn.Sequential(
+            nn.Conv2d(inner, inner, (3, 1), stride=(stride, 1),
+                      padding=(2, 0), dilation=(2, 1), groups=inner, bias=False),
+            nn.BatchNorm2d(inner),
+        )
+        self.d2_project = nn.Sequential(nn.Conv2d(inner, C_b, 1, bias=False), nn.BatchNorm2d(C_b))
+
+        # Branch 2 — EpSep k=3, dilation=4  (pad = 4)
+        self.d4_expand  = nn.Sequential(nn.Conv2d(C_b, inner, 1, bias=False), nn.BatchNorm2d(inner))
+        self.d4_depth   = nn.Sequential(
+            nn.Conv2d(inner, inner, (3, 1), stride=(stride, 1),
+                      padding=(4, 0), dilation=(4, 1), groups=inner, bias=False),
+            nn.BatchNorm2d(inner),
+        )
+        self.d4_project = nn.Sequential(nn.Conv2d(inner, C_b, 1, bias=False), nn.BatchNorm2d(C_b))
+
+        # Branch 3 — MaxPool(k=3)
+        self.maxpool_4 = nn.Sequential(
+            nn.MaxPool2d((3, 1), stride=(stride, 1), padding=(1, 0)),
+            nn.BatchNorm2d(C_b),
+        )
+
+    # ------------------------------------------------------------------ #
+    #  Legacy init  (num_branches = 2 or 3)                               #
+    # ------------------------------------------------------------------ #
+    def _init_legacy(self, channels: int, stride: int, expand_ratio: int, num_branches: int):
+        C_b    = channels // num_branches
+        inner  = C_b * expand_ratio
+        kernels = [3, 5][:num_branches]   # k=3 for nb=2; k=3,k=5 for nb=3 (MaxPool takes slot 2)
+
         self.expand_convs = nn.ModuleList([
             nn.Sequential(
                 nn.Conv2d(C_b, inner, 1, bias=False),
@@ -132,7 +194,6 @@ class MultiScaleEpSepTCN(nn.Module):
             ) for _ in range(num_branches - (1 if num_branches == 3 else 0))
         ])
 
-        # ── Depthwise temporal per kernel ─────────────────────────────────
         self.depth_convs = nn.ModuleList([
             nn.Sequential(
                 nn.Conv2d(
@@ -144,14 +205,12 @@ class MultiScaleEpSepTCN(nn.Module):
             ) for k in kernels
         ])
 
-        # ── MaxPool branch (branch 2 for num_branches=3) ──────────────────
         if num_branches == 3:
             self.maxpool_branch = nn.Sequential(
                 nn.MaxPool2d(kernel_size=(3, 1), stride=(stride, 1), padding=(1, 0)),
                 nn.BatchNorm2d(C_b),
             )
 
-        # ── Shared pointwise project per branch ───────────────────────────
         self.point_convs = nn.ModuleList([
             nn.Sequential(
                 nn.Conv2d(inner, C_b, 1, bias=False),
@@ -159,14 +218,9 @@ class MultiScaleEpSepTCN(nn.Module):
             ) for _ in range(len(kernels))
         ])
 
-        # ── Final mix → C ─────────────────────────────────────────────────
-        self.mix_conv = nn.Sequential(
-            nn.Conv2d(channels, channels, 1, bias=False),
-            nn.BatchNorm2d(channels),
-        )
-
-        # No internal residual — ShiftFuseBlock's outer residual handles skip.
-
+    # ------------------------------------------------------------------ #
+    #  Forward                                                             #
+    # ------------------------------------------------------------------ #
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
@@ -174,22 +228,48 @@ class MultiScaleEpSepTCN(nn.Module):
         Returns:
             out: (B, C, T', V) where T' = T // stride
         """
-        # Split channels into branches
-        x_splits = x.chunk(self.num_branches, dim=1)   # each (B, C//nb, T, V)
+        if self.num_branches == 4:
+            return self._forward_4branch(x)
 
+        # Legacy (num_branches = 2 or 3)
+        x_splits    = x.chunk(self.num_branches, dim=1)
         branch_outs = []
-        # Conv branches (0, 1 for nb=2; 0, 1 for nb=3)
-        num_conv = len(self.depth_convs)
-        for i in range(num_conv):
+        for i in range(len(self.depth_convs)):
             h = self.act(self.expand_convs[i](x_splits[i]))
             h = self.act(self.depth_convs[i](h))
             h = self.point_convs[i](h)
             branch_outs.append(h)
 
-        # MaxPool branch (only when num_branches=3)
         if self.num_branches == 3:
             branch_outs.append(self.maxpool_branch(x_splits[2]))
 
-        out = torch.cat(branch_outs, dim=1)    # (B, C, T', V)
-        out = self.mix_conv(out)
-        return out
+        out = torch.cat(branch_outs, dim=1)
+        return self.mix_conv(out)
+
+    def _forward_4branch(self, x: torch.Tensor) -> torch.Tensor:
+        x_splits = x.chunk(4, dim=1)   # 4 × (B, C//4, T, V)
+
+        # Branch 0: TSM — shift half channels +1, half channels -1 in time
+        C_b  = x_splits[0].shape[1]
+        half = C_b // 2
+        h0   = torch.cat([
+            torch.roll(x_splits[0][:, :half],  1, dims=2),   # shift +1 (future)
+            torch.roll(x_splits[0][:, half:], -1, dims=2),   # shift -1 (past)
+        ], dim=1)
+        h0 = self.tsm_downsample(h0)   # BN (+ AvgPool when stride > 1)
+
+        # Branch 1: k=3, d=2
+        h1 = self.act(self.d2_expand(x_splits[1]))
+        h1 = self.act(self.d2_depth(h1))
+        h1 = self.d2_project(h1)
+
+        # Branch 2: k=3, d=4
+        h2 = self.act(self.d4_expand(x_splits[2]))
+        h2 = self.act(self.d4_depth(h2))
+        h2 = self.d4_project(h2)
+
+        # Branch 3: MaxPool
+        h3 = self.maxpool_4(x_splits[3])
+
+        out = torch.cat([h0, h1, h2, h3], dim=1)
+        return self.mix_conv(out)

@@ -73,34 +73,34 @@ from .graph import Graph, normalize_symdigraph_full
 MODEL_VARIANTS_SHIFTFUSE = {
     'nano': {
         'stem_channels':      24,
-        'channels':           [32, 48, 64],
+        'channels':           [32, 64, 128],  # v9: 1:2:4 ratio (EfficientGCN-B0 scale), no param limit
         'num_blocks':         [1, 1, 1],
         'strides':            [1, 2, 2],
         'expand_ratio':       2,
         'max_hop':            1,
-        'use_dct_gate':       True,
+        'use_dct_gate':       False,           # v9: removed — TemporalAttn covers global temporal
         'use_joint_embed':    True,
         'use_frame_gate':     False,
-        'use_bilateral':      True,
-        'use_multiscale_tcn': False,
-        'num_tcn_branches':   2,
-        'num_gcn_groups':     4,       # v7: 2 → 4 for richer per-group topology
+        'use_bilateral':      False,           # v9: removed — zero-init no-op; bone stream covers L-R
+        'use_multiscale_tcn': True,
+        'num_tcn_branches':   4,               # TSM + d=2 + d=4 + MaxPool
+        'num_gcn_groups':     4,
         'drop_path_rate':     0.10,
         'dropout':            0.10,
     },
     'small': {
         'stem_channels':      32,
-        'channels':           [48, 72, 96],
-        'num_blocks':         [1, 2, 3],   # v7: [1,2,2] → [1,2,3] within 300K budget; 3 blocks at C=96 > 3 at C=72
+        'channels':           [64, 128, 256],  # v9: 1:2:4 ratio matching EfficientGCN-B0, no param limit
+        'num_blocks':         [1, 2, 3],
         'strides':            [1, 2, 2],
         'expand_ratio':       2,
         'max_hop':            2,
-        'use_dct_gate':       True,
+        'use_dct_gate':       False,            # v9: removed
         'use_joint_embed':    True,
         'use_frame_gate':     False,
-        'use_bilateral':      True,
+        'use_bilateral':      False,            # v9: removed
         'use_multiscale_tcn': True,
-        'num_tcn_branches':   3,
+        'num_tcn_branches':   4,
         'num_gcn_groups':     4,
         'drop_path_rate':     0.15,
         'dropout':            0.20,
@@ -205,12 +205,17 @@ class ShiftFuseBlock(nn.Module):
         # 1. Body-Region-Aware Spatial Shift (BRASP) — 0 params
         self.shift = BodyRegionShift(in_channels, A_flat)
 
-        # 2. Pointwise channel projection
-        self.pw_conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, 1, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.Hardswish(inplace=True),
-        )
+        # 2. Pointwise channel projection — only when dimensions change.
+        # Within-stage blocks (in==out, stride==1) skip this: GCN directly receives BRASP output,
+        # avoiding a redundant C² mix before graph aggregation (EfficientGCN/ST-GCN don't have it).
+        if in_channels != out_channels or stride != 1:
+            self.pw_conv = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, 1, bias=False),
+                nn.BatchNorm2d(out_channels),
+                nn.Hardswish(inplace=True),
+            )
+        else:
+            self.pw_conv = nn.Identity()
 
         # 3. Shared MultiScaleAdaptiveGCN — spatial FIRST (spatial-first order)
         #    Stored as plain attribute (not registered submodule): LAST_Lite owns
@@ -287,27 +292,27 @@ class ShiftFuseBlock(nn.Module):
             x:   (B, in_channels, T, V)
         Returns:
             out: (B, out_channels, T', V)  T' = T // stride
+
+        v9 block order (principled, non-redundant):
+            BRASP → [pw_conv if in≠out] → JointEmbed → GCN → SE → TCN → DropPath → res+out → TemporalAttn
         """
         res = self.residual(x)
 
-        # ── Spatial-first main path ─────────────────────────────────────
-        out = self.shift(x)
-        out = self.pw_conv(out)
-
+        # ── Spatial path ────────────────────────────────────────────────
+        out = self.shift(x)              # BRASP: 0-param anatomical channel routing
+        out = self.pw_conv(out)          # dim expansion (Identity when in==out)
+        out = self.joint_embed(out)      # joint semantic identity BEFORE GCN aggregation
         if self.gcn is not None:
-            out = self.gcn(out)          # SPATIAL: K-subset GCN (has own residual)
+            out = self.gcn(out)          # K-subset GCN on joint-aware features
         out = self.se(out)               # channel recalibration after graph prop
 
-        out = self.joint_embed(out)
-        out = self.bilateral(out)
-        out = self.dct_gate(out)
-        out = self.tcn(out)              # TEMPORAL
-        out = self.frame_gate(out)
+        # ── Temporal path ───────────────────────────────────────────────
+        out = self.tcn(out)              # 4-branch local temporal (TSM/d=2/d=4/MaxPool)
 
         out = self.drop_path(out)        # stochastic depth on main path
         out = res + out                  # single clean outer residual
 
-        out = self.temporal_attn(out)    # global temporal context
+        out = self.temporal_attn(out)    # global temporal context (gate=0.5, active from ep1)
 
         return out
 
@@ -477,7 +482,7 @@ class LAST_Lite(nn.Module):
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.xavier_uniform_(m.weight)   # better variance propagation for attention projections
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 

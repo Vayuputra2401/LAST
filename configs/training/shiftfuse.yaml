@@ -28,21 +28,21 @@ training:
   # Duration
   epochs: 180              # v7: extended from 150 — extra blocks ([1,3,3] vs [1,2,2]) and
                            # late-fusion heads need more time to specialise
-  batch_size: 16           # v7: 64→16; backbone stacks 4 streams → 4×16=64 effective samples
-                           # per call → same GPU memory as old batch=64
-  gradient_accumulation_steps: 4  # effective batch = 16 × 4 = 64 (unchanged)
+  batch_size: 24           # v8: 16→24; backbone stacks 4 streams → 4×24=96 effective
+                           # per forward; ~1.5× fewer loop iterations vs batch=16
+  gradient_accumulation_steps: 3  # effective batch = 24 × 3 = 72 (≈ old 64)
 
   # Regularization
   label_smoothing: 0.0          # Mixup/CutMix already produce soft targets; LS compounds and over-smooths
   gradient_clip: 5.0
 
-  # Mixup — RE-ENABLED for v7
-  # v5 (Mixup 0.1): 83.33% > v6 (no Mixup): 83.02%  (+0.31pp confirmed)
-  # Light Mixup acts as a soft label regularizer that complements DropPath+Dropout.
-  # IB prototype loss is computed on clean hard-label batches BEFORE Mixup blending,
-  # so there is no conflict between IB and soft targets.
-  mixup_alpha: 0.1              # Light Mixup — confirmed +0.31pp vs disabled
-  cutmix_prob: 0.0              # CutMix disabled (Mixup alone is better at this scale)
+  # Mixup — DISABLED for v8
+  # v7 uses 4-stream late fusion: each stream's CE loss is separate; Mixup interpolates
+  # two samples with different labels but the per-stream heads still see clean one-hot
+  # targets via IB. With 4 separate CE losses, Mixup's label-smoothing effect is weaker
+  # and conflicts with IB prototype learning across streams.
+  mixup_alpha: 0.0              # Disabled — 4-stream late fusion + IB loss are cleaner without Mixup
+  cutmix_prob: 0.0              # CutMix disabled
   cutmix_alpha: 1.0             # unused; kept for CLI compatibility
 
   # Input
