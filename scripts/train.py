@@ -173,8 +173,8 @@ def _run_checkpoint_averaging(model, val_loader, run_dir, n_checkpoints, device)
 def main():
     parser = argparse.ArgumentParser(description='Train LAST model')
     parser.add_argument('--model', type=str, default='shiftfuse_small',
-                       choices=['shiftfuse_nano', 'shiftfuse_small'],
-                       help='Model variant (default: base)')
+                       choices=['shiftfuse_nano', 'shiftfuse_small', 'shiftfuse_experimental'],
+                       help='Model variant (default: shiftfuse_small)')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
                        help='Dataset (default: ntu60)')
     parser.add_argument('--split_type', type=str, default='xsub', choices=['xsub', 'xview', 'xset'],
@@ -214,7 +214,12 @@ def main():
     # Load training config baseline.
     # ShiftFuse-GCN uses its own calibrated defaults (EfficientGCN-aligned schedule,
     # no label smoothing, relaxed gradient clip). All other models use default.yaml.
-    _training_cfg_name = 'shiftfuse' if args.model.startswith('shiftfuse_') else 'default'
+    if args.model == 'shiftfuse_experimental':
+        _training_cfg_name = 'shiftfuse_experimental'
+    elif args.model.startswith('shiftfuse_'):
+        _training_cfg_name = 'shiftfuse'
+    else:
+        _training_cfg_name = 'default'
     training_config_path = os.path.join(
         os.path.dirname(__file__), '..', 'configs', 'training', f'{_training_cfg_name}.yaml'
     )
@@ -321,7 +326,18 @@ def main():
     num_classes = config['data']['dataset'].get('num_classes', 60 if args.dataset == 'ntu60' else 120)
     num_joints = config['data']['dataset']['num_joints']
     
-    if args.model.startswith('shiftfuse_'):
+    if args.model == 'shiftfuse_experimental':
+        T = config['data']['dataset']['max_frames']
+        print(f"\n  Creating ShiftFuse-Experimental (T={T})...")
+        from src.models.shiftfuse_experimental import ShiftFuseExperimental
+        model = ShiftFuseExperimental(
+            num_classes=num_classes,
+            T=T,
+            num_joints=num_joints,
+            dropout=config['model'].get('dropout'),
+        )
+        # ib_loss_weight read directly from shiftfuse_experimental.yaml (no override)
+    elif args.model.startswith('shiftfuse_'):
         variant = args.model.replace('shiftfuse_', '')
         T = config['data']['dataset']['max_frames']
         print(f"\n  Creating ShiftFuse-GCN (Variant: {variant}, T={T})...")
@@ -333,7 +349,7 @@ def main():
             num_joints=num_joints,
             dropout=config['model'].get('dropout'),
         )
-        config['training']['ib_loss_weight'] = 0.0
+        # ib_loss_weight read directly from shiftfuse.yaml (no override)
     else:
         raise ValueError(f"Unsupported model variant: {args.model}")
     

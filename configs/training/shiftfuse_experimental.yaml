@@ -1,0 +1,57 @@
+# Training config for ShiftFuse-Experimental (Option 3 lean variant)
+#
+# Architecture: v9 small with TemporalAttention replaced by zero-param MultiScaleTSM.
+#   channels=[64,128,256], blocks=[1,2,3], ~820K params (vs 1.06M for v9 small)
+#
+# Identical schedule to shiftfuse.yaml — direct apples-to-apples comparison with v9.
+# Only difference: ib_loss_weight is active here (bug fix: train.py no longer zeroes it).
+
+training:
+  # Optimizer
+  optimizer: sgd
+  lr: 0.05                       # same as v9 fix; float32 softmax prevents NaN
+  momentum: 0.9
+  nesterov: true
+  weight_decay: 0.0004
+
+  # Scheduler
+  scheduler: cosine_warmup
+  warmup_epochs: 5
+  warmup_start_lr: 0.005
+  min_lr: 0.0001
+
+  # Duration
+  epochs: 180
+  batch_size: 24                 # 4 streams × 24 = 96 effective per forward
+  gradient_accumulation_steps: 3 # effective batch = 24 × 3 = 72
+
+  # Regularization
+  label_smoothing: 0.0
+  gradient_clip: 5.0
+
+  # Augmentation (disabled — 4-stream late fusion + IB loss cleaner without)
+  mixup_alpha: 0.0
+  cutmix_prob: 0.0
+  cutmix_alpha: 1.0
+
+  # Input
+  input_frames: 64
+
+  # Precision
+  use_amp: true
+  use_compile: false
+
+  # DataLoader
+  num_workers: 4
+  pin_memory: true
+
+  # Logging
+  log_interval: 20
+  eval_interval: 1
+  save_interval: 5
+
+  # Reproducibility
+  seed: 42
+
+  # IB loss weight (InfoGCN ref=0.0001; 0.001 = 0.1% of CE gradient)
+  ib_loss_weight: 0.001
