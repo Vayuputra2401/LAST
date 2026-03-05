@@ -174,7 +174,8 @@ def main():
     parser = argparse.ArgumentParser(description='Train LAST model')
     parser.add_argument('--model', type=str, default='shiftfuse_small',
                        choices=['shiftfuse_nano', 'shiftfuse_small',
-                                'shiftfuse_experimental', 'shiftfuse_experimental_nano'],
+                                'shiftfuse_experimental', 'shiftfuse_experimental_nano',
+                                'shiftfuse_v10_nano', 'shiftfuse_v10_small', 'shiftfuse_v10_large'],
                        help='Model variant (default: shiftfuse_small)')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
                        help='Dataset (default: ntu60)')
@@ -209,6 +210,12 @@ def main():
     parser.add_argument('--avg_checkpoints', type=int, default=0, metavar='N',
                        help='After training, average the last N epoch checkpoints '
                             'and evaluate on val set (0 = disabled)')
+    parser.add_argument('--teacher_checkpoint', type=str, default=None,
+                       help='Path to teacher checkpoint for knowledge distillation')
+    parser.add_argument('--kd_weight', type=float, default=None,
+                       help='Override training.kd_weight (KD loss blend 0-1)')
+    parser.add_argument('--kd_temp', type=float, default=None,
+                       help='Override training.kd_temperature')
     args = parser.parse_args()
 
     # ── 1. Load & merge config ──────────────────────────────────────────
@@ -217,6 +224,8 @@ def main():
     # no label smoothing, relaxed gradient clip). All other models use default.yaml.
     if args.model in ('shiftfuse_experimental', 'shiftfuse_experimental_nano'):
         _training_cfg_name = args.model          # maps to shiftfuse_experimental*.yaml
+    elif args.model.startswith('shiftfuse_v10'):
+        _training_cfg_name = 'shiftfuse_v10'
     elif args.model.startswith('shiftfuse_'):
         _training_cfg_name = 'shiftfuse'
     else:
@@ -277,6 +286,14 @@ def main():
     # --data_root override
     if args.data_root is not None:
         config['environment']['paths']['data_base'] = args.data_root
+    # KD overrides
+    if args.teacher_checkpoint is not None:
+        config['training']['use_kd'] = True
+        config['training']['teacher_checkpoint'] = args.teacher_checkpoint
+    if args.kd_weight is not None:
+        config['training']['kd_weight'] = args.kd_weight
+    if args.kd_temp is not None:
+        config['training']['kd_temperature'] = args.kd_temp
     # General --set (applied last — highest priority)
     if args.set:
         for kv in args.set:
@@ -327,7 +344,19 @@ def main():
     num_classes = config['data']['dataset'].get('num_classes', 60 if args.dataset == 'ntu60' else 120)
     num_joints = config['data']['dataset']['num_joints']
     
-    if args.model in ('shiftfuse_experimental', 'shiftfuse_experimental_nano'):
+    if args.model.startswith('shiftfuse_v10'):
+        variant = args.model.replace('shiftfuse_v10_', '')   # nano / small / large
+        T = config['data']['dataset']['max_frames']
+        print(f"\n  Creating ShiftFuse-V10 (variant={variant}, T={T})...")
+        from src.models.shiftfuse_v10 import ShiftFuseV10
+        model = ShiftFuseV10(
+            num_classes=num_classes,
+            variant=variant,
+            T=T,
+            num_joints=num_joints,
+            dropout=config['model'].get('dropout'),
+        )
+    elif args.model in ('shiftfuse_experimental', 'shiftfuse_experimental_nano'):
         variant = 'nano' if args.model == 'shiftfuse_experimental_nano' else 'small'
         T = config['data']['dataset']['max_frames']
         print(f"\n  Creating ShiftFuse-Experimental (variant={variant}, T={T})...")

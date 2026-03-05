@@ -29,6 +29,12 @@ Param count per stage (channels C, joints V=25, groups G, K subsets):
     BN:     192
     alpha:  1
     total:  11,713
+
+  Depthwise mode (depthwise=True):
+    Replaces group convs with true depthwise (groups=C):
+    K group convs:  K × C  (vs K × C²/G)
+    Saving at C=128, G=4, K=3: 12,288 → 384 (32× reduction)
+    Channel mixing comes from Q/K adaptive correction + SE + TCN mix_conv.
 """
 
 import torch
@@ -58,6 +64,7 @@ class MultiScaleAdaptiveGCN(nn.Module):
         num_joints: int = 25,
         num_groups: int = 4,
         reduce_ratio: int = 4,
+        depthwise: bool = False,
     ):
         super().__init__()
         assert channels % num_groups == 0, (
@@ -73,9 +80,12 @@ class MultiScaleAdaptiveGCN(nn.Module):
             row_sum = Ak.sum(-1, keepdim=True).clamp(min=1e-6)
             self.register_buffer(f'A_{k}', Ak / row_sum)   # row sums = 1.0
 
-        # ── K independent group convolutions (one per subset) ────────────────
+        # ── K independent convolutions (one per subset) ──────────────────────
+        # depthwise=True: groups=C (true depthwise, C params/subset instead of C²/G)
+        # depthwise=False: groups=num_groups (standard group conv)
+        _conv_groups = channels if depthwise else num_groups
         self.convs = nn.ModuleList([
-            nn.Conv2d(channels, channels, 1, groups=num_groups, bias=False)
+            nn.Conv2d(channels, channels, 1, groups=_conv_groups, bias=False)
             for _ in range(K)
         ])
 

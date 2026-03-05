@@ -87,6 +87,47 @@ class Graph:
                     A.append(a_further)
             A = np.stack(A)
             self.A = A
+        elif strategy == 'semantic_bodypart':
+            # Semantic body-part partition for NTU-RGB+D (0-indexed joints).
+            #
+            # A_intra: edges within the same anatomical part   → fine motor control
+            # A_inter: direct edges crossing part boundaries   → joint coordination
+            # A_cross: multi-hop edges between distant parts   → cross-body actions
+            #
+            # Requires max_hop=2 for A_cross to be non-empty.
+            PART_OF = {
+                0: 'torso', 1: 'torso', 2: 'torso', 20: 'torso',   # spine_base/mid, neck, shoulder_center
+                3: 'head',
+                4:  'left_arm',  5:  'left_arm',  6:  'left_arm',
+                7:  'left_arm',  21: 'left_arm',  22: 'left_arm',
+                8:  'right_arm', 9:  'right_arm', 10: 'right_arm',
+                11: 'right_arm', 23: 'right_arm', 24: 'right_arm',
+                12: 'left_leg',  13: 'left_leg',  14: 'left_leg',  15: 'left_leg',
+                16: 'right_leg', 17: 'right_leg', 18: 'right_leg', 19: 'right_leg',
+            }
+
+            a_intra = np.zeros((self.num_node, self.num_node))
+            a_inter = np.zeros((self.num_node, self.num_node))
+            a_cross = np.zeros((self.num_node, self.num_node))
+
+            for i in range(self.num_node):
+                for j in range(self.num_node):
+                    dist = self.hop_dis[j, i]
+                    if np.isinf(dist) or dist > self.max_hop:
+                        continue
+                    val = partition_src[j, i]
+                    if val == 0:
+                        continue
+                    same_part = (PART_OF[i] == PART_OF[j])
+                    direct    = (dist == 1)
+                    if same_part:
+                        a_intra[j, i] = val
+                    elif direct:
+                        a_inter[j, i] = val   # part-boundary edge (dist=1, different parts)
+                    else:
+                        a_cross[j, i] = val   # multi-hop cross-body edge (dist>1, different parts)
+
+            self.A = np.stack([a_intra, a_inter, a_cross])
         else:
             raise ValueError("Do not support this strategy.")
 

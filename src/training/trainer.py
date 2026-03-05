@@ -115,6 +115,43 @@ class Trainer:
                 print(f"  torch.compile: skipped ({e})")
         self.model = model.to(self.device)
 
+        # ── Knowledge Distillation teacher ──────────────────────────────────
+        # Soft-label KD: loss = (1-α)·CE + α·T²·KL(student||teacher)
+        # Teacher is frozen and always runs in eval mode.
+        # Enable with: use_kd: true, teacher_checkpoint: <path>, kd_weight: 0.5,
+        #              kd_temperature: 4.0 in training config.
+        self.teacher_model = None
+        if self.train_cfg.get('use_kd', False):
+            teacher_path = self.train_cfg.get('teacher_checkpoint', '')
+            if teacher_path and os.path.isfile(teacher_path):
+                print(f"  KD: loading teacher from {teacher_path}")
+                ckpt = torch.load(teacher_path, map_location=self.device)
+                sd   = ckpt.get('model_state_dict', ckpt)
+                # Determine teacher architecture from checkpoint keys
+                if any('stage_tlas' in k for k in sd):
+                    from src.models.shiftfuse_v10 import ShiftFuseV10
+                    _var = self.train_cfg.get('teacher_variant', 'large')
+                    _nc  = self.train_cfg.get('teacher_num_classes', 60)
+                    teacher = ShiftFuseV10(num_classes=_nc, variant=_var)
+                elif any('stage_tsms' in k for k in sd):
+                    from src.models.shiftfuse_experimental import ShiftFuseExperimental
+                    _var = self.train_cfg.get('teacher_variant', 'small')
+                    _nc  = self.train_cfg.get('teacher_num_classes', 60)
+                    teacher = ShiftFuseExperimental(num_classes=_nc, variant=_var)
+                else:
+                    from src.models.shiftfuse_gcn import LAST_Lite
+                    _var = self.train_cfg.get('teacher_variant', 'small')
+                    _nc  = self.train_cfg.get('teacher_num_classes', 60)
+                    teacher = LAST_Lite(num_classes=_nc, variant=_var)
+                teacher.load_state_dict(sd, strict=False)
+                teacher.to(self.device).eval()
+                for p in teacher.parameters():
+                    p.requires_grad = False
+                self.teacher_model = teacher
+                print(f"  KD: teacher loaded ({sum(p.numel() for p in teacher.parameters()):,} params), frozen.")
+            else:
+                print(f"  KD: use_kd=true but teacher_checkpoint not found → KD disabled.")
+
         # ── Gradient Accumulation ───────────────────────────────────────────
         # Effective batch = batch_size × accum_steps.
         # Allows larger effective batches on VRAM-limited GPUs.
@@ -451,6 +488,17 @@ class Trainer:
             # target: integer labels (clean) or float one-hot blend (mixed)
             target = mixed_target if mixed_target is not None else batch_labels
 
+            # ── KD teacher forward (no grad, eval mode) ──────────────────
+            teacher_logits = None
+            if self.teacher_model is not None:
+                with torch.no_grad():
+                    t_out = self.teacher_model(batch_data)
+                    if isinstance(t_out, tuple):
+                        t_out = t_out[0]   # extract logits from (logits, ib_loss)
+                    if isinstance(t_out, list):
+                        t_out = torch.stack(t_out, dim=0).mean(dim=0)
+                    teacher_logits = t_out
+
             if self.use_amp:
                 with torch.amp.autocast('cuda', dtype=self.amp_dtype):
                     raw_out = self.model(batch_data)
@@ -468,6 +516,15 @@ class Trainer:
                     if aux_loss is not None:
                         ib_w = self.train_cfg.get('ib_loss_weight', 0.01)
                         loss = loss + ib_w * aux_loss
+                    if teacher_logits is not None:
+                        kd_w = self.train_cfg.get('kd_weight', 0.5)
+                        kd_T = self.train_cfg.get('kd_temperature', 4.0)
+                        kd_loss = (kd_T ** 2) * F.kl_div(
+                            F.log_softmax(outputs.float() / kd_T, dim=1),
+                            F.softmax(teacher_logits.float() / kd_T, dim=1),
+                            reduction='batchmean',
+                        )
+                        loss = (1.0 - kd_w) * loss + kd_w * kd_loss
             else:
                 raw_out = self.model(batch_data)
                 if isinstance(raw_out, tuple):
@@ -483,6 +540,15 @@ class Trainer:
                 if aux_loss is not None:
                     ib_w = self.train_cfg.get('ib_loss_weight', 0.01)
                     loss = loss + ib_w * aux_loss
+                if teacher_logits is not None:
+                    kd_w = self.train_cfg.get('kd_weight', 0.5)
+                    kd_T = self.train_cfg.get('kd_temperature', 4.0)
+                    kd_loss = (kd_T ** 2) * F.kl_div(
+                        F.log_softmax(outputs.float() / kd_T, dim=1),
+                        F.softmax(teacher_logits.float() / kd_T, dim=1),
+                        reduction='batchmean',
+                    )
+                    loss = (1.0 - kd_w) * loss + kd_w * kd_loss
 
             # ── NaN/Inf guard BEFORE backward ────────────────────────────
             # Check both outputs and loss — NaN in outputs corrupts BN stats

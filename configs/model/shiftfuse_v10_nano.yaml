@@ -1,0 +1,34 @@
+# ShiftFuse-V10 Nano — model configuration
+#
+# Architecture: SGP (semantic body-part graph) + DW-GCN (depthwise spatial)
+#               + TLA (temporal landmark attention, K=8) + 4-stream fusion
+#
+# Params:  ~130–150K
+# Target:  87–90% NTU-60 xsub (vs EfficientGCN-B0 290K @ 90.2%)
+# Use case: param-efficiency showcase, beating B0 at half the params with KD
+
+model:
+  name: shiftfuse_v10_nano
+  variant: nano
+
+  in_channels: 3
+  graph_layout: ntu-rgb+d
+  graph_strategy: semantic_bodypart
+  T: 64
+  num_joints: 25
+
+  # Architecture
+  stem_channels: 24
+  channels: [32, 64, 128]          # 1:2:4 ratio
+  num_blocks: [1, 2, 2]            # 5 blocks (DW-GCN savings fund +2 blocks vs experimental)
+  strides: [1, 2, 2]
+  expand_ratio: 2
+  max_hop: 2                       # 2-hop enables cross-body edges in A_cross
+  drop_path_rate: 0.10
+
+  # TLA
+  tla_landmarks: 8
+  tla_reduce: 8                    # d_k = C // 8
+
+  # Regularisation
+  dropout: 0.10

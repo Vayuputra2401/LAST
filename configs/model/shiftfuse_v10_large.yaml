@@ -1,0 +1,33 @@
+# ShiftFuse-V10 Large — model configuration
+#
+# Architecture: SGP + DW-GCN + TLA + 4-stream fusion
+#
+# Params:  ~1.2–1.5M
+# Target:  92–93% NTU-60 xsub (match/beat EfficientGCN-B4 @ 1.1M, 92.1%)
+# Use case: primary teacher for KD, SOTA benchmark
+
+model:
+  name: shiftfuse_v10_large
+  variant: large
+
+  in_channels: 3
+  graph_layout: ntu-rgb+d
+  graph_strategy: semantic_bodypart
+  T: 64
+  num_joints: 25
+
+  # Architecture
+  stem_channels: 48
+  channels: [96, 192, 384]         # 1:2:4 ratio
+  num_blocks: [2, 3, 4]            # 9 blocks
+  strides: [1, 2, 2]
+  expand_ratio: 2
+  max_hop: 2
+  drop_path_rate: 0.30
+
+  # TLA
+  tla_landmarks: 8
+  tla_reduce: 8
+
+  # Regularisation
+  dropout: 0.25
