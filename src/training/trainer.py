@@ -208,6 +208,7 @@ class Trainer:
                 or 'class_prototypes' in name # IB loss class-conditional prototypes (v5)
                 or 'temporal_attn.' in name  # LightweightTemporalAttention (Q/K/V/proj + gate) (v7)
                 or 'bilateral.gate' in name  # BSE residual gate scalar (v5)
+                or '.gate' in name           # TLA + any future gated-residual scalars (v10)
             ):
                 no_decay.append(param)
             else:

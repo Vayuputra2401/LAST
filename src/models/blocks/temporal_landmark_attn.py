@@ -56,7 +56,7 @@ class TemporalLandmarkAttention(nn.Module):
         self.out_proj = nn.Linear(self.d_k, channels, bias=False)
 
         # Gate: sigmoid(0) = 0.5 → attention active at 50% from epoch 1.
-        # Listed under 'temporal_attn.' in no_decay (trainer.py).
+        # Excluded from weight decay via '.gate' in name (trainer.py no_decay).
         self.gate = nn.Parameter(torch.zeros(1))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
