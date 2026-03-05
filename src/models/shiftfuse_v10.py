@@ -290,11 +290,13 @@ class ShiftFuseV10(nn.Module):
 
     # -----------------------------------------------------------------------
 
-    def forward(self, x):
+    def forward(self, x, labels=None):
         """
         Args:
-            x: Dict{'joint','velocity','bone','bone_velocity'} each (B,3,T,V[,M])
-               or a single Tensor broadcast to all 4 streams.
+            x:      Dict{'joint','velocity','bone','bone_velocity'} each (B,3,T,V[,M])
+                    or a single Tensor broadcast to all 4 streams.
+            labels: (B,) integer class labels — used for class-conditional IB loss
+                    during training. If None, falls back to nearest-prototype.
         Returns:
             Training: ([logits_j, logits_v, logits_b, logits_bv], ib_loss)
             Eval:     logits (B, num_classes)
@@ -329,7 +331,12 @@ class ShiftFuseV10(nn.Module):
                 self.class_prototypes.unsqueeze(0),
                 p=2,
             ).squeeze(0)
-            ib_loss = proto_dists.min(dim=-1).values.mean()
+            if labels is not None:
+                # Class-conditional IB loss (InfoGCN-style): each sample uses
+                # the distance to its correct-class prototype, not the nearest.
+                ib_loss = proto_dists[torch.arange(mean_feat.size(0), device=mean_feat.device), labels].mean()
+            else:
+                ib_loss = proto_dists.min(dim=-1).values.mean()
             return all_logits, ib_loss
 
         w = F.softmax(self.stream_weights, dim=0)

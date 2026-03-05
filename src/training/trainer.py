@@ -502,7 +502,7 @@ class Trainer:
 
             if self.use_amp:
                 with torch.amp.autocast('cuda', dtype=self.amp_dtype):
-                    raw_out = self.model(batch_data)
+                    raw_out = self.model(batch_data, labels=batch_labels)
                     # Some models return (logits, aux_loss) during training
                     if isinstance(raw_out, tuple):
                         outputs, aux_loss = raw_out
@@ -527,7 +527,7 @@ class Trainer:
                         )
                         loss = (1.0 - kd_w) * loss + kd_w * kd_loss
             else:
-                raw_out = self.model(batch_data)
+                raw_out = self.model(batch_data, labels=batch_labels)
                 if isinstance(raw_out, tuple):
                     outputs, aux_loss = raw_out
                 else:
