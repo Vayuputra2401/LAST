@@ -1,44 +1,19 @@
 """
 ShiftFuse-V10 — SOTA-targeting skeleton action recognition model.
 
-Architecture advances over V9 / Experimental:
-  1. Semantic Body-Part Graph (SGP):
-       Replaces spine-direction K=3 with body-part semantic K=3:
-       A_intra (same part) | A_inter (adjacent parts) | A_cross (cross-body)
-       Zero extra params. More meaningful spatial prior than hop direction.
-
-  2. Depthwise Spatial GCN (DW-GCN):
-       Replaces Conv2d(C,C,1,groups=G) with Conv2d(C,C,1,groups=C) in K-subset convs.
-       32× reduction in GCN conv params at C=128 (C²/G → C per subset × K).
-       Channel mixing flows through adaptive Q/K correction + SE + TCN mix_conv.
-
-  3. Temporal Landmark Attention (TLA):
-       Replaces MultiScaleTSM (fixed shifts, zero learning) and full T×T attention.
-       O(T×K) with K=8: 8× cheaper compute than T×T, still global temporal reach.
-       Learned: each frame attends to K=8 uniformly-spaced landmark frames.
-
-  4. Increased depth (more blocks, same param budget):
-       DW-GCN savings fund extra blocks: nano [1,2,2], small [2,3,4], large [2,3,4]
-       vs experimental [1,1,1] / [1,2,3].
-
-  5. max_hop=2 for all variants (was max_hop=1 for nano):
-       2-hop connections give A_cross non-empty → cross-body edges populated.
-
-Three-level anatomical grounding (novel coherent contribution):
-  BRASP:        body-region channel routing (0 params)
-  SGP:          body-region graph partition (0 params)
-  JointEmbed:   joint identity node features before GCN (V×C params)
-
-Block pipeline (identical to v9 / experimental, with DW-GCN and TLA):
-  BRASP → [pw_conv if dim change] → JointEmbed → DW-SGP-GCN → SE
-       → 4-branch TCN → DropPath → res+out → TLA
+Architecture (V10.1 — deep architectural fixes):
+  1. Semantic Body-Part Graph (SGP): A_intra / A_inter / A_cross
+  2. Group Conv GCN (G=4): cross-channel mixing in spatial core
+  3. Temporal Landmark Attention (TLA): global temporal via K landmarks
+     (configurable per variant — disabled for nano to save params)
+  4. Per-Stream BatchNorm: each stream gets independent BN statistics
+  5. BRASP after pw_conv: channel-region mapping matches GCN channels
+  6. Configurable GCN sharing: per-block (max accuracy) or per-stage (param saving)
 
 Variants:
-  nano   channels=[32,64,128]   blocks=[1,2,2]  ~130–150K  target 87–90%
-  small  channels=[64,128,256]  blocks=[2,3,4]  ~450–600K  target 90–92%
-  large  channels=[96,192,384]  blocks=[2,3,4]  ~1.2–1.5M  target 92–93%
-
-All with: semantic_bodypart graph, depthwise GCN, TLA, 4-stream late fusion, IB loss.
+  nano   channels=[32,64,128]   blocks=[2,2,2]  ~200K   target 87–90%
+  small  channels=[64,128,256]  blocks=[2,3,4]  ~600K   target 90–92%
+  large  channels=[96,192,384]  blocks=[2,3,4]  ~1.5M   target 92–93%
 """
 
 import torch
@@ -47,9 +22,23 @@ import torch.nn.functional as F
 
 from .blocks.temporal_landmark_attn import TemporalLandmarkAttention
 from .blocks.stream_fusion_concat import MultiStreamStem
+from .blocks.stream_batch_norm import StreamBatchNorm2d
 from .blocks.adaptive_ctr_gcn import MultiScaleAdaptiveGCN
 from .graph import Graph, normalize_symdigraph_full
 from .shiftfuse_gcn import ShiftFuseBlock, ClassificationHead
+
+
+# ---------------------------------------------------------------------------
+# Per-stream BN replacement utility
+# ---------------------------------------------------------------------------
+def _replace_bn2d_with_stream_bn(module: nn.Module, num_streams: int = 4):
+    """Recursively replace all nn.BatchNorm2d with StreamBatchNorm2d."""
+    for name, child in module.named_children():
+        if isinstance(child, nn.BatchNorm2d):
+            setattr(module, name,
+                    StreamBatchNorm2d(child.num_features, num_streams))
+        else:
+            _replace_bn2d_with_stream_bn(child, num_streams)
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +48,7 @@ V10_VARIANTS = {
     'nano': {
         'stem_channels':   24,
         'channels':        [32, 64, 128],
-        'num_blocks':      [1, 2, 2],
+        'num_blocks':      [2, 2, 2],       # was [1,2,2] → +1 block in stage 1
         'strides':         [1, 2, 2],
         'expand_ratio':    2,
         'max_hop':         2,
@@ -67,6 +56,10 @@ V10_VARIANTS = {
         'dropout':         0.10,
         'tla_landmarks':   8,
         'tla_reduce':      8,
+        # V10.1 flags
+        'use_tla':         False,    # save ~40K params → use for more GCN capacity
+        'share_gcn':       False,    # per-block GCN for max accuracy
+        'use_stream_bn':   True,     # per-stream BN normalization
     },
     'small': {
         'stem_channels':   32,
@@ -79,6 +72,9 @@ V10_VARIANTS = {
         'dropout':         0.20,
         'tla_landmarks':   8,
         'tla_reduce':      8,
+        'use_tla':         True,
+        'share_gcn':       False,    # per-block GCN
+        'use_stream_bn':   True,
     },
     'large': {
         'stem_channels':   48,
@@ -91,6 +87,9 @@ V10_VARIANTS = {
         'dropout':         0.25,
         'tla_landmarks':   8,
         'tla_reduce':      8,
+        'use_tla':         True,
+        'share_gcn':       False,    # per-block GCN for max accuracy
+        'use_stream_bn':   True,
     },
 }
 
@@ -101,9 +100,6 @@ V10_VARIANTS = {
 class ShiftFuseV10(nn.Module):
     """
     ShiftFuse-V10: anatomically-grounded 4-stream skeleton action recogniser.
-
-    Combines semantic graph partitioning (SGP), depthwise spatial GCN (DW-GCN),
-    and temporal landmark attention (TLA) for SOTA accuracy at minimal params.
 
     Args:
         num_classes:    Output classes (default 60).
@@ -143,14 +139,20 @@ class ShiftFuseV10(nn.Module):
         tla_reduce     = cfg['tla_reduce']
         _dropout       = dropout if dropout is not None else cfg['dropout']
 
+        # V10.1 flags
+        use_tla       = cfg.get('use_tla', True)
+        share_gcn     = cfg.get('share_gcn', True)
+        use_stream_bn = cfg.get('use_stream_bn', False)
+
         self.variant      = variant
         self.num_streams  = 4
         self.stream_names = ['joint', 'velocity', 'bone', 'bone_velocity']
+        self.use_tla      = use_tla
 
         # ── 1. Semantic body-part graph adjacency ─────────────────────────
         self.graph = Graph(
             layout=graph_layout,
-            strategy='semantic_bodypart',   # SGP: intra / inter / cross-body
+            strategy='semantic_bodypart',
             max_hop=cfg['max_hop'],
             raw_partitions=True,
         )
@@ -175,8 +177,9 @@ class ShiftFuseV10(nn.Module):
         block_idx_global = 0
 
         self.stages     = nn.ModuleList()
-        self.stage_gcns = nn.ModuleList()
-        self.stage_tlas = nn.ModuleList()
+        self.stage_gcns = nn.ModuleList()   # only used when share_gcn=True
+        if use_tla:
+            self.stage_tlas = nn.ModuleList()
 
         prev_ch = stem_ch
         T_cur   = T
@@ -184,18 +187,16 @@ class ShiftFuseV10(nn.Module):
         for stage_idx in range(len(channels)):
             stage_ch = channels[stage_idx]
 
-            # Depthwise GCN shared across all blocks in this stage
-            stage_gcn = MultiScaleAdaptiveGCN(
-                channels=stage_ch,
-                A=A,
-                num_joints=num_joints,
-                num_groups=4,
-                depthwise=True,   # DW-GCN: true depthwise, 32× fewer GCN conv params
-            )
-            self.stage_gcns.append(stage_gcn)
+            # Per-stage shared GCN (or None if per-block)
+            if share_gcn:
+                stage_gcn = MultiScaleAdaptiveGCN(
+                    channels=stage_ch, A=A, num_joints=num_joints,
+                    num_groups=4, depthwise=False,
+                )
+                self.stage_gcns.append(stage_gcn)
 
             stage_blocks = nn.ModuleList()
-            stage_tlas   = nn.ModuleList()
+            stage_tlas   = nn.ModuleList() if use_tla else None
 
             for blk_idx in range(num_blocks[stage_idx]):
                 blk_in     = prev_ch  if blk_idx == 0 else stage_ch
@@ -207,6 +208,17 @@ class ShiftFuseV10(nn.Module):
                     if total_blocks > 1 else 0.0
                 )
                 block_idx_global += 1
+
+                # GCN: shared reference or fresh per-block instance
+                if share_gcn:
+                    gcn_ref  = stage_gcn
+                    reg_flag = False
+                else:
+                    gcn_ref = MultiScaleAdaptiveGCN(
+                        channels=stage_ch, A=A, num_joints=num_joints,
+                        num_groups=4, depthwise=False,
+                    )
+                    reg_flag = True
 
                 stage_blocks.append(ShiftFuseBlock(
                     in_channels=blk_in,
@@ -223,36 +235,49 @@ class ShiftFuseV10(nn.Module):
                     use_multiscale_tcn=True,
                     num_tcn_branches=4,
                     drop_path_prob=dp_rate,
-                    gcn=stage_gcn,
-                    use_temporal_attn=False,   # TLA is appended separately below
+                    gcn=gcn_ref,
+                    use_temporal_attn=False,    # TLA handled externally
+                    brasp_after_pw=True,        # BRASP on out_channels
+                    register_gcn=reg_flag,
                 ))
 
-                stage_tlas.append(TemporalLandmarkAttention(
-                    channels=blk_out,
-                    num_landmarks=tla_landmarks,
-                    reduce_ratio=tla_reduce,
-                ))
+                if use_tla:
+                    stage_tlas.append(TemporalLandmarkAttention(
+                        channels=blk_out,
+                        num_landmarks=tla_landmarks,
+                        reduce_ratio=tla_reduce,
+                    ))
 
                 if blk_idx == 0:
                     T_cur = T_cur // blk_stride
 
             self.stages.append(stage_blocks)
-            self.stage_tlas.append(stage_tlas)
+            if use_tla:
+                self.stage_tlas.append(stage_tlas)
             prev_ch = stage_ch
 
-        # ── 4. Classification heads ──────────────────────────────────────
+        # ── 4. Per-stream BN replacement ─────────────────────────────────
+        # Replace all BN2d in the backbone with StreamBatchNorm2d BEFORE
+        # weight init so the init loop finds the sub-BN instances.
+        if use_stream_bn:
+            _replace_bn2d_with_stream_bn(self.stages, num_streams=4)
+            if share_gcn:
+                _replace_bn2d_with_stream_bn(self.stage_gcns, num_streams=4)
+            if use_tla:
+                _replace_bn2d_with_stream_bn(self.stage_tlas, num_streams=4)
+
+        # ── 5. Classification heads ──────────────────────────────────────
         last_ch = channels[-1]
         self.stream_heads = nn.ModuleList([
             ClassificationHead(last_ch, num_classes, _dropout)
             for _ in range(self.num_streams)
         ])
 
-        self.stream_weights   = nn.Parameter(torch.zeros(self.num_streams))
         self.class_prototypes = nn.Parameter(
             torch.randn(num_classes, last_ch) * 0.01
         )
 
-        # ── 5. Weight initialisation ─────────────────────────────────────
+        # ── 6. Weight initialisation ─────────────────────────────────────
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out',
@@ -266,7 +291,6 @@ class ShiftFuseV10(nn.Module):
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 
-        # Classifier FC: small normal init to prevent logit saturation at epoch 0
         for head in self.stream_heads:
             nn.init.normal_(head.fc.weight, 0, 0.01)
             nn.init.constant_(head.fc.bias, 0)
@@ -281,10 +305,15 @@ class ShiftFuseV10(nn.Module):
     def _run_backbone(self, streams: list) -> list:
         x = self.fusion(streams)   # (4B, stem_ch, T, V)
 
-        for stage_blocks, stage_tlas in zip(self.stages, self.stage_tlas):
-            for block, tla in zip(stage_blocks, stage_tlas):
-                x = block(x)
-                x = tla(x)
+        if self.use_tla:
+            for stage_blocks, stage_tlas in zip(self.stages, self.stage_tlas):
+                for block, tla in zip(stage_blocks, stage_tlas):
+                    x = block(x)
+                    x = tla(x)
+        else:
+            for stage_blocks in self.stages:
+                for block in stage_blocks:
+                    x = block(x)
 
         return list(x.chunk(self.num_streams, dim=0))
 
@@ -332,15 +361,13 @@ class ShiftFuseV10(nn.Module):
                 p=2,
             ).squeeze(0)
             if labels is not None:
-                # Class-conditional IB loss (InfoGCN-style): each sample uses
-                # the distance to its correct-class prototype, not the nearest.
                 ib_loss = proto_dists[torch.arange(mean_feat.size(0), device=mean_feat.device), labels].mean()
             else:
                 ib_loss = proto_dists.min(dim=-1).values.mean()
             return all_logits, ib_loss
 
-        w = F.softmax(self.stream_weights, dim=0)
-        ensemble = sum(w[i] * all_logits[i] for i in range(self.num_streams))
+        # Eval: uniform average (consistent with training loss computation)
+        ensemble = torch.stack(all_logits, dim=0).mean(dim=0)
         return ensemble
 
 

@@ -199,11 +199,17 @@ class ShiftFuseBlock(nn.Module):
         gcn: nn.Module = None,
         use_temporal_attn: bool = True,
         temporal_attn_r: int = 4,
+        brasp_after_pw: bool = False,
+        register_gcn: bool = False,
     ):
         super().__init__()
+        self.brasp_after_pw = brasp_after_pw
 
         # 1. Body-Region-Aware Spatial Shift (BRASP) — 0 params
-        self.shift = BodyRegionShift(in_channels, A_flat)
+        # brasp_after_pw=True: BRASP uses out_channels (runs after pw_conv,
+        #   so channel-region mapping matches the GCN's operating channels).
+        brasp_ch = out_channels if brasp_after_pw else in_channels
+        self.shift = BodyRegionShift(brasp_ch, A_flat)
 
         # 2. Pointwise channel projection — only when dimensions change.
         # Within-stage blocks (in==out, stride==1) skip this: GCN directly receives BRASP output,
@@ -217,10 +223,11 @@ class ShiftFuseBlock(nn.Module):
         else:
             self.pw_conv = nn.Identity()
 
-        # 3. Shared MultiScaleAdaptiveGCN — spatial FIRST (spatial-first order)
-        #    Stored as plain attribute (not registered submodule): LAST_Lite owns
-        #    and registers the GCN once per stage; blocks hold a shared reference.
-        object.__setattr__(self, 'gcn', gcn)
+        # 3. GCN — either shared (plain attribute, parent owns) or per-block (submodule)
+        if register_gcn:
+            self.gcn = gcn          # block owns this GCN (per-block mode)
+        else:
+            object.__setattr__(self, 'gcn', gcn)   # shared reference, NOT registered
 
         # 4. Channel SE — recalibrates after graph propagation (EfficientGCN-style)
         self.se = ChannelSE(out_channels)
@@ -299,8 +306,12 @@ class ShiftFuseBlock(nn.Module):
         res = self.residual(x)
 
         # ── Spatial path ────────────────────────────────────────────────
-        out = self.shift(x)              # BRASP: 0-param anatomical channel routing
-        out = self.pw_conv(out)          # dim expansion (Identity when in==out)
+        if self.brasp_after_pw:
+            out = self.pw_conv(x)        # project first (in→out channels)
+            out = self.shift(out)        # BRASP on out_channels (correct mapping)
+        else:
+            out = self.shift(x)          # BRASP on in_channels (v7 default)
+            out = self.pw_conv(out)      # dim expansion (Identity when in==out)
         out = self.joint_embed(out)      # joint semantic identity BEFORE GCN aggregation
         if self.gcn is not None:
             out = self.gcn(out)          # K-subset GCN on joint-aware features
