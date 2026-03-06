@@ -208,6 +208,7 @@ class Trainer:
                 or 'class_prototypes' in name # IB loss class-conditional prototypes (v5)
                 or 'temporal_attn.' in name  # LightweightTemporalAttention (Q/K/V/proj + gate) (v7)
                 or 'bilateral.gate' in name  # BSE residual gate scalar (v5)
+                or '.gate' in name           # TLA + any future gated-residual scalars (v10)
             ):
                 no_decay.append(param)
             else:
@@ -501,7 +502,7 @@ class Trainer:
 
             if self.use_amp:
                 with torch.amp.autocast('cuda', dtype=self.amp_dtype):
-                    raw_out = self.model(batch_data)
+                    raw_out = self.model(batch_data, labels=batch_labels)
                     # Some models return (logits, aux_loss) during training
                     if isinstance(raw_out, tuple):
                         outputs, aux_loss = raw_out
@@ -526,7 +527,7 @@ class Trainer:
                         )
                         loss = (1.0 - kd_w) * loss + kd_w * kd_loss
             else:
-                raw_out = self.model(batch_data)
+                raw_out = self.model(batch_data, labels=batch_labels)
                 if isinstance(raw_out, tuple):
                     outputs, aux_loss = raw_out
                 else:
