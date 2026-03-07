@@ -19,6 +19,7 @@ Optimizations vs original:
 import os
 import json
 import time
+import inspect
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -114,6 +115,13 @@ class Trainer:
             except Exception as e:
                 print(f"  torch.compile: skipped ({e})")
         self.model = model.to(self.device)
+
+        # ── Detect if model forward accepts 'labels' kwarg ─────────────────
+        try:
+            sig = inspect.signature(model.forward)
+            self._model_accepts_labels = 'labels' in sig.parameters
+        except (ValueError, TypeError):
+            self._model_accepts_labels = False
 
         # ── Knowledge Distillation teacher ──────────────────────────────────
         # Soft-label KD: loss = (1-α)·CE + α·T²·KL(student||teacher)
@@ -502,7 +510,9 @@ class Trainer:
 
             if self.use_amp:
                 with torch.amp.autocast('cuda', dtype=self.amp_dtype):
-                    raw_out = self.model(batch_data, labels=batch_labels)
+                    raw_out = (self.model(batch_data, labels=batch_labels)
+                               if self._model_accepts_labels
+                               else self.model(batch_data))
                     # Some models return (logits, aux_loss) during training
                     if isinstance(raw_out, tuple):
                         outputs, aux_loss = raw_out
@@ -527,7 +537,9 @@ class Trainer:
                         )
                         loss = (1.0 - kd_w) * loss + kd_w * kd_loss
             else:
-                raw_out = self.model(batch_data, labels=batch_labels)
+                raw_out = (self.model(batch_data, labels=batch_labels)
+                           if self._model_accepts_labels
+                           else self.model(batch_data))
                 if isinstance(raw_out, tuple):
                     outputs, aux_loss = raw_out
                 else:
