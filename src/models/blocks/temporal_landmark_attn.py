@@ -81,14 +81,14 @@ class TemporalLandmarkAttention(nn.Module):
         k  = self.k_proj(x_land.float())         # (B, K, d_k)
         v  = self.v_proj(x_land.float())         # (B, K, d_k)
 
-        # T × K attention
+        # T × K attention — kept in float32 throughout to avoid float16 bmm overflow
         scale = self.d_k ** 0.5
-        attn  = torch.bmm(q, k.transpose(1, 2)) / scale   # (B, T, K)
-        attn  = F.softmax(attn, dim=-1).to(x.dtype)        # back to input dtype
+        attn  = torch.bmm(q, k.transpose(1, 2)) / scale   # (B, T, K) float32
+        attn  = F.softmax(attn, dim=-1)                    # (B, T, K) float32
 
         # Weighted combination of landmark features
-        out = torch.bmm(attn, v.to(x.dtype))               # (B, T, d_k)
-        out = self.out_proj(out.float()).to(x.dtype)        # (B, T, C)
+        out = torch.bmm(attn, v)                           # (B, T, d_k) float32
+        out = self.out_proj(out).to(x.dtype)               # (B, T, C) → cast at end
 
         # Gated residual: broadcasts (B, C, T, 1) over V
         out = out.permute(0, 2, 1).unsqueeze(-1)           # (B, C, T, 1)
