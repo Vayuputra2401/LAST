@@ -33,7 +33,7 @@ training:
   gradient_clip: 5.0
 
   # Augmentation
-  mixup_alpha: 0.2
+  mixup_alpha: 0.0      # disabled: AMP float16 + IB loss + warmup → NaN on mixed batches
   cutmix_prob: 0.0
   cutmix_alpha: 1.0
 
@@ -57,7 +57,7 @@ training:
   seed: 42
 
   # IB loss (InfoGCN ref=0.0001; 0.001 = 0.1% of CE gradient)
-  ib_loss_weight: 0.01
+  ib_loss_weight: 0.001   # reverted: 0.01 caused float16 overflow on unnormalized cdist during warmup
 
   # Knowledge distillation (disabled by default — enable after large is trained)
   use_kd: false

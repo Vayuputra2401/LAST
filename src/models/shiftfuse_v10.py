@@ -64,10 +64,10 @@ V10_VARIANTS = {
         'tla_reduce':      8,
         # V10.2 flags
         'use_tla':         True,     # enabled: global temporal context (+1–1.5pp)
-        'share_gcn':       True,     # 1 GCN per stage → saves ~40K vs per-block
+        'share_gcn':       False,    # reverted: per-block GCN (share caused 3× grad → overfit)
         'use_stream_bn':   False,    # regular BN: full batch=64 stats (was 16/stream)
-        'share_je':        True,     # 1 JointEmbed per stage → saves ~7K params
-        'single_head':     True,     # 1 classifier head on avg features → saves ~24K
+        'share_je':        False,    # reverted: per-block JE (share_je coupled with share_gcn)
+        'single_head':     False,    # reverted: 4 heads + logit ensemble (avg features → train-val gap)
     },
     'small': {
         'stem_channels':   32,
