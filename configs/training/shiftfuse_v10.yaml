@@ -24,7 +24,7 @@ training:
   min_lr: 0.0001
 
   # Duration
-  epochs: 180
+  epochs: 240
   batch_size: 24
   gradient_accumulation_steps: 3    # effective batch = 24 × 3 = 72
 

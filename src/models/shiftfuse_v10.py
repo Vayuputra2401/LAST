@@ -1,19 +1,25 @@
 """
 ShiftFuse-V10 — SOTA-targeting skeleton action recognition model.
 
-Architecture (V10.1 — deep architectural fixes):
+Architecture (V10.2 — efficiency + accuracy fixes):
   1. Semantic Body-Part Graph (SGP): A_intra / A_inter / A_cross
   2. Group Conv GCN (G=4): cross-channel mixing in spatial core
   3. Temporal Landmark Attention (TLA): global temporal via K landmarks
-     (configurable per variant — disabled for nano to save params)
-  4. Per-Stream BatchNorm: each stream gets independent BN statistics
+  4. Standard BatchNorm: full-batch stats (nano/small/large all use regular BN)
   5. BRASP after pw_conv: channel-region mapping matches GCN channels
-  6. Configurable GCN sharing: per-block (max accuracy) or per-stage (param saving)
+  6. Shared GCN per stage (nano): 3 GCNs instead of 6 → saves ~40K params
+     Per-block GCN (small/large): max accuracy at higher param budget
+
+V10.2 nano changes vs V10.1:
+  - use_stream_bn=False: regular BN with full batch=64 (was 16/stream) → +2–3pp
+  - use_tla=True: TLA enabled (was disabled) → +1–1.5pp
+  - share_gcn=True: 1 GCN per stage shared across blocks → saves ~40K params
+  - num_blocks=[2,3,2]: 7 blocks (was 6) → +0.5pp depth in stage 2
 
 Variants:
-  nano   channels=[32,64,128]   blocks=[2,2,2]  ~200K   target 87–90%
-  small  channels=[64,128,256]  blocks=[2,3,4]  ~600K   target 90–92%
-  large  channels=[96,192,384]  blocks=[2,3,4]  ~1.5M   target 92–93%
+  nano   channels=[32,64,128]   blocks=[2,3,2]  ~160–180K  target 84–87% (→ 88–90% with KD)
+  small  channels=[64,128,256]  blocks=[2,3,4]  ~1.5M      target 90–92%
+  large  channels=[96,192,384]  blocks=[2,3,4]  ~3.2M      target 92–93%
 """
 
 import torch
@@ -48,7 +54,7 @@ V10_VARIANTS = {
     'nano': {
         'stem_channels':   24,
         'channels':        [32, 64, 128],
-        'num_blocks':      [2, 2, 2],       # was [1,2,2] → +1 block in stage 1
+        'num_blocks':      [2, 3, 2],       # V10.2: 7 blocks (was 6), +1 in stage 2
         'strides':         [1, 2, 2],
         'expand_ratio':    2,
         'max_hop':         2,
@@ -56,10 +62,12 @@ V10_VARIANTS = {
         'dropout':         0.10,
         'tla_landmarks':   8,
         'tla_reduce':      8,
-        # V10.1 flags
-        'use_tla':         False,    # save ~40K params → use for more GCN capacity
-        'share_gcn':       False,    # per-block GCN for max accuracy
-        'use_stream_bn':   True,     # per-stream BN normalization
+        # V10.2 flags
+        'use_tla':         True,     # enabled: global temporal context (+1–1.5pp)
+        'share_gcn':       True,     # 1 GCN per stage → saves ~40K vs per-block
+        'use_stream_bn':   False,    # regular BN: full batch=64 stats (was 16/stream)
+        'share_je':        True,     # 1 JointEmbed per stage → saves ~7K params
+        'single_head':     True,     # 1 classifier head on avg features → saves ~24K
     },
     'small': {
         'stem_channels':   32,
@@ -73,8 +81,10 @@ V10_VARIANTS = {
         'tla_landmarks':   8,
         'tla_reduce':      8,
         'use_tla':         True,
-        'share_gcn':       False,    # per-block GCN
-        'use_stream_bn':   True,
+        'share_gcn':       False,    # per-block GCN for max accuracy at higher budget
+        'use_stream_bn':   False,    # regular BN: full batch stats
+        'share_je':        False,
+        'single_head':     False,
     },
     'large': {
         'stem_channels':   48,
@@ -89,7 +99,9 @@ V10_VARIANTS = {
         'tla_reduce':      8,
         'use_tla':         True,
         'share_gcn':       False,    # per-block GCN for max accuracy
-        'use_stream_bn':   True,
+        'use_stream_bn':   False,    # regular BN: full batch stats
+        'share_je':        False,
+        'single_head':     False,
     },
 }
 
@@ -139,15 +151,18 @@ class ShiftFuseV10(nn.Module):
         tla_reduce     = cfg['tla_reduce']
         _dropout       = dropout if dropout is not None else cfg['dropout']
 
-        # V10.1 flags
+        # V10.2 flags
         use_tla       = cfg.get('use_tla', True)
         share_gcn     = cfg.get('share_gcn', True)
         use_stream_bn = cfg.get('use_stream_bn', False)
+        share_je      = cfg.get('share_je', False)
+        single_head   = cfg.get('single_head', False)
 
         self.variant      = variant
         self.num_streams  = 4
         self.stream_names = ['joint', 'velocity', 'bone', 'bone_velocity']
         self.use_tla      = use_tla
+        self.single_head  = single_head
 
         # ── 1. Semantic body-part graph adjacency ─────────────────────────
         self.graph = Graph(
@@ -178,6 +193,7 @@ class ShiftFuseV10(nn.Module):
 
         self.stages     = nn.ModuleList()
         self.stage_gcns = nn.ModuleList()   # only used when share_gcn=True
+        self.stage_jes  = nn.ModuleList()   # only used when share_je=True
         if use_tla:
             self.stage_tlas = nn.ModuleList()
 
@@ -194,6 +210,13 @@ class ShiftFuseV10(nn.Module):
                     num_groups=4, depthwise=False,
                 )
                 self.stage_gcns.append(stage_gcn)
+
+            # Per-stage shared JointEmbedding (or None if per-block)
+            # Only valid at stage_ch dim (all blocks in stage share same C)
+            if share_je:
+                from .blocks.joint_embedding import JointEmbedding as _JE
+                stage_je = _JE(stage_ch, num_joints)
+                self.stage_jes.append(stage_je)
 
             stage_blocks = nn.ModuleList()
             stage_tlas   = nn.ModuleList() if use_tla else None
@@ -220,6 +243,11 @@ class ShiftFuseV10(nn.Module):
                     )
                     reg_flag = True
 
+                # JE: shared per-stage or per-block (default)
+                # Note: first block may have blk_in != stage_ch; JE always on blk_out.
+                # share_je only applies when blk_in == blk_out (within-stage blocks).
+                je_ref = stage_je if (share_je and blk_in == blk_out) else None
+
                 stage_blocks.append(ShiftFuseBlock(
                     in_channels=blk_in,
                     out_channels=blk_out,
@@ -239,6 +267,7 @@ class ShiftFuseV10(nn.Module):
                     use_temporal_attn=False,    # TLA handled externally
                     brasp_after_pw=True,        # BRASP on out_channels
                     register_gcn=reg_flag,
+                    je=je_ref,                  # shared JE (None = block creates its own)
                 ))
 
                 if use_tla:
@@ -268,10 +297,17 @@ class ShiftFuseV10(nn.Module):
 
         # ── 5. Classification heads ──────────────────────────────────────
         last_ch = channels[-1]
-        self.stream_heads = nn.ModuleList([
-            ClassificationHead(last_ch, num_classes, _dropout)
-            for _ in range(self.num_streams)
-        ])
+        if single_head:
+            # One head on the mean of all stream features — saves ~3×head params.
+            # Streams still run independently through backbone (late fusion preserved).
+            self.stream_heads = nn.ModuleList([
+                ClassificationHead(last_ch, num_classes, _dropout)
+            ])
+        else:
+            self.stream_heads = nn.ModuleList([
+                ClassificationHead(last_ch, num_classes, _dropout)
+                for _ in range(self.num_streams)
+            ])
 
         self.class_prototypes = nn.Parameter(
             torch.randn(num_classes, last_ch) * 0.01
@@ -294,6 +330,7 @@ class ShiftFuseV10(nn.Module):
         for head in self.stream_heads:
             nn.init.normal_(head.fc.weight, 0, 0.01)
             nn.init.constant_(head.fc.bias, 0)
+        self.single_head = single_head
 
     # -----------------------------------------------------------------------
 
@@ -347,6 +384,24 @@ class ShiftFuseV10(nn.Module):
 
         feats = self._run_backbone(streams)
 
+        if self.single_head:
+            # Average stream features → run through single head
+            head = self.stream_heads[0]
+            mean_feat_raw = torch.stack(feats, dim=0).mean(dim=0)  # (B, C, T', V')
+            logits, features = head(mean_feat_raw)
+            if self.training:
+                proto_dists = torch.cdist(
+                    features.unsqueeze(0),
+                    self.class_prototypes.unsqueeze(0),
+                    p=2,
+                ).squeeze(0)
+                if labels is not None:
+                    ib_loss = proto_dists[torch.arange(features.size(0), device=features.device), labels].mean()
+                else:
+                    ib_loss = proto_dists.min(dim=-1).values.mean()
+                return [logits], ib_loss
+            return logits
+
         all_logits, all_features = [], []
         for i, head in enumerate(self.stream_heads):
             logits_i, features_i = head(feats[i])
@@ -366,7 +421,7 @@ class ShiftFuseV10(nn.Module):
                 ib_loss = proto_dists.min(dim=-1).values.mean()
             return all_logits, ib_loss
 
-        # Eval: uniform average (consistent with training loss computation)
+        # Eval: uniform average
         ensemble = torch.stack(all_logits, dim=0).mean(dim=0)
         return ensemble
 

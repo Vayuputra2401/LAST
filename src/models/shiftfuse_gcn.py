@@ -201,6 +201,7 @@ class ShiftFuseBlock(nn.Module):
         temporal_attn_r: int = 4,
         brasp_after_pw: bool = False,
         register_gcn: bool = False,
+        je: nn.Module = None,        # optional shared JointEmbedding (parent owns it)
     ):
         super().__init__()
         self.brasp_after_pw = brasp_after_pw
@@ -233,10 +234,14 @@ class ShiftFuseBlock(nn.Module):
         self.se = ChannelSE(out_channels)
 
         # 5. Joint semantic embedding (SGN-style per-joint additive bias)
-        self.joint_embed = (
-            JointEmbedding(out_channels, num_joints) if use_joint_embed
-            else nn.Identity()
-        )
+        # If a shared `je` is passed in, use it unregistered (parent stage owns it).
+        if je is not None:
+            object.__setattr__(self, 'joint_embed', je)
+        else:
+            self.joint_embed = (
+                JointEmbedding(out_channels, num_joints) if use_joint_embed
+                else nn.Identity()
+            )
 
         # 6. Bilateral Symmetry Encoding (BSE)
         self.bilateral = (
