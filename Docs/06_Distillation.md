@@ -1,136 +1,217 @@
-# 06 — Distillation and Pretraining
+# 06 — Knowledge Distillation
 
 ## Overview
 
-The training pipeline has three paths, applied selectively based on standalone accuracy:
+ShiftFuse V10 includes a built-in knowledge distillation (KD) pipeline that enables a larger, more accurate variant (teacher) to transfer its knowledge to the nano variant (student). KD is the planned second-stage training after standalone V10.3 results are obtained.
 
-```
-Path A: Supervised Training Only
-  LAST-Lite → train with labels → standalone accuracy
-
-Path B: Knowledge Distillation (KD)
-  LAST-Base (teacher, frozen) → distill → LAST-Lite (student)
-
-Path C: Self-Supervised Pretraining + KD
-  MaskCLR pretrain LAST-Lite → then Path B
-```
-
-**Decision tree**: Path A first. If accuracy is sufficient (>85% val), publish standalone results. If Path A leaves a gap to EfficientGCN-B0 (90.2%), add Path B. If Path B still falls short, add Path C.
+**Implementation status:** KD is **fully implemented** in `src/training/trainer.py`. It is disabled by default (`use_kd: false`) and activated by setting `use_kd: true` and providing a `teacher_checkpoint` path.
 
 ---
 
-## Part 1: Knowledge Distillation (LAST-Base → LAST-Lite)
+## Motivation
 
-### Strategy
+| Property | Nano alone | Nano + KD from Large |
+|----------|-----------|---------------------|
+| Params | 225,533 | 225,533 (student unchanged) |
+| Knowledge source | Hard labels (one-hot CE) | Hard labels + soft teacher distributions |
+| Class confusion signal | None (CE treats all wrong classes equally) | Rich (teacher encodes inter-class similarity) |
+| Expected accuracy | TBD (baseline V10.2: 81.17%) | TBD (+2–5pp projected) |
 
-The teacher (LAST-Base) and student (LAST-Lite) operate on the same 4-stream input and share the same graph structure (K-subset adjacency with symmetric normalisation). This structural alignment makes feature-level mimicry highly effective — spatial features have compatible geometric semantics at each stage boundary.
-
-### Loss Function
-
-```
-L = alpha * CE(student_logits, labels)                              # hard label loss
-  + beta  * tau^2 * KL(softmax(student/tau), softmax(teacher/tau))  # soft label loss
-  + gamma * Sum_i MSE(proj_i(student_feat[i]), teacher_feat[i])     # feature mimicry
-```
-
-Where:
-- `alpha` — hard label weight (standard cross-entropy)
-- `beta = 1 - alpha` — soft label weight (teacher knowledge transfer)
-- `tau` — temperature (softens probability distributions; higher = softer)
-- `gamma` — feature mimicry weight
-- `proj_i` — 1x1 conv aligning student channel dimensions to teacher per stage
-
-### Recommended Hyperparameters
-
-| Student | alpha | beta | tau | gamma | Rationale |
-|---------|-------|------|-----|-------|-----------|
-| LAST-Lite nano (80K) | 0.3 | 0.7 | 4.0 | 0.1 | Large capacity gap — rely heavily on teacher |
-| LAST-Lite small (248K) | 0.5 | 0.5 | 4.0 | 0.1 | Balanced — student has enough capacity to learn independently |
-
-Temperature tau=4.0 is robust across model sizes. Feature mimicry gamma=0.1 (light) because the architectural families share the same graph structure and stage boundaries; heavy mimicry (gamma >= 0.5) risks over-constraining the student.
-
-### Teacher Configuration
-
-- **Model**: LAST-Base (planned, ~4.2M params per stream)
-- **Mode**: `eval()` + `torch.no_grad()` — frozen during distillation
-- **Feature extraction points**: output of each stage (3 feature maps per stream)
-- **Live computation**: teacher forward pass adds ~30% batch overhead — acceptable since LAST-Base is much smaller than transformer-based teachers
-
-### Feature Mimicry Alignment
-
-| Stage | LAST-Lite small | LAST-Base | Projection |
-|-------|----------------|-----------|------------|
-| 1 | (B, 48, 64, 25) | (B, 128, 64, 25) | Conv1x1(48 -> 128) |
-| 2 | (B, 72, 32, 25) | (B, 256, 32, 25) | Conv1x1(72 -> 256) |
-| 3 | (B, 96, 16, 25) | (B, 384, 16, 25) | Conv1x1(96 -> 384) |
-
-Temporal and spatial dimensions align naturally (same strides, same V=25). Only channel dimensions need projection.
+**Why soft labels help small models:**
+- Hard-label CE treats every wrong class as equally wrong. A nano model learning to classify "drinking water" has no gradient signal distinguishing it from "eating" (visually similar) vs "jumping" (visually dissimilar).
+- A teacher's soft output (e.g., P(drinking)=0.85, P(eating)=0.10, P(pouring)=0.04) encodes the inter-class similarity structure. The student learns to match these probability distributions, acquiring implicit knowledge about which classes are confusable — the "dark knowledge" (Hinton et al., 2015).
+- This effect is **stronger for smaller models** that cannot learn fine-grained discriminative features independently.
 
 ---
 
-## Part 2: MaskCLR Self-Supervised Pretraining
+## Loss Function
 
-### Motivation
+```
+L_total = (1 − α) × L_CE(student_logits, labels)
+        + α × τ² × KL(σ(student_logits / τ) ∥ σ(teacher_logits / τ))
+```
 
-Self-supervised pretraining benefits **small models more** than large ones. A 248K-parameter model cannot memorise all 40K training samples, but pretrained features give it a better initialisation point:
+| Symbol | Name | Value | Rationale |
+|--------|------|-------|-----------|
+| α | `kd_weight` | 0.5 | Balance hard labels (student-driven) vs soft labels (teacher-driven) |
+| τ | `kd_temperature` | 4.0 | Softer teacher distributions → richer class similarity signal |
+| KL | KL divergence | — | Measures difference between student and teacher probability distributions |
+| σ(·/τ) | Softmax at temperature τ | — | Higher τ → flatter distribution, more inter-class info |
+| τ² | Temperature scaling | — | Re-scales KL to same magnitude as CE (Hinton et al., 2015) |
 
-| Aspect | Large Model (>1M) | Small Model (<250K) |
-|--------|-------------------|---------------------|
-| Labelled data capacity | Can memorise NTU-60 | Underfits — insufficient capacity |
-| Self-supervised gain | Marginal (+0.5%) | **Significant (+2-4%)** |
+**Temperature effect on target distribution (τ):**
 
-### MaskCLR Design
-
-Combines **masked autoencoding** (MAE) with **contrastive learning** (CLR):
-
-1. **Masked reconstruction**: Mask 50-75% of joints across temporal frames. Train encoder to reconstruct masked joints. Uses **graph-aware masking** — masks entire body regions (arm, leg) rather than random joints, forcing the GCN to infer missing parts via adjacency structure.
-
-2. **Contrastive learning**: Create augmented views of the same sequence. Pull same-sequence embeddings close, push different-sequence embeddings apart (InfoNCE loss).
-
-3. **Temporal block masking**: Mask contiguous frame blocks rather than random frames, forcing temporal reasoning about motion continuity.
-
-### When to Apply
-
-| Condition | Action |
-|-----------|--------|
-| LAST-Lite small standalone >= 88% | Skip MaskCLR |
-| LAST-Lite small + KD >= 90% | Skip MaskCLR |
-| LAST-Lite small + KD < 88% | Add MaskCLR pretraining |
-
-MaskCLR pretraining takes ~4 hours on T4 for one variant — acceptable cost to try.
+| τ | P(correct) | P(2nd class) | Information content |
+|---|-----------|-------------|-------------------|
+| 1 | 0.95 | 0.04 | Near one-hot; little class-similarity signal |
+| 2 | 0.75 | 0.15 | Some soft information |
+| **4** | **0.55** | **0.30** | **Rich inter-class similarity; recommended** |
+| 6 | 0.42 | 0.38 | Very flat; can destabilise training |
 
 ---
 
-## Part 3: Expected Accuracy Gains
+## Teacher and Student Variants
 
-### LAST-Lite small (247,548 params)
+| Role | Model | Params | Training |
+|------|-------|--------|---------|
+| Teacher (planned primary) | ShiftFuse V10 **large** | 3,100,506 | Trained first (standalone, no KD) |
+| Teacher (alternative) | ShiftFuse V10 **small** | 1,425,050 | If large training is impractical |
+| Student | ShiftFuse V10 **nano** | 225,533 | Distilled from teacher |
 
-| Training Path | Est. Accuracy | vs EfficientGCN-B0 (90.2%) |
-|--------------|--------------|---------------------------|
-| Standalone (Round 3, corrected reg) | ~84-87% | -3 to -6% |
-| + Knowledge distillation from LAST-Base | ~88-90% | -2 to 0% |
-| + MaskCLR pretrain + KD | ~90-92% | **0 to +2%** |
+**Teacher training:** The large variant is trained standalone (no KD) for 240 epochs using the same V10.3 hyperparameters with adjusted regularisation (drop_path=0.20, dropout=0.25). The best checkpoint is used as the frozen teacher.
 
-### LAST-Lite nano (80,234 params)
-
-| Training Path | Est. Accuracy | Notes |
-|--------------|--------------|-------|
-| Standalone (Round 3) | ~82-84% | Limited capacity |
-| + KD from LAST-Base | ~85-87% | Teacher soft labels help most here |
-| + MaskCLR + KD | ~87-89% | Significant gain from pretraining |
+**Architectural compatibility:** All V10 variants share identical graph structure, temporal stride patterns, and number of stages (3). This means teacher and student feature maps are spatially and structurally aligned at each stage boundary — enabling optional feature-level distillation without projection layers.
 
 ---
 
-## Part 4: Post-Distillation Edge Pipeline
+## Configuration
+
+```yaml
+# configs/training/shiftfuse_v10.yaml
+use_kd: true
+teacher_checkpoint: "/kaggle/working/v10_large_best.pt"
+teacher_variant: "large"
+teacher_num_classes: 60
+kd_weight: 0.5
+kd_temperature: 4.0
+```
+
+Or via CLI:
+```bash
+python scripts/train.py \
+    --model shiftfuse_v10_nano \
+    --dataset ntu60 \
+    --env kaggle \
+    --amp \
+    --teacher_checkpoint /path/to/large_best.pt \
+    --kd_weight 0.5 \
+    --kd_temp 4.0
+```
+
+---
+
+## Implementation Details
+
+**File:** `src/training/trainer.py`
+
+The teacher model is loaded in eval mode with all gradients frozen:
+```python
+teacher.eval()
+for p in teacher.parameters():
+    p.requires_grad = False
+```
+
+Per training batch:
+```python
+with torch.no_grad():
+    teacher_logits = teacher(batch)          # (B, num_classes), float32
+
+student_logits = student(batch, labels)      # (B, num_classes) + ib_loss
+
+# Soft label KL divergence
+kl_loss = tau**2 * F.kl_div(
+    F.log_softmax(student_logits / tau, dim=-1),
+    F.softmax(teacher_logits / tau, dim=-1),
+    reduction='batchmean'
+)
+
+# Combined loss
+loss = (1 - kd_weight) * ce_loss + kd_weight * kl_loss + ib_loss_weight * ib_loss
+```
+
+**Note:** The IB triplet loss is retained during KD — class prototypes continue to be updated with the student's feature centroids, providing complementary discriminative signal.
+
+---
+
+## Expected KD Training Dynamics
+
+| Phase | Epoch range | Expected behaviour |
+|-------|------------|-------------------|
+| Warmup | 0–10 | LR ramps; teacher logits noisy relative to student; KL loss high |
+| Rapid convergence | 10–80 | Student rapidly tracks teacher soft targets; accuracy climb |
+| Refinement | 80–240 | Student fine-tunes on hard label CE; gap to teacher narrows |
+
+**Checkpoint**: The best student checkpoint (by val acc) is saved separately from the KD run.
+
+---
+
+## Projected Accuracy (NTU-60 xsub nano)
+
+| Training path | Expected top-1 | Notes |
+|--------------|----------------|-------|
+| V10.2 standalone (confirmed) | **81.17%** | ep177, batch=64 |
+| V10.3 standalone | **TBD** (proj. 83–87%) | All Set A + Set B improvements |
+| V10.3 + KD from large | **TBD** (proj. 86–90%) | +2–5pp over standalone |
+
+*Projections based on observed KD gains in InfoGCN (+1.5pp), CTR-GCN (+2.0pp), and general KD literature for models with >3× capacity ratio.*
+
+---
+
+## Hyperparameter Sensitivity
+
+### α (kd_weight) sweep
+
+| α | Effect | Recommended for |
+|---|--------|----------------|
+| 0.3 | Student-led; uses teacher as regulariser | Student has sufficient capacity; teacher is weak |
+| **0.5** | **Balanced; default** | **Standard recommendation** |
+| 0.7 | Teacher-led; student closely mimics teacher distributions | Large capacity gap (teacher 10× larger) |
+
+### τ (kd_temperature) sweep
+
+| τ | Effect | Risk |
+|---|--------|------|
+| 2.0 | Near one-hot soft targets; small gain | Low information transfer |
+| **4.0** | **Soft targets with rich class similarity; recommended** | — |
+| 6.0 | Very flat distributions; maximal similarity info | Can destabilise early training |
+
+---
+
+## Decision Flowchart
 
 ```
-LAST-Lite small (248K, FP32, ~88-92% acc)
-  → INT8 Post-Training Quantisation (~62KB, <1% acc drop)
-  → ONNX export → TensorRT (Jetson) / TFLite (mobile) / CoreML (iOS)
-
-  No pruning needed — models are already tiny.
-  INT8 provides 4x size compression.
+V10.3 standalone training complete
+        │
+        ├─ val acc ≥ 88%? → Publish standalone; KD optional
+        │
+        └─ val acc < 88%?
+                │
+                ├─ Train V10.3 large (or small) as teacher
+                │
+                ├─ Distill large → nano (α=0.5, τ=4.0)
+                │
+                ├─ val acc ≥ 88%? → Publish KD results
+                │
+                └─ val acc < 86%?
+                        │
+                        └─ Consider: MaskCLR pretraining →
+                           Pretrain nano backbone self-supervised →
+                           Distill again (planned)
 ```
+
+---
+
+## Feature-Level Distillation (Optional Extension)
+
+If soft-label KD alone does not close the accuracy gap, feature-level mimicry can be added at stage boundaries:
+
+```
+L_feat = Σ_s γ_s × MSE(proj_s(student_feat_s), teacher_feat_s)
+```
+
+Projections (1×1 conv) align channel dimensions at each stage:
+
+| Stage | Student channels | Large channels | Projection |
+|-------|-----------------|----------------|------------|
+| 1 | 32 | 96 | Conv1×1(32 → 96) |
+| 2 | 64 | 192 | Conv1×1(64 → 192) |
+| 3 | 128 | 384 | Conv1×1(128 → 384) |
+
+T and V dimensions align naturally (same strides, same V=25).
+
+Recommended γ = 0.05–0.10 to avoid over-constraining the student's internal representations.
+
+*Feature mimicry is not yet implemented; added as a planned extension if soft-label KD proves insufficient.*
 
 ---
 
@@ -138,23 +219,8 @@ LAST-Lite small (248K, FP32, ~88-92% acc)
 
 | Component | File | Status |
 |-----------|------|--------|
-| Distillation trainer | `src/training/distill_trainer.py` | Planned |
-| Distillation training script | `scripts/train_distill.py` | Planned |
-| MaskCLR pretrainer | `src/training/maskclr.py` | Planned |
-| ONNX export script | `scripts/export_onnx.py` | Planned |
-| LAST-Base teacher model | `src/models/last_base.py` | Planned |
-
----
-
-## Full Training Sequence
-
-| Step | Action | Prerequisite | Status |
-|------|--------|-------------|--------|
-| 1 | Train LAST-Lite standalone (Round 3) | BSE + corrected hyperparameters | **Next** |
-| 2 | Evaluate Round 3 accuracy | Step 1 | Pending |
-| 3 | Implement LAST-Base model | Step 2 analysis | Planned |
-| 4 | Train LAST-Base teacher | Step 3 | Planned |
-| 5 | Distill LAST-Base → LAST-Lite small/nano | Step 4 | Planned |
-| 6 | Evaluate: is LAST-Lite small >= 90%? | Step 5 | Planned |
-| 7 | (If needed) MaskCLR pretrain → re-distill | Step 6 | Planned |
-| 8 | INT8 quantisation + ONNX export | Best Lite checkpoint | Planned |
+| Soft-label KD (logit-level) | `src/training/trainer.py` | **Implemented** |
+| Teacher model loading | `src/training/trainer.py` | **Implemented** |
+| KD CLI args (`--teacher_checkpoint`, `--kd_weight`, `--kd_temp`) | `scripts/train.py` | **Implemented** |
+| Feature-level mimicry | `src/training/trainer.py` | Planned |
+| Teacher (V10 large) training | — | Pending V10.3 nano validation |

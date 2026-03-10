@@ -1,0 +1,27 @@
+# Local Server Environment — 2× NVIDIA RTX PRO 6000 Blackwell (98GB each)
+# JupyterLab instance — run from: ~/LAST-research/LAST/
+# Data at: ~/LAST-research/LAST-60/  (same structure as local E:\LAST-60)
+# Single GPU training: use CUDA_VISIBLE_DEVICES=1 to pick the idle GPU
+
+environment:
+  name: "local_server"
+  type: "local"
+
+paths:
+  # train.py builds: {data_base}/LAST-60/data/processed/{split_type}/
+  data_base:    "/home/satyam/LAST-research"
+  data_root:    "/home/satyam/LAST-research/LAST-60/data/processed/xsub"
+  output_root:  "/home/satyam/LAST-research/LAST-runs"
+  checkpoints:  "/home/satyam/LAST-research/LAST-runs/checkpoints"
+  logs:         "/home/satyam/LAST-research/LAST-runs/logs"
+
+hardware:
+  device:          "cuda"
+  num_workers:     8
+  pin_memory:      true
+  prefetch_factor: 2
+  amp_dtype:       "bfloat16"   # Blackwell native bf16 — no float16 overflow risk
+
+local_server:
+  gpu:       "nvidia-rtx-pro-6000-blackwell"
+  memory_gb: 98

@@ -4,37 +4,55 @@
 
 ### NTU RGB+D 60
 
-- **Classes**: 60 action categories (daily actions, health-related, mutual actions)
-- **Subjects**: 40, up to M=2 bodies per sequence
-- **Joints**: 25 per body (Kinect v2 skeleton)
-- **Split protocols**:
-  - `xsub`: train/test by subject ID (20 training subjects, 20 test) — primary benchmark
-  - `xview`: train/test by camera viewpoint
+The primary benchmark for this work.
+
+| Property | Value |
+|----------|-------|
+| Action classes | 60 |
+| Subjects | 40 actors |
+| Bodies per sequence | up to M=2 |
+| Joints per body | 25 (Kinect v2 skeleton) |
+| Primary protocol | **xsub** — train/test split by subject ID |
+| Secondary protocol | xview — train/test split by camera viewpoint |
+
+**xsub split**: 20 training subjects, 20 test subjects. All experiments use xsub unless stated otherwise, as it is the standard protocol for fair comparison with all prior work.
 
 ### NTU RGB+D 120
 
-- **Classes**: 120 action categories (superset of NTU-60)
-- **Subjects**: 106, up to M=2 bodies
-- **Split protocols**:
-  - `xsub`: subject-based split
-  - `xset`: camera setup-based split
+Extension of NTU-60 with 60 additional action categories.
 
-Both datasets provide 25-joint 3D skeleton coordinates per body per frame.
+| Property | Value |
+|----------|-------|
+| Action classes | 120 |
+| Subjects | 106 actors |
+| Bodies per sequence | up to M=2 |
+| Protocols | xsub (subject split), xset (camera-setup split) |
+
+*NTU-120 experiments are planned post NTU-60 validation.*
 
 ---
 
-## 4-Stream Decomposition
+## 4-Stream Kinematic Decomposition
 
-Following the multi-stream paradigm established by 2s-AGCN and extended to 4 streams by EfficientGCN, we decompose each skeleton sequence into four complementary kinematic representations:
+Following the multi-stream paradigm of 2s-AGCN and EfficientGCN, we decompose each skeleton sequence into four complementary kinematic representations. Each stream captures a distinct and non-redundant aspect of human motion:
 
-| Stream | Key | Formula | Signal |
-|--------|-----|---------|--------|
-| Joint | `joint` | Coordinates centred at spine base (joint 0) | Absolute spatial configuration |
-| Velocity | `velocity` | J(t+1) - J(t) (frame difference) | Motion speed and direction |
-| Bone | `bone` | J(child) - J(parent) per skeleton edge | Limb orientation and length |
-| Bone velocity | `bone_velocity` | B(t+1) - B(t) (frame diff of bone) | Limb angular dynamics |
+| Stream | Key | Formula | Shape | Captured Information |
+|--------|-----|---------|-------|---------------------|
+| Joint | `joint` | Coordinates centred at joint 0 (spine base) | (3, T, V, M) | Absolute body pose configuration |
+| Velocity | `velocity` | J[t+1] − J[t]; last frame duplicated | (3, T, V, M) | Instantaneous motion speed and direction |
+| Bone | `bone` | J[child] − J[parent] per NTU skeleton edge | (3, T, V, M) | Limb orientation, length, and posture |
+| Bone velocity | `bone_velocity` | B[t+1] − B[t]; last frame duplicated | (3, T, V, M) | Limb angular velocity and dynamics |
 
-Each stream has shape (C=3, T, V=25, M=2) where C=3 corresponds to (x, y, z) coordinates.
+**Complementarity analysis:**
+
+| Action | Joint signal | Velocity signal | Bone signal | Bone vel. signal |
+|--------|-------------|----------------|-------------|-----------------|
+| Standing still | Stable, distinctive pose | Near-zero | Stable orientations | Near-zero |
+| Walking | Periodic trajectory | Periodic motion | Periodic limb angles | Periodic angular vel. |
+| Throwing | Global arm trajectory | Strong arm velocity | Arm extension pattern | High angular acceleration |
+| Clapping | Symmetric joint positions | Symmetric velocity | Symmetric limb alignment | High frequency dynamics |
+
+The four streams are processed by a single shared backbone (stacked along the batch dimension). No explicit cross-stream fusion occurs within the backbone — streams interact implicitly through the shared BatchNorm statistics.
 
 ---
 
@@ -42,66 +60,65 @@ Each stream has shape (C=3, T, V=25, M=2) where C=3 corresponds to (x, y, z) coo
 
 **Script**: `scripts/preprocess_v2.py`
 
-Applied offline to raw NTU skeleton files:
+Applied offline to raw NTU skeleton files before training:
 
-1. **Centre at spine base** — translate all joints so joint 0 (spine base) is at the origin per frame
-2. **Scale by torso length** — divide by the distance from spine base to spine shoulder for scale invariance
-3. **Stream extraction**:
-   - Velocity: exact frame difference `J[t+1] - J[t]`, last frame duplicated
-   - Bone: exact parent-child difference using the NTU skeleton tree
-   - Bone velocity: frame difference of bone stream
-4. **Save per-split**: `{joint,velocity,bone,bone_velocity}.npy` + `label.pkl` per split
+### Steps
 
-### Preprocessed Data Statistics (NTU-60 xsub, verified)
+1. **Centre at spine base** — subtract joint 0 (spine base) coordinates from all joints per frame. Removes global position.
 
-| Split | Samples | Shape | Classes | Balance |
-|-------|---------|-------|---------|---------|
-| train | 40,320 | (40320, 3, 64, 25, 2) | 60 | 672 per class (perfectly balanced) |
-| val | 16,560 | (16560, 3, 64, 25, 2) | 60 | 276 per class (perfectly balanced) |
+2. **Scale by torso length** — divide by the Euclidean distance from joint 0 (spine base) to joint 1 (spine shoulder). Removes height-dependent scale differences. Applied consistently across all M bodies.
 
-- All 60 classes present in both splits, no NaN/Inf values
-- Joint coordinate range: [-2.849, 4.881] (after spine-base centring and torso scaling)
-- Velocity stream: exact match to frame diff of joint (max_abs_err = 0.0)
-- Bone stream: exact match to child-parent diff (max_abs_err = 0.0)
+3. **Temporal resampling** — sequences are uniformly resampled to T=64 frames using bilinear interpolation. Sequences shorter than 64 frames are padded with the last frame.
 
----
+4. **Stream extraction**:
+   - **Velocity**: `velocity[t] = joint[t+1] − joint[t]` for t < T−1; `velocity[T−1] = velocity[T−2]` (last frame duplicated)
+   - **Bone**: `bone[v] = joint[child(v)] − joint[parent(v)]` using the official NTU kinematic tree (24 edges for 25 joints; root joint bone is zero-padded)
+   - **Bone velocity**: `bone_velocity[t] = bone[t+1] − bone[t]` (same convention as velocity)
 
-## Temporal Sampling
+5. **Save per-split**: separate `.npy` files for each stream + `label.pkl` per split.
 
-All sequences are uniformly resized to **T=64 frames** during preprocessing. At training time:
+### Verified Data Statistics (NTU-60 xsub)
 
-| Transform | Train | Val |
-|-----------|-------|-----|
-| Random temporal crop | Yes (64 frames from padded sequence) | No |
-| Centre crop | No | Yes (64 frames) |
+| Split | Samples | Shape | Classes | Per-class balance |
+|-------|---------|-------|---------|-------------------|
+| train | 40,320 | (40320, 3, 64, 25, 2) | 60 | **672 per class (perfectly balanced)** |
+| val | 16,560 | (16560, 3, 64, 25, 2) | 60 | **276 per class (perfectly balanced)** |
 
-The `max_frames` parameter is read from the config for both train and val datasets.
+- All 60 classes present in both splits; no NaN or Inf values confirmed
+- Joint coordinate range after normalisation: [−2.849, 4.881]
+- Velocity stream accuracy: `max_abs_err = 0.0` vs frame-diff of joint stream
+- Bone stream accuracy: `max_abs_err = 0.0` vs child-parent diff of joint stream
 
 ---
 
-## Data Augmentation
+## Multi-Body Handling (M=2)
+
+Raw NTU data can contain M=2 bodies per sequence. ShiftFuse V10 takes the primary body (M=0 index):
+
+```python
+x = x[..., 0]   # (B, 3, T, V, M=2) → (B, 3, T, V)
+```
+
+**Rationale**: For the NTU-60 action categories, the primary actor (body 0) provides sufficient discriminative signal. Most actions are single-person; for two-person interactions, body 0 is the action initiator. A full M=2 interaction model would add substantial complexity without proportional accuracy gain at the nano scale.
+
+*Multi-body interaction modelling is left for the large variant or future work.*
+
+---
+
+## Training-Time Data Augmentation
 
 **File**: `src/data/transforms.py`
 
-Applied online during training:
+Applied per-batch, online, to the joint stream only. Velocity, bone, and bone_velocity are not augmented (they are pre-computed offsets; augmenting them independently would create inconsistencies).
 
-| Augmentation | Range | Applied to | Purpose |
-|-------------|-------|-----------|---------|
-| RandomRotation | +/-15 deg per axis | Joint stream | Viewpoint invariance |
-| RandomScale | +/-10% | Joint stream | Scale robustness |
-| RandomTemporalSpeed | 0.9--1.1x | All streams | Temporal speed variation |
+| Augmentation | Parameter | Applied to | Purpose |
+|-------------|-----------|-----------|---------|
+| Random rotation | ±15° per axis (roll/pitch/yaw) | Joint stream | Viewpoint robustness |
+| Random scale | ±10% uniform | Joint stream | Scale robustness |
+| Random temporal speed | 0.9–1.1× frame sampling rate | All streams | Temporal speed variation |
 
-Augmentation is applied to the joint stream; velocity, bone, and bone_velocity are derived from augmented joints where applicable.
-
----
-
-## M-Dimension Handling
-
-Both models receive (B, C, T, V, M=2) tensors but handle the multi-body dimension differently:
-
-**LAST-Lite**: Strips M in forward: `s = s[..., 0]` — takes primary body only. This is a deliberate simplification: most NTU sequences are single-person, and for two-person actions the primary body carries sufficient discriminative signal for a lightweight model.
-
-**LAST-Base** (planned): Will process M internally per-stream, potentially with cross-body interaction.
+**Mixup/CutMix: disabled** (`mixup_alpha=0.0`, `cutmix_prob=0.0`).
+Rationale: AMP float16 + IB triplet loss + 10-epoch warmup → NaN losses on mixed batches during the first 10 epochs. The triplet IB loss computes nearest-wrong-prototype distances which become undefined for mixed-label samples. Mixup is re-evaluated post V10.3 validation.
 
 ---
 
@@ -115,30 +132,33 @@ dataset = SkeletonDataset(
     split='train',
     max_frames=64,
 )
-# Returns: (dict_of_4_stream_tensors, label_int)
-# Each stream: Tensor(C=3, T=64, V=25, M=2)
+# Returns: (stream_dict, label_int)
+# stream_dict = {
+#     'joint':         Tensor(3, 64, 25),   # M=0 selected
+#     'velocity':      Tensor(3, 64, 25),
+#     'bone':          Tensor(3, 64, 25),
+#     'bone_velocity': Tensor(3, 64, 25),
+# }
 ```
 
-The DataLoader collates into `(dict_of_batched_tensors, labels)` where each stream tensor has shape (B, 3, 64, 25, 2).
+The DataLoader collates into `(stream_dict_batched, labels)` where each stream tensor is `(B, 3, 64, 25)`.
 
 ---
 
 ## DataLoader Configuration
 
-Workers and prefetch settings are set per environment:
+| Environment | Batch size | Workers | pin_memory | Gradient accum. | Effective batch |
+|-------------|-----------|---------|-----------|-----------------|-----------------|
+| Kaggle T4 | 24 | 2 | True | 3 steps | **72** |
+| Local | 24 | 4 | True | 3 steps | **72** |
 
-| Environment | Workers | pin_memory | Notes |
-|-------------|---------|-----------|-------|
-| Local | 4 | True | Full CPU cores |
-| Kaggle (T4) | 2 | True | Limited CPU on Kaggle |
-
-Batch size is set via config/CLI (`batch_size: 64` for LAST-Lite by default).
+The effective batch of 72 matches the training batch size used by InfoGCN (64) and CTR-GCN (64), ensuring the SGD+momentum optimiser sees comparable gradient estimates.
 
 ---
 
 ## Data Paths
 
-The training script auto-resolves data paths from environment config:
+Resolved from environment config at runtime:
 
 ```yaml
 # configs/environment/kaggle.yaml
@@ -148,4 +168,37 @@ data_folder: '/kaggle/input/LAST-60'
 data_folder: 'E:/LAST-60'
 ```
 
-The `data_folder` key is read at runtime. The script constructs the full path as `{data_folder}/data/processed/{split_type}/`.
+Full path: `{data_folder}/data/processed/xsub/{split}/{stream}.npy`
+
+---
+
+## NTU Skeleton Tree (25 joints, for reference)
+
+```
+                    Head (3)
+                      │
+                    Neck (2)
+                      │
+              ┌── SpineShoulder (1) ──┐
+              │                        │
+        ShoulderL (4)           ShoulderR (8)
+              │                        │
+         ElbowL (5)              ElbowR (9)
+              │                        │
+         WristL (6)             WristR (10)
+              │                        │
+         HandL (7)              HandR (11)
+         HandTipL (21)          HandTipR (23)
+         ThumbL (22)            ThumbR (24)
+              │
+           SpineBase (0) ──── HipL (16)  HipR (20)
+                                 │           │
+                              KneeL (17) KneeR (21)
+                                 │           │
+                            AnkleL (18) AnkleR (22)
+                                 │           │
+                             FootL (19) FootR (23)
+               Also: SpineMid (12), SpineBase2 (13), Neck2 (14) ... (dataset variation)
+```
+
+*Note: exact joint numbering follows the NTU RGB+D 25-joint convention as defined in the preprocessing script.*
