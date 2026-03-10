@@ -188,7 +188,7 @@ def main():
     parser.add_argument('--seed', type=int, default=None, help='Random seed')
     parser.add_argument('--amp', action='store_true', help='Enable mixed precision')
     parser.add_argument('--workers', type=int, default=None, help='DataLoader workers')
-    parser.add_argument('--env', type=str, default=None, choices=['local', 'kaggle', 'gcp', 'lambda', 'a100'],
+    parser.add_argument('--env', type=str, default=None, choices=['local', 'local_server', 'kaggle', 'gcp', 'lambda', 'a100'],
                        help='Environment (default: auto-detect)')
     # ── Specific hyperparam shortcuts (avoid editing YAML between runs) ─────
     parser.add_argument('--weight_decay', type=float, default=None,
