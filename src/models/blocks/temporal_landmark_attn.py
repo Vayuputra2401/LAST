@@ -7,8 +7,8 @@ Replaces both MultiScaleTSM (zero learning) and full T×T LightweightTemporalAtt
 Design rationale:
   - TSM shifts channels by fixed ±2, ±4 — no learning, identical for all actions.
   - Full T×T attention: 64×64=4096 dot-products per head per block — expensive.
-  - T×K with K=8: 64×8=512 dot-products — 8× cheaper, still global temporal reach.
-    Each of T frames attends to 8 landmark frames spread across the sequence.
+  - T×K with K=14: 64×14=896 dot-products — 4.6× cheaper than T², still global temporal reach.
+    Each of T frames attends to 14 landmark frames spread across the sequence (~4.5-frame gaps).
     Forces the model to summarise via temporal landmarks (phase structure of actions).
 
 Forward:
@@ -45,7 +45,7 @@ class TemporalLandmarkAttention(nn.Module):
         reduce_ratio:   r — channel reduction for Q/K/V (default 8 → d_k=C//8).
     """
 
-    def __init__(self, channels: int, num_landmarks: int = 8, reduce_ratio: int = 8):
+    def __init__(self, channels: int, num_landmarks: int = 14, reduce_ratio: int = 8):
         super().__init__()
         self.K   = num_landmarks
         self.d_k = max(4, channels // reduce_ratio)

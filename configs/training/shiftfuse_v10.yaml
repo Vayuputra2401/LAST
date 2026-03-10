@@ -19,7 +19,7 @@ training:
 
   # Scheduler
   scheduler: cosine_warmup
-  warmup_epochs: 5
+  warmup_epochs: 10
   warmup_start_lr: 0.005
   min_lr: 0.0001
 
@@ -57,7 +57,7 @@ training:
   seed: 42
 
   # IB loss (InfoGCN ref=0.0001; 0.001 = 0.1% of CE gradient)
-  ib_loss_weight: 0.001   # reverted: 0.01 caused float16 overflow on unnormalized cdist during warmup
+  ib_loss_weight: 0.01    # triplet margin IB loss: bounded by relu, no overflow; 0.001 was too weak
 
   # Knowledge distillation (disabled by default — enable after large is trained)
   use_kd: false

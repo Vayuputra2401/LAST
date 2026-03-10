@@ -6,7 +6,7 @@ Architecture (V10.2 — efficiency + accuracy fixes):
   2. Group Conv GCN (G=4): cross-channel mixing in spatial core
   3. Temporal Landmark Attention (TLA): global temporal via K landmarks
   4. Standard BatchNorm: full-batch stats (nano/small/large all use regular BN)
-  5. BRASP after pw_conv: channel-region mapping matches GCN channels
+  5. BRASP before pw_conv: BN sees anatomical structure, not shuffled features
   6. Shared GCN per stage (nano): 3 GCNs instead of 6 → saves ~40K params
      Per-block GCN (small/large): max accuracy at higher param budget
 
@@ -60,13 +60,13 @@ V10_VARIANTS = {
         'max_hop':         2,
         'drop_path_rate':  0.10,
         'dropout':         0.10,
-        'tla_landmarks':   8,
+        'tla_landmarks':   14,
         'tla_reduce':      8,
         # V10.2 flags
         'use_tla':         True,     # enabled: global temporal context (+1–1.5pp)
-        'share_gcn':       False,    # reverted: per-block GCN (share caused 3× grad → overfit)
+        'share_gcn':       True,     # 1 GCN per stage + per-block gcn_scale guard (saves ~40K)
         'use_stream_bn':   False,    # regular BN: full batch=64 stats (was 16/stream)
-        'share_je':        False,    # reverted: per-block JE (share_je coupled with share_gcn)
+        'share_je':        True,     # 1 JE per stage (semantically sound: joint identity doesn't change within stage)
         'single_head':     False,    # reverted: 4 heads + logit ensemble (avg features → train-val gap)
     },
     'small': {
@@ -265,7 +265,7 @@ class ShiftFuseV10(nn.Module):
                     drop_path_prob=dp_rate,
                     gcn=gcn_ref,
                     use_temporal_attn=False,    # TLA handled externally
-                    brasp_after_pw=True,        # BRASP on out_channels
+                    brasp_after_pw=False,       # BRASP before pw_conv: BN sees anatomical structure
                     register_gcn=reg_flag,
                     je=je_ref,                  # shared JE (None = block creates its own)
                 ))
@@ -308,6 +308,10 @@ class ShiftFuseV10(nn.Module):
                 ClassificationHead(last_ch, num_classes, _dropout)
                 for _ in range(self.num_streams)
             ])
+
+        # Learned stream ensemble weights (softmax-normalised at inference).
+        # Init zeros → uniform 0.25 each from epoch 0; training adapts toward joint-dominant.
+        self.stream_weights = nn.Parameter(torch.zeros(self.num_streams))
 
         self.class_prototypes = nn.Parameter(
             torch.randn(num_classes, last_ch) * 0.01
@@ -396,7 +400,13 @@ class ShiftFuseV10(nn.Module):
                     p=2,
                 ).squeeze(0)
                 if labels is not None:
-                    ib_loss = proto_dists[torch.arange(features.size(0), device=features.device), labels].mean()
+                    B_f = features.size(0)
+                    idx = torch.arange(B_f, device=features.device)
+                    d_same = proto_dists[idx, labels]
+                    proto_dists_wrong = proto_dists.clone()
+                    proto_dists_wrong[idx, labels] = float('inf')
+                    d_wrong = proto_dists_wrong.min(dim=1).values
+                    ib_loss = F.relu(0.5 + d_same - d_wrong).mean()
                 else:
                     ib_loss = proto_dists.min(dim=-1).values.mean()
                 return [logits], ib_loss
@@ -416,13 +426,20 @@ class ShiftFuseV10(nn.Module):
                 p=2,
             ).squeeze(0)
             if labels is not None:
-                ib_loss = proto_dists[torch.arange(mean_feat.size(0), device=mean_feat.device), labels].mean()
+                B_f = mean_feat.size(0)
+                idx = torch.arange(B_f, device=mean_feat.device)
+                d_same = proto_dists[idx, labels]
+                proto_dists_wrong = proto_dists.clone()
+                proto_dists_wrong[idx, labels] = float('inf')
+                d_wrong = proto_dists_wrong.min(dim=1).values
+                ib_loss = F.relu(0.5 + d_same - d_wrong).mean()
             else:
                 ib_loss = proto_dists.min(dim=-1).values.mean()
             return all_logits, ib_loss
 
-        # Eval: uniform average
-        ensemble = torch.stack(all_logits, dim=0).mean(dim=0)
+        # Eval: softmax-weighted ensemble (learned stream importance)
+        w = F.softmax(self.stream_weights, dim=0)   # (num_streams,)
+        ensemble = sum(w[i] * all_logits[i] for i in range(len(all_logits)))
         return ensemble
 
 

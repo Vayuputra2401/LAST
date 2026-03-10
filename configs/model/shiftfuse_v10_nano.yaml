@@ -32,7 +32,7 @@ model:
   drop_path_rate: 0.10
 
   # TLA
-  tla_landmarks: 8
+  tla_landmarks: 14
   tla_reduce: 8                    # d_k = C // 8
 
   # Regularisation

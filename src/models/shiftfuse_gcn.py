@@ -230,6 +230,10 @@ class ShiftFuseBlock(nn.Module):
         else:
             object.__setattr__(self, 'gcn', gcn)   # shared reference, NOT registered
 
+        # Per-block output scale for shared GCN: guards gradient magnitude when multiple
+        # blocks backprop through the same GCN. Init 1.0 (identity). Only for shared GCN.
+        self.gcn_scale = nn.Parameter(torch.ones(1)) if (gcn is not None and not register_gcn) else None
+
         # 4. Channel SE — recalibrates after graph propagation (EfficientGCN-style)
         self.se = ChannelSE(out_channels)
 
@@ -320,6 +324,8 @@ class ShiftFuseBlock(nn.Module):
         out = self.joint_embed(out)      # joint semantic identity BEFORE GCN aggregation
         if self.gcn is not None:
             out = self.gcn(out)          # K-subset GCN on joint-aware features
+            if self.gcn_scale is not None:
+                out = self.gcn_scale * out  # per-block scale guards shared-GCN gradient magnitude
         out = self.se(out)               # channel recalibration after graph prop
 
         # ── Temporal path ───────────────────────────────────────────────

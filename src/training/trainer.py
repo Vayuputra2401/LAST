@@ -217,6 +217,7 @@ class Trainer:
                 or 'temporal_attn.' in name  # LightweightTemporalAttention (Q/K/V/proj + gate) (v7)
                 or 'bilateral.gate' in name  # BSE residual gate scalar (v5)
                 or '.gate' in name           # TLA + any future gated-residual scalars (v10)
+                or 'gcn_scale' in name       # per-block GCN output scale (shared GCN guard, v10)
             ):
                 no_decay.append(param)
             else:
