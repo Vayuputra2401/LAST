@@ -300,6 +300,30 @@ def main():
             key_path, raw_val = kv.split('=', 1)
             set_nested_key(config, key_path, raw_val)
 
+    # ── 1b. Blackwell sm_120 workaround (local_server only) ────────────
+    # PyTorch 2.10+cu128 ships sm_120 in its arch list but a handful of
+    # integer / element-wise CUDA kernels were never compiled for that
+    # architecture.  The one that hits us is the in-place int64 .add_(1)
+    # inside BatchNorm's `num_batches_tracked` counter, which runs every
+    # forward pass.  Moving that single scalar tensor to CPU lets the
+    # operation use the CPU kernel instead — the overhead is negligible
+    # (one int64 scalar, no grad) and all float compute stays on GPU.
+    # This patch only activates for --env local_server (Blackwell GPUs).
+    # Remove once a fixed PyTorch wheel (cu131+) is installed.
+    if args.env == 'local_server':
+        import torch.nn as _nn
+        _orig_bn_forward = _nn.modules.batchnorm._NormBase.forward
+
+        def _patched_bn_forward(self, input):
+            if (self.num_batches_tracked is not None
+                    and self.num_batches_tracked.is_cuda):
+                self.num_batches_tracked = self.num_batches_tracked.cpu()
+            return _orig_bn_forward(self, input)
+
+        _nn.modules.batchnorm._NormBase.forward = _patched_bn_forward
+        print("  [env:local_server] Applied Blackwell BatchNorm workaround "
+              "(num_batches_tracked → CPU)")
+
     # ── 2. Setup ────────────────────────────────────────────────────────
     seed = config['training']['seed']
     set_seed(seed)
