@@ -12,14 +12,14 @@
 training:
   # Optimizer
   optimizer: sgd
-  lr: 0.1
+  lr: 0.2
   momentum: 0.9
   nesterov: true
   weight_decay: 0.0004
 
   # Scheduler
   scheduler: cosine_warmup
-  warmup_epochs: 10
+  warmup_epochs: 20
   warmup_start_lr: 0.005
   min_lr: 0.0001
 
@@ -30,7 +30,7 @@ training:
 
   # Regularization
   label_smoothing: 0.1
-  gradient_clip: 5.0
+  gradient_clip: 3.0
 
   # Augmentation
   mixup_alpha: 0.0      # disabled: AMP float16 + IB loss + warmup → NaN on mixed batches
