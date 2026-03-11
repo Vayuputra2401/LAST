@@ -341,9 +341,10 @@ class Trainer:
         self.amp_dtype = torch.bfloat16 if _dtype_str == 'bfloat16' else torch.float16
 
         # GradScaler only needed for float16 — for bfloat16 it would be a no-op.
+        # Use device.type so it works on both 'cuda' and 'cpu' (CPU fp16 autocast).
         self.scaler = (
-            GradScaler('cuda', init_scale=4096)
-            if (self.use_amp and self.amp_dtype == torch.float16)
+            GradScaler(self.device.type, init_scale=4096)
+            if (self.use_amp and self.amp_dtype == torch.float16 and self.device.type == 'cuda')
             else None
         )
 
@@ -510,7 +511,7 @@ class Trainer:
                     teacher_logits = t_out
 
             if self.use_amp:
-                with torch.amp.autocast('cuda', dtype=self.amp_dtype):
+                with torch.amp.autocast(self.device.type, dtype=self.amp_dtype):
                     raw_out = (self.model(batch_data, labels=batch_labels)
                                if self._model_accepts_labels
                                else self.model(batch_data))
@@ -669,7 +670,7 @@ class Trainer:
                 batch_data = batch_data.clamp(-30.0, 30.0)
 
             if self.use_amp:
-                with torch.amp.autocast('cuda', dtype=self.amp_dtype):
+                with torch.amp.autocast(self.device.type, dtype=self.amp_dtype):
                     raw_out = self.model(batch_data)
                     outputs = raw_out[0] if isinstance(raw_out, tuple) else raw_out
                     loss    = self.criterion(outputs, batch_labels)
