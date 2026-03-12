@@ -662,12 +662,13 @@ class Trainer:
                 B = batch_data.size(0)
             batch_labels = batch_labels.to(self.device, non_blocking=True)
 
-            # Same clamp as training — tracking-glitch val samples (±100–300)
-            # cause fp16 overflow inside the network without this guard.
+            # Clamp val inputs — tracking-glitch samples (±100–300) cause fp16
+            # overflow inside the network. ±10 is tighter than training (±30) to
+            # fully suppress the sporadic val NaN batches without touching normal data.
             if isinstance(batch_data, dict):
-                batch_data = {k: v.clamp(-30.0, 30.0) for k, v in batch_data.items()}
+                batch_data = {k: v.clamp(-10.0, 10.0) for k, v in batch_data.items()}
             else:
-                batch_data = batch_data.clamp(-30.0, 30.0)
+                batch_data = batch_data.clamp(-10.0, 10.0)
 
             if self.use_amp:
                 with torch.amp.autocast(self.device.type, dtype=self.amp_dtype):

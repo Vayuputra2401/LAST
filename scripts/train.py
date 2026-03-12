@@ -175,7 +175,8 @@ def main():
     parser.add_argument('--model', type=str, default='shiftfuse_small',
                        choices=['shiftfuse_nano', 'shiftfuse_small',
                                 'shiftfuse_experimental', 'shiftfuse_experimental_nano',
-                                'shiftfuse_v10_nano', 'shiftfuse_v10_small', 'shiftfuse_v10_large'],
+                                'shiftfuse_v10_nano', 'shiftfuse_v10_small', 'shiftfuse_v10_large',
+                                'shiftfuse_zero_nano'],
                        help='Model variant (default: shiftfuse_small)')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
                        help='Dataset (default: ntu60)')
@@ -226,6 +227,8 @@ def main():
         _training_cfg_name = args.model          # maps to shiftfuse_experimental*.yaml
     elif args.model.startswith('shiftfuse_v10'):
         _training_cfg_name = 'shiftfuse_v10'
+    elif args.model.startswith('shiftfuse_zero'):
+        _training_cfg_name = 'shiftfuse_zero'
     elif args.model.startswith('shiftfuse_'):
         _training_cfg_name = 'shiftfuse'
     else:
@@ -344,7 +347,17 @@ def main():
     num_classes = config['data']['dataset'].get('num_classes', 60 if args.dataset == 'ntu60' else 120)
     num_joints = config['data']['dataset']['num_joints']
     
-    if args.model.startswith('shiftfuse_v10'):
+    if args.model.startswith('shiftfuse_zero'):
+        variant = args.model.replace('shiftfuse_zero_', '')   # nano
+        print(f"\n  Creating ShiftFuse-Zero (variant={variant})...")
+        from src.models.shiftfuse_zero import build_shiftfuse_zero
+        model = build_shiftfuse_zero(
+            variant=variant,
+            num_classes=num_classes,
+            num_joints=num_joints,
+            dropout=config['model'].get('dropout'),
+        )
+    elif args.model.startswith('shiftfuse_v10'):
         variant = args.model.replace('shiftfuse_v10_', '')   # nano / small / large
         T = config['data']['dataset']['max_frames']
         print(f"\n  Creating ShiftFuse-V10 (variant={variant}, T={T})...")
