@@ -13,7 +13,7 @@ training:
   min_lr: 0.0001
 
   # Duration
-  epochs: 150
+  epochs: 250
   batch_size: 64
   gradient_accumulation_steps: 1   # single CE, no accumulation needed
 
@@ -22,7 +22,7 @@ training:
   gradient_clip: 1.0
 
   # Augmentation — Mixup + CutMix for regularization at 150 epochs
-  mixup_alpha: 0.2
+  mixup_alpha: 0.1
   cutmix_prob: 0.5
   cutmix_alpha: 1.0
 

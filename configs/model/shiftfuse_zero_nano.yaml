@@ -7,6 +7,6 @@ model:
   stem_channels: 24
   tla_landmarks: 8
   tla_reduce_ratio: 8
-  use_se: false
-  drop_path_rate: 0.10
-  dropout: 0.10
+  use_se: true
+  drop_path_rate: 0.05
+  dropout: 0.05
