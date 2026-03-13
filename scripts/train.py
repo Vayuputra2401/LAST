@@ -39,7 +39,7 @@ def set_seed(seed):
         torch.backends.cudnn.benchmark = True  # Auto-tune convolutions for speed
 
 
-def count_flops(model, input_shape, device):
+def count_flops(model, input_shape, device, is_multi_stream=False):
     """
     Estimate FLOPs using a forward pass with profiling.
     
@@ -47,13 +47,25 @@ def count_flops(model, input_shape, device):
         model: LAST model
         input_shape: tuple (C, T, V, M)
         device: torch device
+        is_multi_stream: bool, whether the model expects a stream dict
     
     Returns:
         dict with flops, params, memory info
     """
     model = model.to(device)
     model.eval()
-    x = torch.randn(1, *input_shape).to(device)
+    
+    # Create appropriate input
+    x_single = torch.randn(1, *input_shape).to(device)
+    if is_multi_stream:
+        x = {
+            'joint': x_single,
+            'velocity': x_single,
+            'bone': x_single,
+            'bone_velocity': x_single,
+        }
+    else:
+        x = x_single
     
     # Parameter count
     total_params = sum(p.numel() for p in model.parameters())
@@ -73,7 +85,8 @@ def count_flops(model, input_shape, device):
         for evt in events:
             if evt.flops:
                 flops += evt.flops
-    except Exception:
+    except Exception as e:
+        print(f"  [Profiler Error] Fallback triggered: {e}")
         # Fallback: rough estimate based on model size
         flops = total_params * 2  # Very rough approximation
     
@@ -407,11 +420,14 @@ def main():
     # Check if MIB or standard input
     data_type = config['data']['dataset'].get('data_type', 'npy')
     
-    # Input shape for FLOPs estimation (single tensor; model handles dict internally)
+    # Model handles dict internally (except for older shiftfuse architectures)
+    is_multi_stream = not args.model.startswith('shiftfuse_') or args.model.startswith('shiftfuse_zero') or args.model.startswith('shiftfuse_experimental') or args.model.startswith('shiftfuse_v10')
+    
+    # Input shape for FLOPs estimation (single stream tensor shape)
     input_shape = (3, input_frames, num_joints, 2)
     
-    print(f"  Measuring FLOPs on input {input_shape}...")
-    model_stats = count_flops(model, input_shape, device)
+    print(f"  Measuring FLOPs on input {input_shape} (Multi-Stream: {is_multi_stream})...")
+    model_stats = count_flops(model, input_shape, device, is_multi_stream=is_multi_stream)
     
     print(f"  Parameters:  {model_stats['total_params']:,}")
     print(f"  Model Size:  {model_stats['total_model_size_mb']} MB")

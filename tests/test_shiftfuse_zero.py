@@ -290,6 +290,44 @@ class TestShiftFuseZero:
         model = build_shiftfuse_zero('nano', num_classes=60)
         assert isinstance(model, ShiftFuseZero)
 
+    def test_se_block_present(self):
+        """When use_se=True, every ZeroGCNBlock must contain a ChannelSE module."""
+        from src.models.blocks.channel_se import ChannelSE
+        # Build model with kwargs overriding use_se
+        # Since use_se is usually in ZERO_VARIANTS, we might need a workaround for testing
+        # Or we can just modify ZERO_VARIANTS temporarily
+        orig_use_se = ZERO_VARIANTS['nano'].get('use_se', False)
+        ZERO_VARIANTS['nano']['use_se'] = True
+        se_model = build_shiftfuse_zero('nano', num_classes=60)
+        
+        for stage_blocks in se_model.stages:
+            for block in stage_blocks:
+                assert hasattr(block, 'se'), "Block missing 'se' attribute"
+                assert isinstance(block.se, ChannelSE), \
+                    f"Expected ChannelSE, got {type(block.se)}"
+                    
+        # Restore
+        ZERO_VARIANTS['nano']['use_se'] = orig_use_se
+
+    def test_hardswish_activation(self, nano_model):
+        """graph_conv must use Hardswish, not ReLU."""
+        for stage_blocks in nano_model.stages:
+            for block in stage_blocks:
+                has_hardswish = any(
+                    isinstance(m, nn.Hardswish)
+                    for m in block.graph_conv.modules()
+                )
+                assert has_hardswish, "graph_conv should use Hardswish activation"
+
+    def test_a_learned_warm_init(self):
+        """A_learned params should be initialized to 0.01, not 0.0."""
+        model = build_shiftfuse_zero('nano', num_classes=60)
+        for i in range(3):
+            param = getattr(model, f'stage{i}_A_learned')
+            expected = torch.full_like(param, 0.01)
+            assert torch.allclose(param, expected), \
+                f"stage{i}_A_learned should be init to 0.01, got mean={param.mean().item():.4f}"
+
 
 # ---------------------------------------------------------------------------
 # SGPShift buffer device consistency
@@ -303,3 +341,18 @@ class TestSGPShiftDevice:
         sgp = SGPShift(channels=40, A_intra=A_intra, A_inter=A_inter)
         assert sgp.shift_indices.dtype == torch.long, \
             f"Expected torch.long, got {sgp.shift_indices.dtype}"
+
+    def test_neighbor_cycling_diversity(self, graph_data):
+        """With neighbor cycling, not all channels in a group should have
+        identical shift indices (more spatial diversity)."""
+        A_flat, A_intra, A_inter = graph_data
+        C = 40
+        sgp = SGPShift(channels=C, A_intra=A_intra, A_inter=A_inter)
+        g0 = C // 3
+        # Intra group: channels 0..g0-1
+        intra_indices = sgp.shift_indices[:g0]  # (g0, V)
+        # Check if there's any diversity (not all rows identical)
+        # At least some channels should have different shift targets
+        num_unique_rows = len(torch.unique(intra_indices, dim=0))
+        assert num_unique_rows > 1, \
+            f"Expected cycling diversity (>1 unique rows), got {num_unique_rows}"

@@ -56,6 +56,7 @@ from .blocks.light_gcn import MultiScaleTCN
 from .blocks.joint_embedding import JointEmbedding
 from .blocks.temporal_landmark_attn import TemporalLandmarkAttention
 from .blocks.drop_path import DropPath
+from .blocks.channel_se import ChannelSE
 from .graph import Graph, normalize_symdigraph_full
 
 
@@ -72,6 +73,7 @@ ZERO_VARIANTS = {
         'dropout':         0.10,
         'tla_landmarks':   8,
         'tla_reduce_ratio': 8,
+        'use_se':          False,
     },
 }
 
@@ -114,6 +116,7 @@ class ZeroGCNBlock(nn.Module):
         tla:            nn.Module = None,
         drop_path_rate: float = 0.0,
         num_joints:     int   = 25,
+        use_se:         bool  = False,
     ):
         super().__init__()
 
@@ -144,8 +147,11 @@ class ZeroGCNBlock(nn.Module):
         self.graph_conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 1, bias=False),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
+            nn.Hardswish(inplace=True),
         )
+
+        # ── Channel recalibration (EfficientGCN-style SE) ─────────────────
+        self.se = ChannelSE(out_channels) if use_se else nn.Identity()
 
         # ── Temporal modelling ────────────────────────────────────────────
         self.tcn = MultiScaleTCN(out_channels, stride=stride)
@@ -164,7 +170,7 @@ class ZeroGCNBlock(nn.Module):
                 nn.BatchNorm2d(out_channels),
             )
 
-        self.out_relu = nn.ReLU(inplace=True)
+        self.out_relu = nn.Hardswish(inplace=True)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         res = x  # save for residual
@@ -185,6 +191,9 @@ class ZeroGCNBlock(nn.Module):
 
         # Mix channels with learned 1×1 conv (also handles channel expansion)
         x = self.graph_conv(x + x_agg)
+
+        # ── Channel recalibration ─────────────────────────────────────────
+        x = self.se(x)
 
         # ── Joint embedding (shared per stage) ───────────────────────────
         if self.je is not None:
@@ -242,6 +251,7 @@ class ShiftFuseZero(nn.Module):
         drop_path_rate  = cfg['drop_path_rate']
         tla_landmarks   = cfg['tla_landmarks']
         tla_reduce      = cfg['tla_reduce_ratio']
+        use_se          = cfg.get('use_se', False)
         _dropout        = dropout if dropout is not None else cfg['dropout']
 
         self.variant      = variant
@@ -291,7 +301,7 @@ class ShiftFuseZero(nn.Module):
         # Named 'stage{i}_A_learned' so trainer's 'A_learned' no_decay rule
         # matches them automatically (no trainer.py change required).
         for i in range(len(channels)):
-            param = nn.Parameter(torch.zeros(num_joints, num_joints))
+            param = nn.Parameter(torch.full((num_joints, num_joints), 0.01))
             setattr(self, f'stage{i}_A_learned', param)
 
         prev_ch = stem_ch
@@ -335,6 +345,7 @@ class ShiftFuseZero(nn.Module):
                     tla            = stage_tla if (block_idx == n_blocks - 1) else None,
                     drop_path_rate = dp_rate,
                     num_joints     = num_joints,
+                    use_se         = use_se,
                 )
                 stage_blocks.append(block)
                 block_idx_global += 1
