@@ -369,6 +369,7 @@ def main():
             num_classes=num_classes,
             num_joints=num_joints,
             dropout=config['model'].get('dropout'),
+            use_se=config['model'].get('use_se', False),
         )
     elif args.model.startswith('shiftfuse_v10'):
         variant = args.model.replace('shiftfuse_v10_', '')   # nano / small / large

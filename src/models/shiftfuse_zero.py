@@ -235,6 +235,7 @@ class ShiftFuseZero(nn.Module):
         graph_layout: str  = 'ntu-rgb+d',
         num_joints:   int  = 25,
         dropout:      float = None,
+        use_se:       bool  = None,
     ):
         super().__init__()
 
@@ -251,7 +252,7 @@ class ShiftFuseZero(nn.Module):
         drop_path_rate  = cfg['drop_path_rate']
         tla_landmarks   = cfg['tla_landmarks']
         tla_reduce      = cfg['tla_reduce_ratio']
-        use_se          = cfg.get('use_se', False)
+        use_se          = use_se if use_se is not None else cfg.get('use_se', False)
         _dropout        = dropout if dropout is not None else cfg['dropout']
 
         self.variant      = variant
