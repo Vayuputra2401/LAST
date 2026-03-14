@@ -2,11 +2,6 @@ model:
   name: shiftfuse_zero_small
   variant: small
   num_classes: 60
-  channels: [48, 96, 192]
-  num_blocks: [3, 3, 3]
-  stem_channels: 32
-  tla_landmarks: 8
-  tla_reduce_ratio: 8
   use_se: false
   drop_path_rate: 0.1
   dropout: 0.1

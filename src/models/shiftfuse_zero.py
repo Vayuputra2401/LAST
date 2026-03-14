@@ -65,7 +65,7 @@ from .graph import Graph, normalize_symdigraph_full
 # ---------------------------------------------------------------------------
 ZERO_VARIANTS = {
     'nano': {
-        'stem_channels':   24,
+        'stem_channels':   48,
         'channels':        [40, 80, 160],
         'num_blocks':      [2, 3, 2],
         'strides':         [1, 2, 2],       # stride-2 at stage boundary
@@ -76,7 +76,7 @@ ZERO_VARIANTS = {
         'use_se':          False,
     },
     'small': {
-        'stem_channels': 32,
+        'stem_channels': 64,
         'channels': [48, 96, 192],   # Wider channels
         'strides': [1, 2, 2],
         'num_blocks': [3, 3, 3],     # Deeper stages
@@ -148,6 +148,15 @@ class ZeroGCNBlock(nn.Module):
             num_joints=num_joints,
         )
 
+        # ── Adaptive Spatial Mixing (Per-Block) ───────────────────────────
+        # A lightweight V×V learned adjacency matrix specific to THIS block.
+        # This converts the 0-param fixed routing into adaptive spatial learning.
+        # Initialized to Identity + small noise (focuses on self initially, learns neighbors)
+        self.block_adj = nn.Parameter(
+            torch.eye(num_joints, dtype=torch.float32) + 
+            0.01 * torch.randn(num_joints, num_joints)
+        )
+
         # ── Learnable graph-mixing conv ───────────────────────────────────
         # A_learned is a shared Parameter (V, V) stored in parent model.
         # We hold a reference only — gradients flow back to the shared param.
@@ -199,9 +208,18 @@ class ZeroGCNBlock(nn.Module):
         B, C, T, V = x.shape
         x_flat = x.reshape(B, C * T, V)
         x_agg  = torch.matmul(x_flat, A_l_norm).reshape(B, C, T, V)
+        
+        # Combine shifted features with global structural prior
+        x_spatial = x + x_agg
+
+        # ── Adaptive Per-Block Spatial Scale ──────────────────────────────
+        # Unlike A_learned (which is shared across the stage), block_adj
+        # lets THIS specific block learn which joints are currently important.
+        x_spatial_flat = x_spatial.reshape(B, C * T, V)
+        x_spatial_scaled = torch.matmul(x_spatial_flat, self.block_adj).reshape(B, C, T, V)
 
         # Mix channels with learned 1×1 conv (also handles channel expansion)
-        x = self.graph_conv(x + x_agg)
+        x = self.graph_conv(x_spatial_scaled)
 
         # ── Channel recalibration ─────────────────────────────────────────
         x = self.se(x)

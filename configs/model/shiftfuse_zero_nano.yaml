@@ -2,11 +2,6 @@ model:
   name: shiftfuse_zero_nano
   variant: nano
   num_classes: 60
-  channels: [40, 80, 160]
-  num_blocks: [2, 3, 2]
-  stem_channels: 24
-  tla_landmarks: 8
-  tla_reduce_ratio: 8
   use_se: true
   drop_path_rate: 0.05
   dropout: 0.05
