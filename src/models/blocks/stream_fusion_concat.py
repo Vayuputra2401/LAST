@@ -49,7 +49,7 @@ class StreamFusionConcat(nn.Module):
         self.proj = nn.Sequential(
             nn.Conv2d(in_channels * num_streams, out_channels, 1, bias=False),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
+            nn.Hardswish(inplace=True),
         )
 
     def forward(self, streams: list) -> torch.Tensor:
