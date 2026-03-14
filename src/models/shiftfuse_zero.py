@@ -74,6 +74,7 @@ ZERO_VARIANTS = {
         'tla_landmarks':   8,
         'tla_reduce_ratio': 8,
         'use_se':          False,
+        'use_k3_adj':      True,            # K=3 shared adjacency per stage (+3,771 params)
     },
     'small': {
         'stem_channels': 64,
@@ -85,6 +86,7 @@ ZERO_VARIANTS = {
         'tla_landmarks': 8,
         'tla_reduce_ratio': 8,
         'use_se':          True,
+        'use_k3_adj':      True,            # K=3 shared adjacency per stage (+5,021 params)
     },
 }
 
@@ -129,10 +131,12 @@ class ZeroGCNBlock(nn.Module):
         dropout:        float = 0.1,
         num_joints:     int   = 25,
         use_se:         bool  = False,
+        K_adj:          int   = 1,
     ):
         super().__init__()
 
         self.stride = stride
+        self.K_adj  = K_adj
 
         # ── Zero-param spatial routing ────────────────────────────────────
         # BRASP: anatomical channel routing (arm/leg/torso/cross-body groups)
@@ -159,9 +163,15 @@ class ZeroGCNBlock(nn.Module):
         )
 
         # ── Learnable graph-mixing conv ───────────────────────────────────
-        # A_learned is a shared Parameter (V, V) stored in parent model.
+        # A_learned is a shared Parameter (V, V) or (K, V, V) stored in parent model.
         # We hold a reference only — gradients flow back to the shared param.
         self._A_learned = A_learned
+
+        # Per-block blend weights for K=3 adjacency matrices (softmax over K).
+        # Named 'adj_alpha' → 'alpha' in name → auto no_decay in trainer.
+        # Init zeros → softmax([0,0,0]) = equal blend from epoch 1.
+        if K_adj > 1:
+            self.adj_alpha = nn.Parameter(torch.zeros(K_adj))
 
         # Conv1×1 + BN + ReLU: mixes channels after graph-shifted features.
         # Channel expansion handled here if in_channels ≠ out_channels.
@@ -201,15 +211,25 @@ class ZeroGCNBlock(nn.Module):
         x = self.sgp_shift(x)   # semantic-typed joint shift
 
         # ── Apply A_learned correction (aggregate then mix) ───────────────
-        # Normalize shared A_learned per-forward: D^{-1/2}|A|D^{-1/2}
-        A_l = self._A_learned.abs()
-        d   = A_l.sum(dim=1).clamp(min=1e-6).pow(-0.5)
-        A_l_norm = d.unsqueeze(1) * A_l * d.unsqueeze(0)  # (V, V)
-
         B, C, T, V = x.shape
         x_flat = x.reshape(B, C * T, V)
-        x_agg  = torch.matmul(x_flat, A_l_norm).reshape(B, C, T, V)
-        
+
+        if self.K_adj > 1:
+            # K=3 path: softmax-blended mixture of K adjacency matrices
+            weights = torch.softmax(self.adj_alpha, dim=0)  # (K,)
+            x_agg = torch.zeros_like(x)
+            for k in range(self.K_adj):
+                A_l = self._A_learned[k].abs()
+                d   = A_l.sum(dim=1).clamp(min=1e-6).pow(-0.5)
+                A_l_norm = d.unsqueeze(1) * A_l * d.unsqueeze(0)
+                x_agg = x_agg + weights[k] * torch.matmul(x_flat, A_l_norm).reshape(B, C, T, V)
+        else:
+            # K=1 path: single shared adjacency matrix
+            A_l = self._A_learned.abs()
+            d   = A_l.sum(dim=1).clamp(min=1e-6).pow(-0.5)
+            A_l_norm = d.unsqueeze(1) * A_l * d.unsqueeze(0)  # (V, V)
+            x_agg  = torch.matmul(x_flat, A_l_norm).reshape(B, C, T, V)
+
         # Combine shifted features with global structural prior
         x_spatial = x + x_agg
 
@@ -259,13 +279,14 @@ class ShiftFuseZero(nn.Module):
 
     def __init__(
         self,
-        num_classes:  int  = 60,
-        variant:      str  = 'nano',
-        in_channels:  int  = 3,
-        graph_layout: str  = 'ntu-rgb+d',
-        num_joints:   int  = 25,
+        num_classes:  int   = 60,
+        variant:      str   = 'nano',
+        in_channels:  int   = 3,
+        graph_layout: str   = 'ntu-rgb+d',
+        num_joints:   int   = 25,
         dropout:      float = None,
         use_se:       bool  = None,
+        use_k3_adj:   bool  = None,
     ):
         super().__init__()
 
@@ -284,6 +305,8 @@ class ShiftFuseZero(nn.Module):
         tla_reduce      = cfg['tla_reduce_ratio']
         use_se          = use_se if use_se is not None else cfg.get('use_se', False)
         _dropout        = dropout if dropout is not None else cfg['dropout']
+        use_k3_adj      = use_k3_adj if use_k3_adj is not None else cfg.get('use_k3_adj', False)
+        K_adj           = 3 if use_k3_adj else 1
 
         self.variant      = variant
         self.num_classes  = num_classes
@@ -332,7 +355,10 @@ class ShiftFuseZero(nn.Module):
         # Named 'stage{i}_A_learned' so trainer's 'A_learned' no_decay rule
         # matches them automatically (no trainer.py change required).
         for i in range(len(channels)):
-            param = nn.Parameter(torch.full((num_joints, num_joints), 0.01))
+            if K_adj > 1:
+                param = nn.Parameter(torch.full((K_adj, num_joints, num_joints), 0.01))
+            else:
+                param = nn.Parameter(torch.full((num_joints, num_joints), 0.01))
             setattr(self, f'stage{i}_A_learned', param)
 
         prev_ch = stem_ch
@@ -378,6 +404,7 @@ class ShiftFuseZero(nn.Module):
                     dropout        = _dropout,
                     num_joints     = num_joints,
                     use_se         = use_se,
+                    K_adj          = K_adj,
                 )
                 stage_blocks.append(block)
                 block_idx_global += 1

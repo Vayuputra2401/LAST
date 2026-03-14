@@ -370,6 +370,7 @@ def main():
             num_joints=num_joints,
             dropout=config['model'].get('dropout'),
             use_se=config['model'].get('use_se', False),
+            use_k3_adj=config['model'].get('use_k3_adj', None),
         )
     elif args.model.startswith('shiftfuse_v10'):
         variant = args.model.replace('shiftfuse_v10_', '')   # nano / small / large

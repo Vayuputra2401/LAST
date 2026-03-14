@@ -5,3 +5,4 @@ model:
   use_se: false
   drop_path_rate: 0.05
   dropout: 0.05
+  use_k3_adj: true
