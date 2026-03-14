@@ -75,6 +75,17 @@ ZERO_VARIANTS = {
         'tla_reduce_ratio': 8,
         'use_se':          False,
     },
+    'small': {
+        'stem_channels': 32,
+        'channels': [48, 96, 192],   # Wider channels
+        'strides': [1, 2, 2],
+        'num_blocks': [3, 3, 3],     # Deeper stages
+        'drop_path_rate': 0.1,
+        'dropout': 0.1,
+        'tla_landmarks': 8,
+        'tla_reduce_ratio': 8,
+        'use_se':          False,
+    },
 }
 
 
@@ -412,7 +423,7 @@ def build_shiftfuse_zero(variant: str = 'nano', num_classes: int = 60, **kwargs)
     """Convenience factory.
 
     Args:
-        variant:     'nano' (only option currently).
+        variant:     'nano' or 'small'.
         num_classes: Output classes (60 for NTU-60, 120 for NTU-120).
         **kwargs:    Forwarded to ShiftFuseZero (e.g. dropout override).
 
