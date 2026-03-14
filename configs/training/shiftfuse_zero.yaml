@@ -13,7 +13,7 @@ training:
   min_lr: 0.0001
 
   # Duration
-  epochs: 250
+  epochs: 300
   batch_size: 64
   gradient_accumulation_steps: 1   # single CE, no accumulation needed
 

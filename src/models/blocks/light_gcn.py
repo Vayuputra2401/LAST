@@ -185,7 +185,7 @@ class MultiScaleTCN(nn.Module):
       Stride goes on the depthwise conv, pointwise always has stride=1.
     """
 
-    def __init__(self, channels: int, stride: int = 1):
+    def __init__(self, channels: int, stride: int = 1, dropout: float = 0.1):
         super().__init__()
         assert channels % 2 == 0, f"channels must be even, got {channels}"
         half = channels // 2
@@ -217,7 +217,7 @@ class MultiScaleTCN(nn.Module):
             nn.BatchNorm2d(half),
         )
 
-        self.drop = nn.Dropout(0.1)
+        self.drop = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Split along channel dim — chunk handles even C cleanly

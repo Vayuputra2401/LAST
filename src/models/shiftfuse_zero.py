@@ -84,7 +84,7 @@ ZERO_VARIANTS = {
         'dropout': 0.1,
         'tla_landmarks': 8,
         'tla_reduce_ratio': 8,
-        'use_se':          False,
+        'use_se':          True,
     },
 }
 
@@ -126,6 +126,7 @@ class ZeroGCNBlock(nn.Module):
         je:             nn.Module = None,
         tla:            nn.Module = None,
         drop_path_rate: float = 0.0,
+        dropout:        float = 0.1,
         num_joints:     int   = 25,
         use_se:         bool  = False,
     ):
@@ -174,7 +175,7 @@ class ZeroGCNBlock(nn.Module):
         self.se = ChannelSE(out_channels) if use_se else nn.Identity()
 
         # ── Temporal modelling ────────────────────────────────────────────
-        self.tcn = MultiScaleTCN(out_channels, stride=stride)
+        self.tcn = MultiScaleTCN(out_channels, stride=stride, dropout=dropout)
         self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0.0 else nn.Identity()
 
         # ── Optional addons ───────────────────────────────────────────────
@@ -374,6 +375,7 @@ class ShiftFuseZero(nn.Module):
                     je             = stage_je,
                     tla            = stage_tla if (block_idx == n_blocks - 1) else None,
                     drop_path_rate = dp_rate,
+                    dropout        = _dropout,
                     num_joints     = num_joints,
                     use_se         = use_se,
                 )

@@ -2,6 +2,6 @@ model:
   name: shiftfuse_zero_small
   variant: small
   num_classes: 60
-  use_se: false
+  use_se: true
   drop_path_rate: 0.1
   dropout: 0.1

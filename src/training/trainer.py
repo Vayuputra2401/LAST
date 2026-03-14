@@ -218,6 +218,7 @@ class Trainer:
                 or 'bilateral.gate' in name  # BSE residual gate scalar (v5)
                 or '.gate' in name           # TLA + any future gated-residual scalars (v10)
                 or 'gcn_scale' in name       # per-block GCN output scale (shared GCN guard, v10)
+                or 'block_adj' in name       # per-block spatial adjacency matrix (ShiftFuse-Zero)
             ):
                 no_decay.append(param)
             else:
