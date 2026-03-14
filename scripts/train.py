@@ -189,7 +189,7 @@ def main():
                        choices=['shiftfuse_nano', 'shiftfuse_small',
                                 'shiftfuse_experimental', 'shiftfuse_experimental_nano',
                                 'shiftfuse_v10_nano', 'shiftfuse_v10_small', 'shiftfuse_v10_large',
-                                'shiftfuse_zero_nano'],
+                                'shiftfuse_zero_nano', 'shiftfuse_zero_small'],
                        help='Model variant (default: shiftfuse_small)')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
                        help='Dataset (default: ntu60)')
