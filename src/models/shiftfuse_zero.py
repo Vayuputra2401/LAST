@@ -2,11 +2,13 @@
 ShiftFuse-Zero — Accuracy-per-parameter skeleton action recognition.
 
 Variants:
-  nano       — early fusion, K=3 shared A_learned, BRASP+SGPShift (0-param routing)
-  small      — same + wider channels + SE + deeper stages
-  small_late — TWO-BACKBONE late fusion (joint+velocity | bone+bone_velocity),
-               each backbone uses proper K=3 per-partition GCN (separate W per
-               structural partition), no SE.  ~260-310K params, targeting 87-89%.
+  nano        — early fusion, K=3 shared A_learned, BRASP+SGPShift (0-param routing)
+  small       — same + wider channels + SE + deeper stages
+  nano_multi  — early fusion, K=3 per-partition GCN (proper W per partition), ~178K
+  small_multi — early fusion, K=3 per-partition GCN, wider channels, ~269K
+  large       — early fusion, per-partition GCN + A_dynamic + SE, ~796K, target 88-91%
+  large_late  — TWO-BACKBONE late fusion (joint+velocity | bone+bone_velocity),
+                each backbone: per-partition GCN + A_dynamic + SE, ~680K, target 90-92%
 
 Block pipeline (ZeroGCNBlock):
     Input (B, C, T, V)
@@ -77,20 +79,22 @@ ZERO_VARIANTS = {
         'multi_gcn':        False,
         'use_adyn':         False,
     },
-    # Sub-backbone config for ShiftFuseZeroLate (two of these form small_late)
-    'small_late': {
-        'stem_channels':    32,
-        'channels':         [32, 64, 128],
+    # Sub-backbone config for ShiftFuseZeroLate large_late.
+    # Two of these form large_late: backbone_a (joint+vel), backbone_b (bone+bone_vel).
+    # Each backbone: per-partition GCN + A_dynamic + SE — targeting 90-92% total.
+    'large_late': {
+        'stem_channels':    48,
+        'channels':         [40, 80, 160],
         'num_blocks':       [2, 3, 2],
         'strides':          [1, 2, 2],
         'drop_path_rate':   0.10,
         'dropout':          0.10,
         'tla_landmarks':    8,
         'tla_reduce_ratio': 8,
-        'use_se':           False,
+        'use_se':           True,    # SE at this scale — affordable
         'use_k3_adj':       False,
-        'multi_gcn':        True,
-        'use_adyn':         False,
+        'multi_gcn':        True,    # K=3 per-partition W
+        'use_adyn':         True,    # per-sample cosine adjacency, gated
     },
     # ── New efficient variants ─────────────────────────────────────────────
     # nano_multi: same param budget as nano, K=3 per-partition GCN (proper W per partition)
@@ -544,21 +548,23 @@ class ShiftFuseZero(nn.Module):
 class ShiftFuseZeroLate(nn.Module):
     """Late-fusion ShiftFuse-Zero.
 
-    Two independent sub-backbones with proper K=3 per-partition GCN:
+    Two independent sub-backbones, each specialising on its stream pair:
       Backbone A: joint + velocity  → logits_A
       Backbone B: bone  + bone_vel  → logits_B
       Final: (logits_A + logits_B) / 2
 
-    The per-partition GCN (multi_gcn=True) gives each backbone a separate
-    learned spatial transform W_k for each structural adjacency partition
-    (intra-part, inter-part, multi-hop), replacing the shared A_learned +
-    block_adj approach.  Targeting ~87–89% with ~260–310K params.
+    large_late sub-backbone: per-partition GCN (W_intra+W_inter+W_cross) +
+    A_dynamic per-sample cosine adjacency + SE. ~680K total. Targeting 90-92%.
+
+    Stream specialisation recovers ~2-3pp over single-backbone early fusion.
+    Variance normalisation (y/K_gcn) in multi_gcn path prevents the slow-start
+    convergence issue seen in earlier late-fusion experiments.
     """
 
     def __init__(
         self,
         num_classes:  int   = 60,
-        variant:      str   = 'small_late',
+        variant:      str   = 'large_late',
         in_channels:  int   = 3,
         graph_layout: str   = 'ntu-rgb+d',
         num_joints:   int   = 25,
@@ -574,7 +580,7 @@ class ShiftFuseZeroLate(nn.Module):
             graph_layout = graph_layout,
             num_joints   = num_joints,
             dropout      = dropout,
-            use_se       = use_se if use_se is not None else False,
+            use_se       = use_se,   # None → ShiftFuseZero reads from variant cfg
             use_k3_adj   = False,    # replaced by multi_gcn structural partitions
             num_streams  = 2,
             multi_gcn    = True,
@@ -603,6 +609,6 @@ def build_shiftfuse_zero(variant: str = 'nano', num_classes: int = 60, **kwargs)
     return ShiftFuseZero(num_classes=num_classes, variant=variant, **kwargs)
 
 
-def build_shiftfuse_zero_late(variant: str = 'small_late', num_classes: int = 60, **kwargs) -> ShiftFuseZeroLate:
-    """Build small_late (2-backbone late fusion) ShiftFuse-Zero."""
+def build_shiftfuse_zero_late(variant: str = 'large_late', num_classes: int = 60, **kwargs) -> ShiftFuseZeroLate:
+    """Build large_late (2-backbone late fusion) ShiftFuse-Zero."""
     return ShiftFuseZeroLate(num_classes=num_classes, variant=variant, **kwargs)

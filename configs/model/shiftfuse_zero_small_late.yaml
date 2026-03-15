@@ -1,7 +1,0 @@
-model:
-  name: shiftfuse_zero_small_late
-  variant: small_late
-  num_classes: 60
-  use_se: false           # SE disabled — param budget goes to K=3 per-partition GCN
-  drop_path_rate: 0.10
-  dropout: 0.10

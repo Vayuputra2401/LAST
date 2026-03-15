@@ -190,9 +190,8 @@ def main():
                                 'shiftfuse_experimental', 'shiftfuse_experimental_nano',
                                 'shiftfuse_v10_nano', 'shiftfuse_v10_small', 'shiftfuse_v10_large',
                                 'shiftfuse_zero_nano', 'shiftfuse_zero_small',
-                                'shiftfuse_zero_small_late',
                                 'shiftfuse_zero_nano_multi', 'shiftfuse_zero_small_multi',
-                                'shiftfuse_zero_large'],
+                                'shiftfuse_zero_large', 'shiftfuse_zero_large_late'],
                        help='Model variant (default: shiftfuse_small)')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
                        help='Dataset (default: ntu60)')
@@ -243,12 +242,10 @@ def main():
         _training_cfg_name = args.model          # maps to shiftfuse_experimental*.yaml
     elif args.model.startswith('shiftfuse_v10'):
         _training_cfg_name = 'shiftfuse_v10'
-    elif args.model == 'shiftfuse_zero_large':
+    elif args.model in ('shiftfuse_zero_large', 'shiftfuse_zero_large_late'):
         _training_cfg_name = 'shiftfuse_zero_large'
     elif args.model in ('shiftfuse_zero_nano_multi', 'shiftfuse_zero_small_multi'):
         _training_cfg_name = 'shiftfuse_zero_multi'
-    elif args.model == 'shiftfuse_zero_small_late':
-        _training_cfg_name = 'shiftfuse_zero_small_late'
     elif args.model.startswith('shiftfuse_zero'):
         _training_cfg_name = 'shiftfuse_zero'
     elif args.model.startswith('shiftfuse_'):
@@ -369,15 +366,15 @@ def main():
     num_classes = config['data']['dataset'].get('num_classes', 60 if args.dataset == 'ntu60' else 120)
     num_joints = config['data']['dataset']['num_joints']
     
-    if args.model == 'shiftfuse_zero_small_late':
-        print(f"\n  Creating ShiftFuse-Zero Late Fusion (small_late)...")
+    if args.model == 'shiftfuse_zero_large_late':
+        print(f"\n  Creating ShiftFuse-Zero Late Fusion (large_late)...")
         from src.models.shiftfuse_zero import build_shiftfuse_zero_late
         model = build_shiftfuse_zero_late(
-            variant='small_late',
+            variant='large_late',
             num_classes=num_classes,
             num_joints=num_joints,
             dropout=config['model'].get('dropout'),
-            use_se=config['model'].get('use_se', False),
+            use_se=config['model'].get('use_se', None),
         )
     elif args.model.startswith('shiftfuse_zero'):
         variant = args.model.replace('shiftfuse_zero_', '')   # nano / small / nano_multi / small_multi / large
