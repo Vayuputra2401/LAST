@@ -1,0 +1,10 @@
+model:
+  name: shiftfuse_zero_large
+  variant: large
+  num_classes: 60
+  use_se: true             # SE recalibration — worth it at this scale
+  use_k3_adj: false        # replaced by multi_gcn per-partition GCN
+  multi_gcn: true          # K=3 per-partition: separate W per structural group
+  use_adyn: true           # per-sample cosine adjacency, gated (init near-zero)
+  drop_path_rate: 0.15
+  dropout: 0.10

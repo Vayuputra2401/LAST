@@ -1,0 +1,57 @@
+training:
+  # Optimizer
+  optimizer: sgd
+  lr: 0.1
+  momentum: 0.9
+  nesterov: true
+  weight_decay: 0.0004
+
+  # Scheduler
+  scheduler: cosine_warmup
+  warmup_epochs: 10
+  warmup_start_lr: 0.005
+  min_lr: 0.0001
+
+  # Duration
+  epochs: 350
+  batch_size: 64
+  gradient_accumulation_steps: 1
+
+  # Regularization
+  label_smoothing: 0.1
+  gradient_clip: 1.0
+
+  # Augmentation — mixup=0.1 (validated, 0.2 over-regularises at nano scale)
+  mixup_alpha: 0.1
+  cutmix_prob: 0.5
+  cutmix_alpha: 1.0
+
+  # Input
+  input_frames: 64
+
+  # Precision
+  use_amp: true
+  use_compile: false
+
+  # DataLoader
+  num_workers: 4
+  pin_memory: true
+
+  # Logging
+  log_interval: 20
+  eval_interval: 1
+  save_interval: 5
+
+  # Reproducibility
+  seed: 42
+
+  # IB loss — disabled
+  ib_loss_weight: 0.0
+
+  # Knowledge distillation — disabled by default
+  use_kd: false
+  teacher_checkpoint: ""
+  teacher_variant: "large"
+  teacher_num_classes: 60
+  kd_weight: 0.5
+  kd_temperature: 4.0

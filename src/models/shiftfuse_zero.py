@@ -61,6 +61,7 @@ ZERO_VARIANTS = {
         'use_se':           False,
         'use_k3_adj':       True,    # K=3 shared adjacency per stage (+3,771p)
         'multi_gcn':        False,
+        'use_adyn':         False,
     },
     'small': {
         'stem_channels':    64,
@@ -74,6 +75,7 @@ ZERO_VARIANTS = {
         'use_se':           True,
         'use_k3_adj':       True,
         'multi_gcn':        False,
+        'use_adyn':         False,
     },
     # Sub-backbone config for ShiftFuseZeroLate (two of these form small_late)
     'small_late': {
@@ -85,9 +87,59 @@ ZERO_VARIANTS = {
         'dropout':          0.10,
         'tla_landmarks':    8,
         'tla_reduce_ratio': 8,
-        'use_se':           False,   # SE disabled — saves params, use GCN instead
-        'use_k3_adj':       False,   # not used in multi_gcn mode
-        'multi_gcn':        True,    # proper K=3 per-partition GCN
+        'use_se':           False,
+        'use_k3_adj':       False,
+        'multi_gcn':        True,
+        'use_adyn':         False,
+    },
+    # ── New efficient variants ─────────────────────────────────────────────
+    # nano_multi: same param budget as nano, K=3 per-partition GCN (proper W per partition)
+    # Channels shrunk [40→32] to absorb 3× GCN conv cost. Expected: 85–86%.
+    'nano_multi': {
+        'stem_channels':    48,
+        'channels':         [32, 64, 128],
+        'num_blocks':       [2, 3, 2],
+        'strides':          [1, 2, 2],
+        'drop_path_rate':   0.10,
+        'dropout':          0.10,
+        'tla_landmarks':    8,
+        'tla_reduce_ratio': 8,
+        'use_se':           False,
+        'use_k3_adj':       False,   # replaced by multi_gcn structural partitions
+        'multi_gcn':        True,    # K=3 per-partition: W_intra + W_inter + W_cross
+        'use_adyn':         False,
+    },
+    # small_multi: same param budget as small but proper per-partition GCN, no SE.
+    # Channels shrunk [48→40] to absorb 3× GCN conv cost. Expected: 86–87%.
+    'small_multi': {
+        'stem_channels':    48,
+        'channels':         [40, 80, 160],
+        'num_blocks':       [2, 3, 2],
+        'strides':          [1, 2, 2],
+        'drop_path_rate':   0.10,
+        'dropout':          0.10,
+        'tla_landmarks':    8,
+        'tla_reduce_ratio': 8,
+        'use_se':           False,
+        'use_k3_adj':       False,
+        'multi_gcn':        True,
+        'use_adyn':         False,
+    },
+    # large: full stack — per-partition GCN + A_dynamic per-sample graph + SE.
+    # Targets 88–90%+ on NTU-60 xsub.
+    'large': {
+        'stem_channels':    64,
+        'channels':         [48, 96, 192],
+        'num_blocks':       [3, 4, 3],
+        'strides':          [1, 2, 2],
+        'drop_path_rate':   0.15,
+        'dropout':          0.10,
+        'tla_landmarks':    8,
+        'tla_reduce_ratio': 8,
+        'use_se':           True,    # SE recalibration — worth it at this scale
+        'use_k3_adj':       False,
+        'multi_gcn':        True,    # per-partition W
+        'use_adyn':         True,    # per-sample cosine adjacency, gated residual
     },
 }
 
@@ -140,6 +192,7 @@ class ZeroGCNBlock(nn.Module):
         K_adj:             int         = 1,
         multi_gcn:         bool        = False,
         A_gcn_partitions:  list        = None,
+        use_adyn:          bool        = False,
     ):
         super().__init__()
 
@@ -168,6 +221,18 @@ class ZeroGCNBlock(nn.Module):
             ])
             self.gcn_bn  = nn.BatchNorm2d(out_channels)
             self.gcn_act = nn.Hardswish(inplace=True)
+
+            # A_dynamic: per-sample cosine similarity adjacency (gated residual).
+            # Gate init -4.0 → sigmoid(-4) ≈ 0.018, near-zero at epoch 1.
+            # Activates gradually as training progresses.
+            self.use_adyn = use_adyn
+            if use_adyn:
+                embed_dim = max(in_channels // 4, 8)
+                self.adyn_proj = nn.Conv2d(in_channels, embed_dim, 1, bias=False)
+                self.adyn_conv = nn.Conv2d(in_channels, out_channels, 1, bias=False)
+                self.adyn_gate = nn.Parameter(torch.tensor(-4.0))
+            else:
+                self.use_adyn = False
         else:
             # Standard path: per-block adaptive adjacency + single graph_conv
             self.block_adj = nn.Parameter(
@@ -216,7 +281,8 @@ class ZeroGCNBlock(nn.Module):
         B, C, T, V = x.shape
 
         if self.multi_gcn:
-            # K=3 per-partition: y = sum_k W_k(A_k @ x)
+            # K=3 per-partition: y = (1/K) * sum_k W_k(A_k @ x)
+            # Divide by K_gcn to normalise activation variance before BN.
             x_flat = x.reshape(B, C * T, V)
             y = None
             for k in range(self.K_gcn):
@@ -224,6 +290,16 @@ class ZeroGCNBlock(nn.Module):
                 x_k = torch.matmul(x_flat, A_k).reshape(B, C, T, V)
                 out_k = self.gcn_convs[k](x_k)
                 y = out_k if y is None else y + out_k
+            y = y / self.K_gcn   # variance normalisation
+
+            # A_dynamic: per-sample cosine similarity graph (gated residual).
+            if self.use_adyn:
+                embed   = self.adyn_proj(x).mean(dim=2)          # (B, embed_dim, V)
+                embed_n = F.normalize(embed, dim=1)               # unit-norm per joint
+                A_dyn   = torch.bmm(embed_n.transpose(1, 2), embed_n)  # (B, V, V)
+                x_dyn   = torch.matmul(x_flat, A_dyn).reshape(B, C, T, V)
+                y = y + torch.sigmoid(self.adyn_gate) * self.adyn_conv(x_dyn)
+
             x = self.gcn_act(self.gcn_bn(y))
         else:
             # A_learned correction (K=1 or K=3 blended)
@@ -302,6 +378,7 @@ class ShiftFuseZero(nn.Module):
         num_streams:  int   = 4,
         stream_names: list  = None,
         multi_gcn:    bool  = None,
+        use_adyn:     bool  = None,
     ):
         super().__init__()
 
@@ -320,6 +397,7 @@ class ShiftFuseZero(nn.Module):
         _dropout        = dropout      if dropout      is not None else cfg['dropout']
         use_k3_adj      = use_k3_adj   if use_k3_adj   is not None else cfg.get('use_k3_adj', False)
         multi_gcn       = multi_gcn    if multi_gcn    is not None else cfg.get('multi_gcn', False)
+        _use_adyn       = use_adyn     if use_adyn     is not None else cfg.get('use_adyn', False)
         K_adj           = 3 if use_k3_adj else 1
 
         self.variant      = variant
@@ -417,6 +495,7 @@ class ShiftFuseZero(nn.Module):
                     K_adj            = K_adj,
                     multi_gcn        = multi_gcn,
                     A_gcn_partitions = A_gcn_partitions,
+                    use_adyn         = _use_adyn,
                 )
                 stage_blocks.append(block)
                 block_idx_global += 1

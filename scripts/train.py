@@ -190,7 +190,9 @@ def main():
                                 'shiftfuse_experimental', 'shiftfuse_experimental_nano',
                                 'shiftfuse_v10_nano', 'shiftfuse_v10_small', 'shiftfuse_v10_large',
                                 'shiftfuse_zero_nano', 'shiftfuse_zero_small',
-                               'shiftfuse_zero_small_late'],
+                                'shiftfuse_zero_small_late',
+                                'shiftfuse_zero_nano_multi', 'shiftfuse_zero_small_multi',
+                                'shiftfuse_zero_large'],
                        help='Model variant (default: shiftfuse_small)')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
                        help='Dataset (default: ntu60)')
@@ -241,6 +243,10 @@ def main():
         _training_cfg_name = args.model          # maps to shiftfuse_experimental*.yaml
     elif args.model.startswith('shiftfuse_v10'):
         _training_cfg_name = 'shiftfuse_v10'
+    elif args.model == 'shiftfuse_zero_large':
+        _training_cfg_name = 'shiftfuse_zero_large'
+    elif args.model in ('shiftfuse_zero_nano_multi', 'shiftfuse_zero_small_multi'):
+        _training_cfg_name = 'shiftfuse_zero_multi'
     elif args.model == 'shiftfuse_zero_small_late':
         _training_cfg_name = 'shiftfuse_zero_small_late'
     elif args.model.startswith('shiftfuse_zero'):
@@ -374,7 +380,7 @@ def main():
             use_se=config['model'].get('use_se', False),
         )
     elif args.model.startswith('shiftfuse_zero'):
-        variant = args.model.replace('shiftfuse_zero_', '')   # nano / small
+        variant = args.model.replace('shiftfuse_zero_', '')   # nano / small / nano_multi / small_multi / large
         print(f"\n  Creating ShiftFuse-Zero (variant={variant})...")
         from src.models.shiftfuse_zero import build_shiftfuse_zero
         model = build_shiftfuse_zero(
@@ -382,8 +388,9 @@ def main():
             num_classes=num_classes,
             num_joints=num_joints,
             dropout=config['model'].get('dropout'),
-            use_se=config['model'].get('use_se', False),
+            use_se=config['model'].get('use_se', None),
             use_k3_adj=config['model'].get('use_k3_adj', None),
+            use_adyn=config['model'].get('use_adyn', None),
         )
     elif args.model.startswith('shiftfuse_v10'):
         variant = args.model.replace('shiftfuse_v10_', '')   # nano / small / large
