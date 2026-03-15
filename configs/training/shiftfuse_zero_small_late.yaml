@@ -8,21 +8,21 @@ training:
 
   # Scheduler
   scheduler: cosine_warmup
-  warmup_epochs: 10             # was 5 — longer warmup cleaner with Mixup active
+  warmup_epochs: 10
   warmup_start_lr: 0.005
   min_lr: 0.0001
 
   # Duration
-  epochs: 350                   # was 300 — nano/small still improving at ep288/300
+  epochs: 350
   batch_size: 64
-  gradient_accumulation_steps: 1   # single CE, no accumulation needed
+  gradient_accumulation_steps: 1
 
   # Regularization
   label_smoothing: 0.1
   gradient_clip: 1.0
 
-  # Augmentation — Mixup + CutMix for regularization
-  mixup_alpha: 0.2              # was 0.1 — stronger mixing = better late-epoch regularization
+  # Augmentation
+  mixup_alpha: 0.2
   cutmix_prob: 0.5
   cutmix_alpha: 1.0
 
@@ -45,7 +45,7 @@ training:
   # Reproducibility
   seed: 42
 
-  # IB loss — disabled (no class_prototypes in ShiftFuse-Zero)
+  # IB loss — disabled
   ib_loss_weight: 0.0
 
   # Knowledge distillation — disabled by default
