@@ -12,7 +12,7 @@ training:
   warmup_start_lr: 0.005
   min_lr: 0.0001
 
-  # Duration
+  # Duration — 350ep: wider architecture than nano, needs more epochs to converge
   epochs: 350
   batch_size: 64
   gradient_accumulation_steps: 1
@@ -21,7 +21,7 @@ training:
   label_smoothing: 0.1
   gradient_clip: 1.0
 
-  # Augmentation — mixup=0.1 (validated, 0.2 over-regularises at nano scale)
+  # Augmentation — mixup=0.1 validated on nano; DS-TCN may benefit from slightly more
   mixup_alpha: 0.1
   cutmix_prob: 0.5
   cutmix_alpha: 1.0

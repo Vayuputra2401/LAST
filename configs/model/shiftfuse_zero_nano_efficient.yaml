@@ -1,0 +1,10 @@
+model:
+  name: shiftfuse_zero_nano_efficient
+  variant: nano_efficient
+  num_classes: 60
+  use_se: false              # STC-Attention covers channel recalibration
+  use_k3_adj: false          # replaced by multi_gcn with learnable A_k
+  multi_gcn: true            # K=3 per-partition: separate W_k per structural group
+  use_adyn: false            # no A_dynamic — STC spatial attention handles input-conditioning
+  drop_path_rate: 0.10
+  dropout: 0.10

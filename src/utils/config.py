@@ -63,25 +63,16 @@ class ConfigLoader:
         
         return self.load_yaml(data_path)
     
-    def load_model_config(self, model_name: str = 'base') -> Dict[str, Any]:
+    def load_model_config(self, model_name: str = 'shiftfuse_zero_nano') -> Dict[str, Any]:
         """
         Load model configuration.
-        
+
         Args:
-            model_name: Model name (e.g., 'last_base', 'last_small')
-            
+            model_name: Model name (e.g., 'shiftfuse_zero_nano', 'shiftfuse_zero_large')
+
         Returns:
             Model config dict
         """
-        # Handle short names:
-        #   'shiftfuse_nano'  → 'shiftfuse_nano.yaml'
-        #   'shiftfuse_small' → 'shiftfuse_small.yaml'
-        if not model_name.startswith('last_'):
-            if model_name.startswith('shiftfuse_'):
-                pass                                    # 'shiftfuse_nano' → 'shiftfuse_nano.yaml'
-            else:
-                model_name = f'last_{model_name}'       # → 'last_base'
-            
         model_path = os.path.join(self.config_dir, 'model', f'{model_name}.yaml')
         
         if not os.path.exists(model_path):
@@ -178,15 +169,15 @@ def set_nested_key(cfg: dict, key_path: str, raw_value: str) -> None:
     node[keys[-1]] = _cast(raw_value)
 
 
-def load_config(env: str = None, dataset: str = 'ntu60', model: str = 'base') -> Dict[str, Any]:
+def load_config(env: str = None, dataset: str = 'ntu60', model: str = 'shiftfuse_zero_nano') -> Dict[str, Any]:
     """
     Convenience function to load config.
-    
+
     Args:
         env: Environment name ('local', 'kaggle', or None for auto-detect)
         dataset: Dataset name ('ntu60' or 'ntu120')
-        model: Model Name ('base', 'small', 'large')
-        
+        model: Model name (e.g., 'shiftfuse_zero_nano', 'shiftfuse_zero_large')
+
     Returns:
         Config dict
     """

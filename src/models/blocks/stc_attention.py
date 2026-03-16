@@ -1,0 +1,68 @@
+"""
+STCAttention — Spatial-Temporal-Channel Attention (EfficientGCN).
+
+Three attention maps computed from block input and applied multiplicatively:
+  A_spatial  (B, 1, 1, V): which joints matter       — softmax over V
+  A_temporal (B, 1, T, 1): which frames matter       — sigmoid, lightweight conv
+  A_channel  (B, C, 1, 1): channel recalibration     — SE-style (FC → ReLU → FC)
+
+Output: x * A_s * A_t * A_c  (same shape as input, no channel change)
+
+Reference: EfficientGCN: Constructing Stronger and Faster Baselines for
+Skeleton-based Action Recognition, Song et al. 2022.
+"""
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class STCAttention(nn.Module):
+    """Spatial-Temporal-Channel attention.
+
+    Args:
+        channels:     Input/output channel count C.
+        num_joints:   V (joint dimension, default 25).
+        reduce_ratio: Channel reduction ratio for SE part (default 4).
+    """
+
+    def __init__(self, channels: int, num_joints: int = 25, reduce_ratio: int = 4):
+        super().__init__()
+        C_r = max(channels // reduce_ratio, 4)
+
+        # Spatial: avg(C, T) → (B, V) → Linear(V, V) → softmax → (B, 1, 1, V)
+        self.spatial_fc = nn.Linear(num_joints, num_joints, bias=False)
+
+        # Temporal: avg(C, V) → (B, 1, T) → Conv1d(1,1,k=3) → sigmoid → (B, 1, T, 1)
+        self.temporal_conv = nn.Conv1d(1, 1, kernel_size=3, padding=1, bias=False)
+
+        # Channel: avg(T, V) → (B, C) → FC(C→C_r) → ReLU → FC(C_r→C) → sigmoid → (B, C, 1, 1)
+        self.channel_fc1 = nn.Linear(channels, C_r, bias=True)
+        self.channel_fc2 = nn.Linear(C_r, channels, bias=True)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: (B, C, T, V)
+        Returns:
+            out: (B, C, T, V) — x gated by spatial × temporal × channel attention
+        """
+        B, C, T, V = x.shape
+
+        # Spatial attention
+        x_s = x.mean(dim=(1, 2))                              # (B, V)
+        A_s = torch.softmax(self.spatial_fc(x_s), dim=-1)     # (B, V)
+        A_s = A_s.view(B, 1, 1, V)
+
+        # Temporal attention
+        x_t = x.mean(dim=(1, 3)).unsqueeze(1)                 # (B, 1, T)
+        A_t = torch.sigmoid(self.temporal_conv(x_t))          # (B, 1, T)
+        A_t = A_t.view(B, 1, T, 1)
+
+        # Channel attention (SE-style)
+        x_c = x.mean(dim=(2, 3))                              # (B, C)
+        A_c = F.relu(self.channel_fc1(x_c), inplace=True)     # (B, C_r)
+        A_c = torch.sigmoid(self.channel_fc2(A_c))            # (B, C)
+        A_c = A_c.view(B, C, 1, 1)
+
+        return x * A_s * A_t * A_c

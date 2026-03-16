@@ -1,10 +1,10 @@
 """
-LAST Training Engine
+ShiftFuse-Zero Training Engine
 
 Core trainer class handling the training loop, validation, checkpointing,
 and metric logging.
 
-Optimizations vs original:
+Optimizations:
   - zero_grad(set_to_none=True): frees gradient memory instead of zeroing
   - NaN/Inf check BEFORE backward: prevents corrupt gradients
   - Loss and accuracy accumulated as tensors, .item() called ONCE per epoch
@@ -13,7 +13,7 @@ Optimizations vs original:
   - Gradient accumulation: effective batch = batch_size × accum_steps
   - torch.compile opt-in: 10-40% throughput gain on PyTorch 2.0+
   - Top-1 and Top-5 accuracy tracked and logged
-  - alpha and A_learned excluded from weight decay
+  - No-decay param groups for gates, embeddings, adjacency matrices
 """
 
 import os
@@ -52,38 +52,9 @@ def _accuracy_topk(output, target, topk=(1, 5)):
         return res  # list of scalar tensors, still on GPU
 
 
-class _LabelSmoothedNLLLoss(nn.Module):
-    """
-    NLL loss for log-probability inputs with label smoothing.
-
-    Used for LAST-v2 multi-stream forward() which returns log(mean_softmax)
-    instead of raw logits. nn.NLLLoss has no label_smoothing parameter,
-    so this class replicates CrossEntropyLoss(label_smoothing=s) semantics
-    on log-probability inputs:
-
-        loss = (1-s) * nll + s * smooth
-        where nll    = -log_probs[target]   (standard NLL on correct class)
-              smooth = -mean(log_probs)     (entropy term across all classes)
-
-    This is mathematically identical to CrossEntropyLoss with label_smoothing
-    when applied to log-probabilities, preserving the regularization effect
-    on a 9.2M parameter model trained on 40K samples.
-    """
-
-    def __init__(self, smoothing: float = 0.1):
-        super().__init__()
-        self.smoothing = smoothing
-
-    def forward(self, log_probs: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        nll    = F.nll_loss(log_probs, target, reduction='none')  # -log_probs[target]
-        smooth = -log_probs.mean(dim=-1)                          # avg over all classes
-        loss   = (1.0 - self.smoothing) * nll + self.smoothing * smooth
-        return loss.mean()
-
-
 class Trainer:
     """
-    Training engine for LAST v2 model.
+    Training engine for ShiftFuse-Zero.
 
     Handles training loop, validation, LR scheduling (warmup + cosine/step),
     gradient accumulation, optional torch.compile, checkpointing, and
@@ -135,22 +106,11 @@ class Trainer:
                 print(f"  KD: loading teacher from {teacher_path}")
                 ckpt = torch.load(teacher_path, map_location=self.device)
                 sd   = ckpt.get('model_state_dict', ckpt)
-                # Determine teacher architecture from checkpoint keys
-                if any('stage_tlas' in k for k in sd):
-                    from src.models.shiftfuse_v10 import ShiftFuseV10
-                    _var = self.train_cfg.get('teacher_variant', 'large')
-                    _nc  = self.train_cfg.get('teacher_num_classes', 60)
-                    teacher = ShiftFuseV10(num_classes=_nc, variant=_var)
-                elif any('stage_tsms' in k for k in sd):
-                    from src.models.shiftfuse_experimental import ShiftFuseExperimental
-                    _var = self.train_cfg.get('teacher_variant', 'small')
-                    _nc  = self.train_cfg.get('teacher_num_classes', 60)
-                    teacher = ShiftFuseExperimental(num_classes=_nc, variant=_var)
-                else:
-                    from src.models.shiftfuse_gcn import LAST_Lite
-                    _var = self.train_cfg.get('teacher_variant', 'small')
-                    _nc  = self.train_cfg.get('teacher_num_classes', 60)
-                    teacher = LAST_Lite(num_classes=_nc, variant=_var)
+                # Teacher is a ShiftFuse-Zero variant
+                from src.models.shiftfuse_zero import build_shiftfuse_zero
+                _var = self.train_cfg.get('teacher_variant', 'large')
+                _nc  = self.train_cfg.get('teacher_num_classes', 60)
+                teacher = build_shiftfuse_zero(variant=_var, num_classes=_nc)
                 teacher.load_state_dict(sd, strict=False)
                 teacher.to(self.device).eval()
                 for p in teacher.parameters():
@@ -219,6 +179,7 @@ class Trainer:
                 or '.gate' in name           # TLA + any future gated-residual scalars (v10)
                 or 'gcn_scale' in name       # per-block GCN output scale (shared GCN guard, v10)
                 or 'block_adj' in name       # per-block spatial adjacency matrix (ShiftFuse-Zero)
+                or 'A_k_learned' in name     # global learnable A_k residuals (nano_efficient)
             ):
                 no_decay.append(param)
             else:
@@ -325,7 +286,7 @@ class Trainer:
             )
 
         # ── Loss ────────────────────────────────────────────────────────────
-        # LAST-Lite returns raw logits → CrossEntropyLoss with label smoothing.
+        # ShiftFuse-Zero returns raw logits → CrossEntropyLoss with label smoothing.
         self.criterion = nn.CrossEntropyLoss(
             label_smoothing=self.train_cfg['label_smoothing']
         )

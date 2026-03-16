@@ -1,13 +1,17 @@
 """Model module exports"""
 
-from .shiftfuse_gcn import (
-    LAST_Lite,
-    create_shiftfuse_nano,
-    create_shiftfuse_small,
+from .shiftfuse_zero import (
+    ShiftFuseZero,
+    ShiftFuseZeroLate,
+    build_shiftfuse_zero,
+    build_shiftfuse_zero_late,
+    ZERO_VARIANTS,
 )
 
 __all__ = [
-    'LAST_Lite',
-    'create_shiftfuse_nano',
-    'create_shiftfuse_small',
+    'ShiftFuseZero',
+    'ShiftFuseZeroLate',
+    'build_shiftfuse_zero',
+    'build_shiftfuse_zero_late',
+    'ZERO_VARIANTS',
 ]

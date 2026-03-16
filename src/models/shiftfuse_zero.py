@@ -2,34 +2,19 @@
 ShiftFuse-Zero — Accuracy-per-parameter skeleton action recognition.
 
 Variants:
-  nano        — early fusion, K=3 shared A_learned, BRASP+SGPShift (0-param routing)
-  small       — same + wider channels + SE + deeper stages
-  nano_multi  — early fusion, K=3 per-partition GCN (proper W per partition), ~178K
-  small_multi — early fusion, K=3 per-partition GCN, wider channels, ~269K
-  large       — early fusion, per-partition GCN + A_dynamic + SE, ~796K, target 88-91%
-  large_late  — TWO-BACKBONE late fusion (joint+velocity | bone+bone_velocity),
-                each backbone: per-partition GCN + A_dynamic + SE, ~680K, target 90-92%
+  nano            — early fusion, K=3 shared A_learned, BRASP+SGPShift (0-param routing)
+  small           — same + wider channels + SE + deeper stages
+  large           — early fusion, per-partition GCN + A_dynamic + SE, ~796K
+  large_late      — TWO-BACKBONE late fusion, each: per-partition GCN + A_dynamic + SE
+  nano_efficient  — EfficientGCN-exact GCN + DS-TCN + STC-Attention + our novelties (~210K)
 
 Block pipeline (ZeroGCNBlock):
-    Input (B, C, T, V)
-        │
-        ├─ BRASP        — anatomical channel routing (0 params)
-        │
-        ├─ SGPShift     — semantic-typed graph shift (0 params)
-        │
-        ├─ [multi_gcn=False] A_learned correction (shared per stage, K×V×V)
-        │   + block_adj (per-block V×V) → graph_conv: Conv1×1(C→C) + BN + act
-        │
-        ├─ [multi_gcn=True ] K=3 per-partition GCN:
-        │   sum_k W_k(A_structural_k @ x)  — separate Conv1×1 per structural partition
-        │
-        ├─ MultiScaleTCN (d=1, d=2, k=9)
-        │   + DropPath
-        │
-        ├─ JointEmbedding (shared per stage)
-        │
-        └─ TemporalLandmarkAttention (last stage only)
-           Residual + output
+    BRASP → SGPShift → A_learned/multi_gcn → SE → JE → MultiScaleTCN → DropPath → residual
+
+Block pipeline (EfficientZeroBlock — nano_efficient):
+    BRASP → SGPShift → JE → STCAttention
+    → GCN: Σ_k W_k(normalize(Ã_k + A_k_learned) @ x)
+    → DepthwiseSepTCN → DropPath → residual
 """
 
 import torch
@@ -44,6 +29,8 @@ from .blocks.joint_embedding import JointEmbedding
 from .blocks.temporal_landmark_attn import TemporalLandmarkAttention
 from .blocks.drop_path import DropPath
 from .blocks.channel_se import ChannelSE
+from .blocks.stc_attention import STCAttention
+from .blocks.dw_sep_tcn import DepthwiseSepTCN
 from .graph import Graph, normalize_symdigraph_full
 
 
@@ -140,10 +127,30 @@ ZERO_VARIANTS = {
         'dropout':          0.10,
         'tla_landmarks':    8,
         'tla_reduce_ratio': 8,
-        'use_se':           True,    # SE recalibration — worth it at this scale
+        'use_se':           True,
         'use_k3_adj':       False,
-        'multi_gcn':        True,    # per-partition W
-        'use_adyn':         True,    # per-sample cosine adjacency, gated residual
+        'multi_gcn':        True,
+        'use_adyn':         True,
+        'use_efficient_block': False,
+    },
+    # nano_efficient: EfficientGCN-exact graph conv + DS-TCN + STC-Attention + our novelties.
+    # K=3 fully learnable per-partition adjacency A_k = normalize(Ã_k + A_k_learned).
+    # Channels=[32,64,128] — reduced to afford K=3 W_k via DS-TCN param savings.
+    # Target: 86–88% NTU-60 xsub. ~210K params.
+    'nano_efficient': {
+        'stem_channels':       32,
+        'channels':            [32, 64, 128],
+        'num_blocks':          [2, 3, 2],
+        'strides':             [1, 2, 2],
+        'drop_path_rate':      0.10,
+        'dropout':             0.10,
+        'tla_landmarks':       8,
+        'tla_reduce_ratio':    8,
+        'use_se':              False,   # STC-Attention covers channel recalibration
+        'use_k3_adj':          False,
+        'multi_gcn':           True,    # K=3 per-partition W_k
+        'use_adyn':            False,
+        'use_efficient_block': True,    # EfficientZeroBlock (DS-TCN + STC + learnable A_k)
     },
 }
 
@@ -348,7 +355,145 @@ class ZeroGCNBlock(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# ShiftFuseZero  (nano / small, and sub-backbone for small_late)
+# EfficientZeroBlock  (nano_efficient variant)
+# ---------------------------------------------------------------------------
+class EfficientZeroBlock(nn.Module):
+    """ShiftFuse-Zero block with EfficientGCN-exact graph + DS-TCN + STC-Attention.
+
+    Pipeline:
+        BRASP → SGPShift → JE → STCAttention
+        → GCN: (1/K) Σ_k W_k(normalize(Ã_k + A_k_learned[k]) @ x)
+        → DepthwiseSepTCN → DropPath → residual → Hardswish
+
+    Key differences from ZeroGCNBlock:
+      - A_k = normalize(Ã_k_fixed + A_k_learned[k]) — EfficientGCN-exact learnable graph
+        A_k_learned is GLOBAL (shared across all blocks, stored on parent ShiftFuseZero)
+        Initialized to zeros → pure anatomical graph at epoch 0, learned corrections later
+        Anatomical init is better than EfficientGCN's random/zero full-matrix init
+      - STC-Attention (spatial+temporal+channel) replaces ChannelSE
+      - DepthwiseSepTCN (~8× cheaper than MultiScaleTCN) enables K=3 W_k in budget
+      - JE applied BEFORE GCN: GCN aggregates joint-identity-aware features (novel)
+      - No block_adj (global A_k_learned subsumes per-block correction)
+
+    Args:
+        in_channels:       Input feature channels.
+        out_channels:      Output feature channels.
+        stride:            Temporal stride (1 or 2).
+        A_flat:            (V,V) flat adjacency for BRASP.
+        A_intra:           (V,V) intra-part adjacency for SGPShift.
+        A_inter:           (V,V) inter-part adjacency for SGPShift.
+        A_gcn_partitions:  List of K (V,V) normalized fixed structural tensors.
+        A_k_learned:       nn.ParameterList of K (V,V) global learnable residuals.
+                           Owned by ShiftFuseZero, referenced here (not re-registered).
+        je:                Shared JointEmbedding (per stage, passed from ShiftFuseZero).
+        drop_path_rate:    Stochastic depth probability.
+        dropout:           DepthwiseSepTCN dropout rate.
+        num_joints:        V (default 25).
+        stc_reduce_ratio:  Channel reduction ratio for SE part of STC-Attention.
+    """
+
+    def __init__(
+        self,
+        in_channels:       int,
+        out_channels:      int,
+        stride:            int,
+        A_flat:            torch.Tensor,
+        A_intra:           torch.Tensor,
+        A_inter:           torch.Tensor,
+        A_gcn_partitions:  list,
+        A_k_learned:       nn.ParameterList,
+        je:                nn.Module   = None,
+        drop_path_rate:    float       = 0.0,
+        dropout:           float       = 0.1,
+        num_joints:        int         = 25,
+        stc_reduce_ratio:  int         = 4,
+    ):
+        super().__init__()
+        self.K_gcn = len(A_gcn_partitions)
+        # Reference to global learnable residuals — owned by parent, not re-registered
+        self.A_k_learned = A_k_learned
+
+        # ── 0-param spatial routing ──────────────────────────────────────────
+        self.brasp     = BodyRegionShift(channels=in_channels, A=A_flat)
+        self.sgp_shift = SGPShift(
+            channels=in_channels, A_intra=A_intra, A_inter=A_inter,
+            num_joints=num_joints,
+        )
+
+        # ── Fixed structural adjacency (K=3 anatomical partitions) ───────────
+        for k, A_k in enumerate(A_gcn_partitions):
+            self.register_buffer(f'_A_fixed_{k}', A_k)
+
+        # ── Per-partition GCN convolutions (K separate W_k) ──────────────────
+        self.gcn_convs = nn.ModuleList([
+            nn.Conv2d(in_channels, out_channels, 1, bias=False)
+            for _ in range(self.K_gcn)
+        ])
+        self.gcn_bn  = nn.BatchNorm2d(out_channels)
+        self.gcn_act = nn.Hardswish(inplace=True)
+
+        # ── STC-Attention (spatial + temporal + channel) ─────────────────────
+        self.stc_attn = STCAttention(in_channels, num_joints, stc_reduce_ratio)
+
+        # ── Depthwise-separable multi-scale TCN ──────────────────────────────
+        self.tcn       = DepthwiseSepTCN(out_channels, out_channels,
+                                         stride=stride, dropout=dropout)
+        self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0.0 else nn.Identity()
+
+        # ── Shared JE (per stage, from ShiftFuseZero) ────────────────────────
+        self.je = je
+
+        # ── Residual ─────────────────────────────────────────────────────────
+        if in_channels == out_channels and stride == 1:
+            self.residual = nn.Identity()
+        else:
+            self.residual = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, 1, stride=(stride, 1), bias=False),
+                nn.BatchNorm2d(out_channels),
+            )
+
+        self.out_act = nn.Hardswish(inplace=True)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        res = x
+
+        # ── 0-param spatial routing ──────────────────────────────────────────
+        x = self.brasp(x)
+        x = self.sgp_shift(x)
+
+        # ── STC-Attention gates the GCN input ────────────────────────────────
+        x = self.stc_attn(x)
+
+        # ── GCN: y = (1/K) Σ_k W_k(normalize(Ã_k + A_k_learned[k]) @ x) ────
+        B, C, T, V = x.shape
+        x_flat = x.reshape(B, C * T, V)
+        y = None
+        for k in range(self.K_gcn):
+            A_fixed  = getattr(self, f'_A_fixed_{k}')    # (V, V) normalized
+            A_learnt = self.A_k_learned[k]                # (V, V) global learnable
+            # |Ã_k + residual| then symmetric-normalize
+            A_comb = (A_fixed + A_learnt).abs()
+            d      = A_comb.sum(dim=1).clamp(min=1e-6).pow(-0.5)
+            A_norm = d.unsqueeze(1) * A_comb * d.unsqueeze(0)
+            x_k    = torch.matmul(x_flat, A_norm).reshape(B, C, T, V)
+            out_k  = self.gcn_convs[k](x_k)
+            y = out_k if y is None else y + out_k
+        y = y / self.K_gcn           # variance normalisation
+        x = self.gcn_act(self.gcn_bn(y))
+
+        # ── Per-joint identity embedding (after GCN: x now has out_channels) ─
+        if self.je is not None:
+            x = self.je(x)
+
+        # ── DS-TCN + DropPath ────────────────────────────────────────────────
+        x = self.drop_path(self.tcn(x))
+
+        # ── Residual ─────────────────────────────────────────────────────────
+        return self.out_act(x + self.residual(res))
+
+
+# ---------------------------------------------------------------------------
+# ShiftFuseZero  (nano / small, and sub-backbone for large_late)
 # ---------------------------------------------------------------------------
 class ShiftFuseZero(nn.Module):
     """ShiftFuse-Zero: early-fusion skeleton action recogniser.
@@ -389,20 +534,21 @@ class ShiftFuseZero(nn.Module):
         if variant not in ZERO_VARIANTS:
             raise ValueError(f"Unknown variant '{variant}'. Choose from {list(ZERO_VARIANTS.keys())}")
 
-        cfg             = ZERO_VARIANTS[variant]
-        stem_ch         = cfg['stem_channels']
-        channels        = cfg['channels']
-        num_blocks      = cfg['num_blocks']
-        strides         = cfg['strides']
-        drop_path_rate  = cfg['drop_path_rate']
-        tla_landmarks   = cfg['tla_landmarks']
-        tla_reduce      = cfg['tla_reduce_ratio']
-        use_se          = use_se       if use_se       is not None else cfg.get('use_se', False)
-        _dropout        = dropout      if dropout      is not None else cfg['dropout']
-        use_k3_adj      = use_k3_adj   if use_k3_adj   is not None else cfg.get('use_k3_adj', False)
-        multi_gcn       = multi_gcn    if multi_gcn    is not None else cfg.get('multi_gcn', False)
-        _use_adyn       = use_adyn     if use_adyn     is not None else cfg.get('use_adyn', False)
-        K_adj           = 3 if use_k3_adj else 1
+        cfg                 = ZERO_VARIANTS[variant]
+        stem_ch             = cfg['stem_channels']
+        channels            = cfg['channels']
+        num_blocks          = cfg['num_blocks']
+        strides             = cfg['strides']
+        drop_path_rate      = cfg['drop_path_rate']
+        tla_landmarks       = cfg['tla_landmarks']
+        tla_reduce          = cfg['tla_reduce_ratio']
+        use_se              = use_se       if use_se       is not None else cfg.get('use_se', False)
+        _dropout            = dropout      if dropout      is not None else cfg['dropout']
+        use_k3_adj          = use_k3_adj   if use_k3_adj   is not None else cfg.get('use_k3_adj', False)
+        multi_gcn           = multi_gcn    if multi_gcn    is not None else cfg.get('multi_gcn', False)
+        _use_adyn           = use_adyn     if use_adyn     is not None else cfg.get('use_adyn', False)
+        use_efficient_block = cfg.get('use_efficient_block', False)
+        K_adj               = 3 if use_k3_adj else 1
 
         self.variant      = variant
         self.num_classes  = num_classes
@@ -436,14 +582,25 @@ class ShiftFuseZero(nn.Module):
                 for k in range(A_sym.shape[0])   # K=3
             ]
 
-        # ── 2. Early fusion stem ──────────────────────────────────────────
+        # ── 2. Global learnable A_k residuals (nano_efficient only) ──────────
+        # One (V,V) parameter per partition, shared across ALL blocks (EfficientGCN-exact).
+        # Initialized to zeros → pure anatomical graph at epoch 0.
+        # Anatomical init (Ã_k_fixed) is better than EfficientGCN's zero/random init.
+        if use_efficient_block:
+            assert A_gcn_partitions is not None
+            self.A_k_learned = nn.ParameterList([
+                nn.Parameter(torch.zeros(num_joints, num_joints))
+                for _ in range(len(A_gcn_partitions))
+            ])
+
+        # ── 3. Early fusion stem ──────────────────────────────────────────
         self.fusion = StreamFusionConcat(
             in_channels=in_channels,
             out_channels=stem_ch,
             num_streams=num_streams,
         )
 
-        # ── 3. Build stages ───────────────────────────────────────────────
+        # ── 4. Build stages ───────────────────────────────────────────────
         total_blocks     = sum(num_blocks)
         block_idx_global = 0
 
@@ -469,7 +626,7 @@ class ShiftFuseZero(nn.Module):
             stage_je  = JointEmbedding(stage_ch, num_joints)
             stage_tla = (
                 TemporalLandmarkAttention(stage_ch, tla_landmarks, tla_reduce)
-                if is_last_stage else None
+                if (is_last_stage and not use_efficient_block) else None
             )
 
             A_learned_param = (
@@ -482,32 +639,48 @@ class ShiftFuseZero(nn.Module):
                 stride  = stage_stride if (block_idx == 0 and stage_idx > 0) else 1
                 c_in    = prev_ch if block_idx == 0 else stage_ch
 
-                block = ZeroGCNBlock(
-                    in_channels      = c_in,
-                    out_channels     = stage_ch,
-                    stride           = stride,
-                    A_flat           = A_flat,
-                    A_intra          = A_intra,
-                    A_inter          = A_inter,
-                    A_learned        = A_learned_param,
-                    je               = stage_je,
-                    tla              = stage_tla if (block_idx == n_blocks - 1) else None,
-                    drop_path_rate   = dp_rate,
-                    dropout          = _dropout,
-                    num_joints       = num_joints,
-                    use_se           = use_se,
-                    K_adj            = K_adj,
-                    multi_gcn        = multi_gcn,
-                    A_gcn_partitions = A_gcn_partitions,
-                    use_adyn         = _use_adyn,
-                )
+                if use_efficient_block:
+                    block = EfficientZeroBlock(
+                        in_channels      = c_in,
+                        out_channels     = stage_ch,
+                        stride           = stride,
+                        A_flat           = A_flat,
+                        A_intra          = A_intra,
+                        A_inter          = A_inter,
+                        A_gcn_partitions = A_gcn_partitions,
+                        A_k_learned      = self.A_k_learned,
+                        je               = stage_je,
+                        drop_path_rate   = dp_rate,
+                        dropout          = _dropout,
+                        num_joints       = num_joints,
+                    )
+                else:
+                    block = ZeroGCNBlock(
+                        in_channels      = c_in,
+                        out_channels     = stage_ch,
+                        stride           = stride,
+                        A_flat           = A_flat,
+                        A_intra          = A_intra,
+                        A_inter          = A_inter,
+                        A_learned        = A_learned_param,
+                        je               = stage_je,
+                        tla              = stage_tla if (block_idx == n_blocks - 1) else None,
+                        drop_path_rate   = dp_rate,
+                        dropout          = _dropout,
+                        num_joints       = num_joints,
+                        use_se           = use_se,
+                        K_adj            = K_adj,
+                        multi_gcn        = multi_gcn,
+                        A_gcn_partitions = A_gcn_partitions,
+                        use_adyn         = _use_adyn,
+                    )
                 stage_blocks.append(block)
                 block_idx_global += 1
 
             self.stages.append(stage_blocks)
             prev_ch = stage_ch
 
-        # ── 4. Classifier head ────────────────────────────────────────────
+        # ── 5. Classifier head ────────────────────────────────────────────
         final_ch = channels[-1]
         self.pool_gate  = nn.Parameter(torch.zeros(1))
         self.classifier = nn.Sequential(
