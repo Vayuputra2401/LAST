@@ -461,19 +461,33 @@ class TestShiftFuseZero:
         assert out.shape == (B, NUM_CLASSES)
 
     def test_nano_efficient_a_k_learned(self):
-        """nano_efficient must have A_k_learned with K=3 tensors of shape (V,V)."""
+        """nano_efficient: each block must own K=3 A_k_learned tensors of shape (V,V)."""
         model = build_shiftfuse_zero('nano_efficient', num_classes=NUM_CLASSES)
-        assert hasattr(model, 'A_k_learned'), "nano_efficient must have A_k_learned"
-        assert len(model.A_k_learned) == 3, f"Expected K=3, got {len(model.A_k_learned)}"
-        for k, p in enumerate(model.A_k_learned):
-            assert p.shape == (V, V), f"A_k_learned[{k}] shape {p.shape} != (25,25)"
-            assert p.requires_grad, f"A_k_learned[{k}] must be trainable"
-
-    def test_nano_efficient_no_a_k_on_standard_nano(self):
-        """Standard nano must NOT have A_k_learned."""
-        model = build_shiftfuse_zero('nano', num_classes=NUM_CLASSES)
         assert not hasattr(model, 'A_k_learned'), \
-            "Standard nano should not have A_k_learned"
+            "Global A_k_learned should be gone — per-block now"
+        # Check every EfficientZeroBlock has its own A_k_learned
+        for si, stage in enumerate(model.stages):
+            for bi, block in enumerate(stage):
+                assert hasattr(block, 'A_k_learned'), \
+                    f"Stage{si} Block{bi} missing A_k_learned"
+                assert len(block.A_k_learned) == 3, \
+                    f"Stage{si} Block{bi}: expected K=3, got {len(block.A_k_learned)}"
+                for k, p in enumerate(block.A_k_learned):
+                    assert p.shape == (V, V), \
+                        f"Stage{si} Block{bi} A_k_learned[{k}] shape {p.shape} != ({V},{V})"
+                    assert p.requires_grad, \
+                        f"Stage{si} Block{bi} A_k_learned[{k}] must be trainable"
+        # Total: 7 blocks × 3 × V×V
+        total = sum(p.numel() for n, p in model.named_parameters() if 'A_k_learned' in n)
+        assert total == 7 * 3 * V * V, f"Expected {7*3*V*V}, got {total}"
+
+    def test_nano_efficient_no_global_a_k_on_standard_nano(self):
+        """Standard nano must NOT have block-level A_k_learned."""
+        model = build_shiftfuse_zero('nano', num_classes=NUM_CLASSES)
+        for si, stage in enumerate(model.stages):
+            for bi, block in enumerate(stage):
+                assert not hasattr(block, 'A_k_learned'), \
+                    f"Standard nano Stage{si} Block{bi} should not have A_k_learned"
 
     def test_nano_param_count(self):
         model = build_shiftfuse_zero('nano', num_classes=NUM_CLASSES)
@@ -591,6 +605,7 @@ if __name__ == '__main__':
     assert not torch.isnan(logits).any(), "FAIL: NaN in output"
     assert not torch.isinf(logits).any(), "FAIL: Inf in output"
     print(f'  Output: {tuple(logits.shape)}  range=[{logits.min():.4f}, {logits.max():.4f}]')
-    print(f'  A_k_learned: K={len(m_eff.A_k_learned)} tensors of {tuple(m_eff.A_k_learned[0].shape)}')
+    adj_p = sum(p.numel() for n, p in m_eff.named_parameters() if 'A_k_learned' in n)
+    print(f'  A_k_learned: per-block, total {adj_p:,} params (7 blocks × 3 × 25×25)')
     print()
     print('All checks passed.')

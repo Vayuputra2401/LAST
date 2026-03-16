@@ -13,7 +13,7 @@ Block pipeline (ZeroGCNBlock):
 
 Block pipeline (EfficientZeroBlock — nano_efficient):
     BRASP → SGPShift → JE → STCAttention
-    → GCN: Σ_k W_k(normalize(Ã_k + A_k_learned) @ x)
+    → GCN: Σ_k W_k(normalize(Ã_k + A_k_learned_block[k]) @ x)  [per-block A_k_learned]
     → DepthwiseSepTCN → DropPath → residual
 """
 
@@ -367,13 +367,13 @@ class EfficientZeroBlock(nn.Module):
 
     Key differences from ZeroGCNBlock:
       - A_k = normalize(Ã_k_fixed + A_k_learned[k]) — EfficientGCN-exact learnable graph
-        A_k_learned is GLOBAL (shared across all blocks, stored on parent ShiftFuseZero)
+        A_k_learned is PER-BLOCK: each block owns K (V,V) parameters (EfficientGCN-exact)
         Initialized to zeros → pure anatomical graph at epoch 0, learned corrections later
         Anatomical init is better than EfficientGCN's random/zero full-matrix init
       - STC-Attention (spatial+temporal+channel) replaces ChannelSE
       - DepthwiseSepTCN (~8× cheaper than MultiScaleTCN) enables K=3 W_k in budget
-      - JE applied BEFORE GCN: GCN aggregates joint-identity-aware features (novel)
-      - No block_adj (global A_k_learned subsumes per-block correction)
+      - JE applied AFTER GCN: x has out_channels at that point (avoids channel mismatch)
+      - No block_adj (A_k_learned per block subsumes per-block correction)
 
     Args:
         in_channels:       Input feature channels.
@@ -383,8 +383,6 @@ class EfficientZeroBlock(nn.Module):
         A_intra:           (V,V) intra-part adjacency for SGPShift.
         A_inter:           (V,V) inter-part adjacency for SGPShift.
         A_gcn_partitions:  List of K (V,V) normalized fixed structural tensors.
-        A_k_learned:       nn.ParameterList of K (V,V) global learnable residuals.
-                           Owned by ShiftFuseZero, referenced here (not re-registered).
         je:                Shared JointEmbedding (per stage, passed from ShiftFuseZero).
         drop_path_rate:    Stochastic depth probability.
         dropout:           DepthwiseSepTCN dropout rate.
@@ -401,7 +399,6 @@ class EfficientZeroBlock(nn.Module):
         A_intra:           torch.Tensor,
         A_inter:           torch.Tensor,
         A_gcn_partitions:  list,
-        A_k_learned:       nn.ParameterList,
         je:                nn.Module   = None,
         drop_path_rate:    float       = 0.0,
         dropout:           float       = 0.1,
@@ -410,8 +407,12 @@ class EfficientZeroBlock(nn.Module):
     ):
         super().__init__()
         self.K_gcn = len(A_gcn_partitions)
-        # Reference to global learnable residuals — owned by parent, not re-registered
-        self.A_k_learned = A_k_learned
+        # Per-block learnable adjacency residuals (EfficientGCN-exact)
+        # Each block learns its own graph topology corrections, zero-initialized
+        self.A_k_learned = nn.ParameterList([
+            nn.Parameter(torch.zeros(num_joints, num_joints))
+            for _ in range(self.K_gcn)
+        ])
 
         # ── 0-param spatial routing ──────────────────────────────────────────
         self.brasp     = BodyRegionShift(channels=in_channels, A=A_flat)
@@ -582,18 +583,7 @@ class ShiftFuseZero(nn.Module):
                 for k in range(A_sym.shape[0])   # K=3
             ]
 
-        # ── 2. Global learnable A_k residuals (nano_efficient only) ──────────
-        # One (V,V) parameter per partition, shared across ALL blocks (EfficientGCN-exact).
-        # Initialized to zeros → pure anatomical graph at epoch 0.
-        # Anatomical init (Ã_k_fixed) is better than EfficientGCN's zero/random init.
-        if use_efficient_block:
-            assert A_gcn_partitions is not None
-            self.A_k_learned = nn.ParameterList([
-                nn.Parameter(torch.zeros(num_joints, num_joints))
-                for _ in range(len(A_gcn_partitions))
-            ])
-
-        # ── 3. Early fusion stem ──────────────────────────────────────────
+        # ── 2. Early fusion stem ──────────────────────────────────────────
         self.fusion = StreamFusionConcat(
             in_channels=in_channels,
             out_channels=stem_ch,
@@ -648,7 +638,6 @@ class ShiftFuseZero(nn.Module):
                         A_intra          = A_intra,
                         A_inter          = A_inter,
                         A_gcn_partitions = A_gcn_partitions,
-                        A_k_learned      = self.A_k_learned,
                         je               = stage_je,
                         drop_path_rate   = dp_rate,
                         dropout          = _dropout,

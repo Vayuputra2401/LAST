@@ -1,12 +1,18 @@
 """
-STCAttention — Spatial-Temporal-Channel Attention (EfficientGCN).
+STCAttention — Spatial-Temporal-Channel Attention (EfficientGCN), residual-gated.
 
 Three attention maps computed from block input and applied multiplicatively:
   A_spatial  (B, 1, 1, V): which joints matter       — softmax over V
   A_temporal (B, 1, T, 1): which frames matter       — sigmoid, lightweight conv
   A_channel  (B, C, 1, 1): channel recalibration     — SE-style (FC → ReLU → FC)
 
-Output: x * A_s * A_t * A_c  (same shape as input, no channel change)
+Output: x*(1-scale) + x*A_s*A_t*A_c*scale
+  where scale = sigmoid(gate), gate init -4.0 → scale ≈ 0.018 at epoch 0.
+
+The residual gate prevents signal collapse at init (softmax over 25 joints gives
+~1/25 per joint; combined with two sigmoid≈0.5 gates → x×0.01 without the fix).
+Attention fades in gradually as the gate learns, so GCN/DS-TCN receive full signal
+from epoch 1 and all components co-learn from the start.
 
 Reference: EfficientGCN: Constructing Stronger and Faster Baselines for
 Skeleton-based Action Recognition, Song et al. 2022.
@@ -18,7 +24,7 @@ import torch.nn.functional as F
 
 
 class STCAttention(nn.Module):
-    """Spatial-Temporal-Channel attention.
+    """Spatial-Temporal-Channel attention with residual gate.
 
     Args:
         channels:     Input/output channel count C.
@@ -40,12 +46,16 @@ class STCAttention(nn.Module):
         self.channel_fc1 = nn.Linear(channels, C_r, bias=True)
         self.channel_fc2 = nn.Linear(C_r, channels, bias=True)
 
+        # Residual gate: sigmoid(-4) ≈ 0.018 at init → near-identity pass-through
+        # Fades in attention gradually; added to no_decay in trainer (contains 'gate')
+        self.gate = nn.Parameter(torch.full((1,), -4.0))
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
             x: (B, C, T, V)
         Returns:
-            out: (B, C, T, V) — x gated by spatial × temporal × channel attention
+            out: (B, C, T, V) — lerp(x, x*A_s*A_t*A_c, scale)
         """
         B, C, T, V = x.shape
 
@@ -65,4 +75,6 @@ class STCAttention(nn.Module):
         A_c = torch.sigmoid(self.channel_fc2(A_c))            # (B, C)
         A_c = A_c.view(B, C, 1, 1)
 
-        return x * A_s * A_t * A_c
+        # Residual gate: lerp from identity to full attention
+        scale = torch.sigmoid(self.gate)                       # scalar in (0, 1)
+        return x * (1.0 - scale) + x * A_s * A_t * A_c * scale

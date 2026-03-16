@@ -12,13 +12,14 @@ training:
   warmup_start_lr: 0.005
   min_lr: 0.0001
 
-  # Duration — 350ep: wider architecture than nano, needs more epochs to converge
-  epochs: 350
+  # Duration — 400ep: STC residual gate fix removes ~80ep dead zone; remaining
+  # complexity (DS-TCN DW sparsity + K=3 W_k + per-block A_k_learned) adds ~40ep vs nano
+  epochs: 400
   batch_size: 64
   gradient_accumulation_steps: 1
 
-  # Regularization
-  label_smoothing: 0.1
+  # Regularization — label_smoothing dropped (redundant with Mixup+CutMix)
+  label_smoothing: 0.0
   gradient_clip: 1.0
 
   # Augmentation — mixup=0.1 validated on nano; DS-TCN may benefit from slightly more
