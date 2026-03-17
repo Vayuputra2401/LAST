@@ -4,7 +4,7 @@ training:
   lr: 0.1
   momentum: 0.9
   nesterov: true
-  weight_decay: 0.0004
+  weight_decay: 0.0001  # EfficientGCN-exact (was 0.0004 — 4× over-regularised)
 
   # Scheduler
   scheduler: cosine_warmup
@@ -24,7 +24,7 @@ training:
 
   # Augmentation — mixup=0.1 validated on nano; DS-TCN may benefit from slightly more
   mixup_alpha: 0.1
-  cutmix_prob: 0.5
+  cutmix_prob: 0.0
   cutmix_alpha: 1.0
 
   # Input
@@ -48,6 +48,9 @@ training:
 
   # IB loss — disabled
   ib_loss_weight: 0.0
+
+  # TTA: spatial flip (original + mirrored → average logits) — enable for final eval
+  tta_flip: false
 
   # Knowledge distillation — disabled by default
   use_kd: false

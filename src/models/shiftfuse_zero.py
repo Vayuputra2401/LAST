@@ -12,7 +12,7 @@ Block pipeline (ZeroGCNBlock):
     BRASP → SGPShift → A_learned/multi_gcn → SE → JE → MultiScaleTCN → DropPath → residual
 
 Block pipeline (EfficientZeroBlock — nano_efficient):
-    BRASP → SGPShift → JE → STCAttention
+    BRASP → SGPShift → JE(in_ch) → STCAttention(in_ch)
     → GCN: Σ_k W_k(normalize(Ã_k + A_k_learned_block[k]) @ x)  [per-block A_k_learned]
     → DepthwiseSepTCN → DropPath → residual
 """
@@ -361,19 +361,23 @@ class EfficientZeroBlock(nn.Module):
     """ShiftFuse-Zero block with EfficientGCN-exact graph + DS-TCN + STC-Attention.
 
     Pipeline:
-        BRASP → SGPShift → JE → STCAttention
+        BRASP → SGPShift → JE(in_ch) → STCAttention(in_ch)
         → GCN: (1/K) Σ_k W_k(normalize(Ã_k + A_k_learned[k]) @ x)
         → DepthwiseSepTCN → DropPath → residual → Hardswish
 
+    Ordering rationale:
+      1. JE(in_ch) before STC-Attn: spatial attention (softmax over V joints) runs on
+         identity-enriched features → attention map knows which joint is which.
+      2. STC-Attn before GCN: gates the GCN input so aggregation only propagates
+         relevant (attended) signal across edges.
+      3. Each block owns its own JE sized to in_channels (not shared) to handle
+         in_ch ≠ out_ch at stage boundaries without a channel mismatch.
+
     Key differences from ZeroGCNBlock:
       - A_k = normalize(Ã_k_fixed + A_k_learned[k]) — EfficientGCN-exact learnable graph
-        A_k_learned is PER-BLOCK: each block owns K (V,V) parameters (EfficientGCN-exact)
-        Initialized to zeros → pure anatomical graph at epoch 0, learned corrections later
-        Anatomical init is better than EfficientGCN's random/zero full-matrix init
-      - STC-Attention (spatial+temporal+channel) replaces ChannelSE
+      - STC-Attention (spatial+temporal+channel) with residual gate replaces ChannelSE
       - DepthwiseSepTCN (~8× cheaper than MultiScaleTCN) enables K=3 W_k in budget
-      - JE applied AFTER GCN: x has out_channels at that point (avoids channel mismatch)
-      - No block_adj (A_k_learned per block subsumes per-block correction)
+      - JE per-block on in_channels (not shared stage JE on out_channels)
 
     Args:
         in_channels:       Input feature channels.
@@ -383,7 +387,6 @@ class EfficientZeroBlock(nn.Module):
         A_intra:           (V,V) intra-part adjacency for SGPShift.
         A_inter:           (V,V) inter-part adjacency for SGPShift.
         A_gcn_partitions:  List of K (V,V) normalized fixed structural tensors.
-        je:                Shared JointEmbedding (per stage, passed from ShiftFuseZero).
         drop_path_rate:    Stochastic depth probability.
         dropout:           DepthwiseSepTCN dropout rate.
         num_joints:        V (default 25).
@@ -399,7 +402,6 @@ class EfficientZeroBlock(nn.Module):
         A_intra:           torch.Tensor,
         A_inter:           torch.Tensor,
         A_gcn_partitions:  list,
-        je:                nn.Module   = None,
         drop_path_rate:    float       = 0.0,
         dropout:           float       = 0.1,
         num_joints:        int         = 25,
@@ -421,6 +423,12 @@ class EfficientZeroBlock(nn.Module):
             num_joints=num_joints,
         )
 
+        # ── Joint identity embedding (in_channels — before STC and GCN) ─────
+        # Each block owns its own JE sized to in_channels so channel mismatch
+        # is avoided at stage boundaries (first block: in_ch = prev_stage_ch).
+        # Zero-init → no-op at epoch 0, identity info fades in gradually.
+        self.je = JointEmbedding(in_channels, num_joints)
+
         # ── Fixed structural adjacency (K=3 anatomical partitions) ───────────
         for k, A_k in enumerate(A_gcn_partitions):
             self.register_buffer(f'_A_fixed_{k}', A_k)
@@ -433,16 +441,13 @@ class EfficientZeroBlock(nn.Module):
         self.gcn_bn  = nn.BatchNorm2d(out_channels)
         self.gcn_act = nn.Hardswish(inplace=True)
 
-        # ── STC-Attention (spatial + temporal + channel) ─────────────────────
+        # ── STC-Attention on in_channels (after JE, before GCN) ─────────────
         self.stc_attn = STCAttention(in_channels, num_joints, stc_reduce_ratio)
 
         # ── Depthwise-separable multi-scale TCN ──────────────────────────────
         self.tcn       = DepthwiseSepTCN(out_channels, out_channels,
                                          stride=stride, dropout=dropout)
         self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0.0 else nn.Identity()
-
-        # ── Shared JE (per stage, from ShiftFuseZero) ────────────────────────
-        self.je = je
 
         # ── Residual ─────────────────────────────────────────────────────────
         if in_channels == out_channels and stride == 1:
@@ -462,7 +467,12 @@ class EfficientZeroBlock(nn.Module):
         x = self.brasp(x)
         x = self.sgp_shift(x)
 
+        # ── JE: inject joint identity before attention ────────────────────────
+        # Spatial attention (softmax over V) runs on identity-enriched features.
+        x = self.je(x)
+
         # ── STC-Attention gates the GCN input ────────────────────────────────
+        # GCN propagates only the attended (relevant) signal across edges.
         x = self.stc_attn(x)
 
         # ── GCN: y = (1/K) Σ_k W_k(normalize(Ã_k + A_k_learned[k]) @ x) ────
@@ -481,10 +491,6 @@ class EfficientZeroBlock(nn.Module):
             y = out_k if y is None else y + out_k
         y = y / self.K_gcn           # variance normalisation
         x = self.gcn_act(self.gcn_bn(y))
-
-        # ── Per-joint identity embedding (after GCN: x now has out_channels) ─
-        if self.je is not None:
-            x = self.je(x)
 
         # ── DS-TCN + DropPath ────────────────────────────────────────────────
         x = self.drop_path(self.tcn(x))
@@ -638,10 +644,10 @@ class ShiftFuseZero(nn.Module):
                         A_intra          = A_intra,
                         A_inter          = A_inter,
                         A_gcn_partitions = A_gcn_partitions,
-                        je               = stage_je,
                         drop_path_rate   = dp_rate,
                         dropout          = _dropout,
                         num_joints       = num_joints,
+                        # JE is created internally per-block (in_channels sized)
                     )
                 else:
                     block = ZeroGCNBlock(
@@ -678,12 +684,22 @@ class ShiftFuseZero(nn.Module):
         )
 
     def forward(self, stream_dict: dict) -> torch.Tensor:
-        # Unpack streams (handle M=2 multi-body input)
+        # Unpack streams — batch-double for M=2 (both bodies processed independently)
+        # (B, C, T, V, 2) → cat([body0, body1], dim=0) → (2B, C, T, V)
+        # Predictions averaged at the end: recovers ~2-3pp on interaction classes.
         streams = []
+        B = None
+        multi_body = False
         for name in self.stream_names:
             s = stream_dict[name]
             if s.dim() == 5:
-                s = s[..., 0]
+                if B is None:
+                    B = s.shape[0]
+                multi_body = True
+                s = torch.cat([s[..., 0], s[..., 1]], dim=0)  # (2B, C, T, V)
+            else:
+                if B is None:
+                    B = s.shape[0]
             streams.append(s)
 
         # Early fusion
@@ -695,13 +711,19 @@ class ShiftFuseZero(nn.Module):
                 x = block(x)
 
         # Gated GAP+GMP pooling
-        x   = x.mean(dim=2)                   # (B, C, V)
-        gap = x.mean(dim=-1)                   # (B, C)
-        gmp = x.max(dim=-1).values             # (B, C)
+        x   = x.mean(dim=2)                   # (2B or B, C, V)
+        gap = x.mean(dim=-1)                   # (2B or B, C)
+        gmp = x.max(dim=-1).values             # (2B or B, C)
         g   = torch.sigmoid(self.pool_gate)
-        x   = g * gap + (1 - g) * gmp         # (B, C)
+        x   = g * gap + (1 - g) * gmp         # (2B or B, C)
 
-        return self.classifier(x)
+        out = self.classifier(x)
+
+        # Average body-0 and body-1 logits → (B, num_classes)
+        if multi_body:
+            out = (out[:B] + out[B:]) / 2
+
+        return out
 
 
 # ---------------------------------------------------------------------------

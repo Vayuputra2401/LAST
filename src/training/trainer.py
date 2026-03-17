@@ -33,6 +33,29 @@ from tqdm import tqdm
 from datetime import datetime
 
 
+_TTA_L_IDX = [4, 5, 6, 7, 12, 13, 14, 15, 21, 22]
+_TTA_R_IDX = [8, 9, 10, 11, 16, 17, 18, 19, 23, 24]
+
+
+def _spatial_flip_batch(batch_data: dict) -> dict:
+    """NTU RGB+D spatial left-right flip for a batched dict of tensors.
+
+    Tensors can be (B, C, T, V) or (B, C, T, V, M).
+    Negates x-axis (dim-1 channel 0) and swaps L/R joint pairs (dim 3).
+    """
+    l = torch.tensor(_TTA_L_IDX)
+    r = torch.tensor(_TTA_R_IDX)
+    out = {}
+    for name, x in batch_data.items():
+        x = x.clone()
+        x[:, 0, ...] = -x[:, 0, ...]     # negate x-coordinate channel
+        tmp = x[:, :, :, l].clone()       # works for both 4D and 5D (extra dims trail)
+        x[:, :, :, l] = x[:, :, :, r]
+        x[:, :, :, r] = tmp
+        out[name] = x
+    return out
+
+
 def _accuracy_topk(output, target, topk=(1, 5)):
     """
     Compute top-k accuracy as integer correct counts (not %).
@@ -322,6 +345,12 @@ class Trainer:
         self.mixup_alpha  = self.train_cfg.get('mixup_alpha', 0.0)
         self.cutmix_prob  = self.train_cfg.get('cutmix_prob', 0.0)
         self.cutmix_alpha = self.train_cfg.get('cutmix_alpha', 1.0)
+
+        # ── TTA (Test-Time Augmentation) ─────────────────────────────────────
+        # tta_flip: run val with original + spatially flipped input and average logits.
+        # Doubles val time but adds ~0.1-0.3% without any training change.
+        # Enable with: tta_flip: true in training config.
+        self.tta_flip = self.train_cfg.get('tta_flip', False)
 
         # ── State Tracking ──────────────────────────────────────────────────
         self.best_val_acc  = 0.0
@@ -636,11 +665,21 @@ class Trainer:
                 with torch.amp.autocast(self.device.type, dtype=self.amp_dtype):
                     raw_out = self.model(batch_data)
                     outputs = raw_out[0] if isinstance(raw_out, tuple) else raw_out
-                    loss    = self.criterion(outputs, batch_labels)
+                    if self.tta_flip and isinstance(batch_data, dict):
+                        flip_data = _spatial_flip_batch(batch_data)
+                        flip_raw = self.model(flip_data)
+                        flip_out = flip_raw[0] if isinstance(flip_raw, tuple) else flip_raw
+                        outputs = (outputs + flip_out) * 0.5
+                    loss = self.criterion(outputs, batch_labels)
             else:
                 raw_out = self.model(batch_data)
                 outputs = raw_out[0] if isinstance(raw_out, tuple) else raw_out
-                loss    = self.criterion(outputs, batch_labels)
+                if self.tta_flip and isinstance(batch_data, dict):
+                    flip_data = _spatial_flip_batch(batch_data)
+                    flip_raw = self.model(flip_data)
+                    flip_out = flip_raw[0] if isinstance(flip_raw, tuple) else flip_raw
+                    outputs = (outputs + flip_out) * 0.5
+                loss = self.criterion(outputs, batch_labels)
 
             if not torch.isfinite(loss):
                 val_nan_batches += 1

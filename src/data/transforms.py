@@ -8,6 +8,20 @@ import numpy as np
 import torch
 from typing import Callable, List
 
+# NTU RGB+D 25-joint left↔right symmetry pairs (0-indexed).
+# Used by spatial flip augmentation: swap each pair + negate x-axis.
+# Anatomy:
+#   4↔8  : L/R shoulder    5↔9  : L/R elbow    6↔10 : L/R wrist   7↔11 : L/R hand
+#   12↔16: L/R hip         13↔17: L/R knee     14↔18: L/R ankle   15↔19: L/R foot
+#   21↔23: L/R wrist-tip   22↔24: L/R thumb
+NTU_LR_PAIRS = [
+    (4, 8), (5, 9), (6, 10), (7, 11),
+    (12, 16), (13, 17), (14, 18), (15, 19),
+    (21, 23), (22, 24),
+]
+_NTU_L_IDX = torch.tensor([p[0] for p in NTU_LR_PAIRS])
+_NTU_R_IDX = torch.tensor([p[1] for p in NTU_LR_PAIRS])
+
 
 class Compose:
     """Compose multiple transforms together."""
@@ -410,6 +424,9 @@ class MIBTransform:
                          velocity std ≈ 0.02, so noise_std=0.01 → 50% SNR.
         temporal_flip_p: Probability of reversing frame order, default 0.0.
                          Keep at 0.0 for NTU60/120 — most actions are directional.
+        spatial_flip_p:  Probability of spatial left-right flip (negate x-axis +
+                         swap NTU L/R joint pairs), default 0.5.
+                         Doubles effective training diversity for symmetric actions.
         is_training:    If False, uses deterministic center-crop (no augmentation).
     """
 
@@ -428,6 +445,7 @@ class MIBTransform:
         shear_range: tuple = (-0.1, 0.1),
         noise_std = 0.01,
         temporal_flip_p: float = 0.0,
+        spatial_flip_p: float = 0.0,
         temporal_speed_p: float = 0.0,
         temporal_speed_range: tuple = (0.8, 1.2),
         joint_mask_ratio: float = 0.0,
@@ -447,6 +465,7 @@ class MIBTransform:
                               'bone': float(noise_std),
                               'bone_velocity': float(noise_std)}
         self.temporal_flip_p = temporal_flip_p
+        self.spatial_flip_p = spatial_flip_p
         self.temporal_speed_p = temporal_speed_p
         self.temporal_speed_range = tuple(temporal_speed_range)
         self.is_training = is_training
@@ -528,6 +547,26 @@ class MIBTransform:
     def _apply_flip(x: torch.Tensor) -> torch.Tensor:
         return x.flip(dims=[1])
 
+    @staticmethod
+    def _apply_spatial_flip(x: torch.Tensor) -> torch.Tensor:
+        """NTU RGB+D spatial left-right flip for a single sample.
+
+        Args:
+            x: (C, T, V, M) — C=3 (x,y,z channels)
+        Returns:
+            Flipped tensor with x-axis negated and L/R joint pairs swapped.
+        """
+        x = x.clone()
+        # Negate x-coordinate (channel 0)
+        x[0] = -x[0]
+        # Swap left↔right joint pairs
+        l = _NTU_L_IDX
+        r = _NTU_R_IDX
+        tmp = x[:, :, l, :].clone()
+        x[:, :, l, :] = x[:, :, r, :]
+        x[:, :, r, :] = tmp
+        return x
+
     # ------------------------------------------------------------------
 
     def __call__(self, streams: dict) -> dict:
@@ -543,10 +582,11 @@ class MIBTransform:
         """
         # ---- Sample shared random parameters ONCE ----
         if self.is_training:
-            angle   = float(np.random.uniform(self.rotation_range[0], self.rotation_range[1]))
-            scale   = float(np.random.uniform(self.scale_range[0], self.scale_range[1]))
-            shear   = float(np.random.uniform(self.shear_range[0], self.shear_range[1]))
-            do_flip = np.random.random() < self.temporal_flip_p
+            angle          = float(np.random.uniform(self.rotation_range[0], self.rotation_range[1]))
+            scale          = float(np.random.uniform(self.scale_range[0], self.scale_range[1]))
+            shear          = float(np.random.uniform(self.shear_range[0], self.shear_range[1]))
+            do_flip        = np.random.random() < self.temporal_flip_p
+            do_spatial_flip = np.random.random() < self.spatial_flip_p
             # Temporal speed: sample crop params once for all streams
             _T_ref  = next(iter(streams.values())).shape[1]
             speed_T_sub, speed_start = self._speed_aug.sample_params(_T_ref)
@@ -565,6 +605,8 @@ class MIBTransform:
                 x = self._apply_shear(x, shear)
                 if do_flip:
                     x = self._apply_flip(x)
+                if do_spatial_flip:
+                    x = self._apply_spatial_flip(x)
                 if do_speed:
                     x = RandomTemporalSpeed.apply(x, speed_T_sub, speed_start)
                 # Independent per-stream noise, scaled per-stream to maintain
@@ -647,6 +689,7 @@ def get_train_transform(config: dict):
                 shear_range=tuple(aug.get('shear_range', (-0.1, 0.1))),
                 noise_std=noise_std,
                 temporal_flip_p=aug.get('temporal_flip_p', 0.0),
+                spatial_flip_p=float(aug.get('spatial_flip_p', 0.0)),
                 temporal_speed_p=aug.get('temporal_speed_p', 0.0),
                 temporal_speed_range=tuple(aug.get('temporal_speed_range', (0.8, 1.2))),
                 joint_mask_ratio=float(aug.get('joint_mask_ratio', 0.0)),
