@@ -1,29 +1,29 @@
-# Lambda AI Environment — NVIDIA A10 (23GB) Instance
-# Run from: ~/research-last/LAST/
-# Data at:  ~/research-last/data/LAST-60-v2/data/processed_v2/xsub
+# Lambda AI Environment — NVIDIA A100 SXM4 (80GB) Instance
+# Run from: ~/LAST/
+# Data at:  /lambda/nfs/research-last/LAST-60/data/processed/xsub
+# GCS src:  gs://research-last/LAST-60/data/processed/xsub
 
 environment:
   name: "lambda"
   type: "cloud"
 
 paths:
-  # train.py builds: {data_base}/LAST-60-v2/data/processed_v2/{split_type}/
+  # train.py builds: {data_base}/LAST-60/data/processed/{split_type}/
   data_base:    "/lambda/nfs/research-last/data"
-  data_root:    "/lambda/nfs/research-last/data/LAST-60-v2/data/processed_v2/xsub"
+  data_root:    "/lambda/nfs/research-last/data/LAST-60/data/processed/xsub"
   output_root:  "/lambda/nfs/research-last/LAST-runs"
   checkpoints:  "/lambda/nfs/research-last/LAST-runs/checkpoints"
   logs:         "/lambda/nfs/research-last/LAST-runs/logs"
 
 hardware:
   device:          "cuda"
-  num_workers:     12       # 30 cores available; 12 keeps A10 fed, leaves room for OS
+  num_workers:     16       # A100 SXM4 instances have 48+ cores; 16 keeps GPU fed
   pin_memory:      true
-  prefetch_factor: 4        # Up from default 2; compensates for NFS read latency
-  amp_dtype:       "bfloat16"  # A10 native bf16 tensor cores; same exponent range as
-                                # float32 → eliminates fp16 overflow on velocity/bone spikes
+  prefetch_factor: 4
+  amp_dtype:       "bfloat16"  # A100 native bf16 tensor cores
 
 lambda_ai:
-  gpu:       "nvidia-a10"
-  memory_gb: 23
-  cpu_cores: 30
-  ram_gb:    222
+  gpu:       "nvidia-a100-sxm4"
+  memory_gb: 80
+  cpu_cores: 48
+  ram_gb:    400
