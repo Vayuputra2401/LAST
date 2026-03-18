@@ -173,6 +173,25 @@ ZERO_VARIANTS = {
         'use_efficient_block': True,
         'use_tla':             False,
     },
+    # nano_tiny_efficient: minimum viable depth — 1 block per stage (3 total).
+    # Same [32,64,128] width as nano_lite; isolates minimum depth question.
+    # Target: ~84–85% NTU-60 xsub. ~80K params.
+    'nano_tiny_efficient': {
+        'stem_channels':       24,
+        'channels':            [32, 64, 128],
+        'num_blocks':          [1, 1, 1],
+        'strides':             [1, 2, 2],
+        'drop_path_rate':      0.05,
+        'dropout':             0.10,
+        'tla_landmarks':       8,
+        'tla_reduce_ratio':    8,
+        'use_se':              False,
+        'use_k3_adj':          False,
+        'multi_gcn':           True,
+        'use_adyn':            False,
+        'use_efficient_block': True,
+        'use_tla':             False,
+    },
     # large_efficient: scaled-up EfficientZeroBlock + TLA at last stage.
     # Same block design as nano_efficient; only width, depth, and TLA differ.
     # Target: >88% NTU-60 xsub. ~800K params.

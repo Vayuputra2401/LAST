@@ -1,0 +1,10 @@
+model:
+  name: shiftfuse_zero_nano_tiny_efficient
+  variant: nano_tiny_efficient
+  num_classes: 60
+  use_se: false
+  use_k3_adj: false
+  multi_gcn: true
+  use_adyn: false
+  drop_path_rate: 0.05
+  dropout: 0.10

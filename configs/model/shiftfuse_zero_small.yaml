@@ -1,8 +1,0 @@
-model:
-  name: shiftfuse_zero_small
-  variant: small
-  num_classes: 60
-  use_se: true
-  drop_path_rate: 0.1
-  dropout: 0.1
-  use_k3_adj: true

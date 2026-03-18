@@ -1,8 +1,0 @@
-model:
-  name: shiftfuse_zero_nano
-  variant: nano
-  num_classes: 60
-  use_se: false
-  drop_path_rate: 0.05
-  dropout: 0.05
-  use_k3_adj: true

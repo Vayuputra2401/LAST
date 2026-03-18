@@ -23,7 +23,7 @@ hardware:
   amp_dtype:       "bfloat16"  # A100 native bf16 tensor cores
 
 lambda_ai:
-  gpu:       "nvidia-a100-sxm4"
-  memory_gb: 80
+  gpu:       "nvidia-a100-sxm4-40gb"
+  memory_gb: 40
   cpu_cores: 48
   ram_gb:    400

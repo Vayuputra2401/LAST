@@ -174,6 +174,7 @@ def main():
                             'shiftfuse_zero_large_late',
                             'shiftfuse_zero_nano_efficient',
                             'shiftfuse_zero_nano_lite_efficient',
+                            'shiftfuse_zero_nano_tiny_efficient',
                             'shiftfuse_zero_large_efficient',
                         ],
                         help='Model variant (default: shiftfuse_zero_nano)')
@@ -218,7 +219,7 @@ def main():
         _training_cfg_name = 'shiftfuse_zero_large'
     elif args.model == 'shiftfuse_zero_nano_efficient':
         _training_cfg_name = 'shiftfuse_zero_nano_efficient'
-    elif args.model == 'shiftfuse_zero_nano_lite_efficient':
+    elif args.model in ('shiftfuse_zero_nano_lite_efficient', 'shiftfuse_zero_nano_tiny_efficient'):
         _training_cfg_name = 'shiftfuse_zero_nano_efficient'  # reuse same training config
     elif args.model == 'shiftfuse_zero_large_efficient':
         _training_cfg_name = 'shiftfuse_zero_large_efficient'
