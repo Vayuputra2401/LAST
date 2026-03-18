@@ -173,6 +173,8 @@ def main():
                             'shiftfuse_zero_large',
                             'shiftfuse_zero_large_late',
                             'shiftfuse_zero_nano_efficient',
+                            'shiftfuse_zero_nano_lite_efficient',
+                            'shiftfuse_zero_large_efficient',
                         ],
                         help='Model variant (default: shiftfuse_zero_nano)')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
@@ -216,6 +218,10 @@ def main():
         _training_cfg_name = 'shiftfuse_zero_large'
     elif args.model == 'shiftfuse_zero_nano_efficient':
         _training_cfg_name = 'shiftfuse_zero_nano_efficient'
+    elif args.model == 'shiftfuse_zero_nano_lite_efficient':
+        _training_cfg_name = 'shiftfuse_zero_nano_efficient'  # reuse same training config
+    elif args.model == 'shiftfuse_zero_large_efficient':
+        _training_cfg_name = 'shiftfuse_zero_large_efficient'
     else:
         _training_cfg_name = 'shiftfuse_zero'
 

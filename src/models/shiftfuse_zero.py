@@ -136,7 +136,7 @@ ZERO_VARIANTS = {
     # nano_efficient: EfficientGCN-exact graph conv + DS-TCN + STC-Attention + our novelties.
     # K=3 fully learnable per-partition adjacency A_k = normalize(Ã_k + A_k_learned).
     # Channels=[32,64,128] — reduced to afford K=3 W_k via DS-TCN param savings.
-    # Target: 86–88% NTU-60 xsub. ~210K params.
+    # Target: 86–88% NTU-60 xsub. ~232K params. Validated: 84.82% at 100ep.
     'nano_efficient': {
         'stem_channels':       32,
         'channels':            [32, 64, 128],
@@ -146,11 +146,51 @@ ZERO_VARIANTS = {
         'dropout':             0.10,
         'tla_landmarks':       8,
         'tla_reduce_ratio':    8,
-        'use_se':              False,   # STC-Attention covers channel recalibration
+        'use_se':              False,
         'use_k3_adj':          False,
-        'multi_gcn':           True,    # K=3 per-partition W_k
+        'multi_gcn':           True,
         'use_adyn':            False,
-        'use_efficient_block': True,    # EfficientZeroBlock (DS-TCN + STC + learnable A_k)
+        'use_efficient_block': True,
+        'use_tla':             False,
+    },
+    # nano_lite_efficient: same EfficientZeroBlock, fewer blocks, smaller stem.
+    # Channels kept at [32,64,128] (width is critical for accuracy).
+    # Blocks cut to [1,2,1]=4 — reduces depth/compute while preserving representation.
+    # Target: >85% NTU-60 xsub. ~130K params.
+    'nano_lite_efficient': {
+        'stem_channels':       24,
+        'channels':            [32, 64, 128],
+        'num_blocks':          [1, 2, 1],
+        'strides':             [1, 2, 2],
+        'drop_path_rate':      0.05,
+        'dropout':             0.10,
+        'tla_landmarks':       8,
+        'tla_reduce_ratio':    8,
+        'use_se':              False,
+        'use_k3_adj':          False,
+        'multi_gcn':           True,
+        'use_adyn':            False,
+        'use_efficient_block': True,
+        'use_tla':             False,
+    },
+    # large_efficient: scaled-up EfficientZeroBlock + TLA at last stage.
+    # Same block design as nano_efficient; only width, depth, and TLA differ.
+    # Target: >88% NTU-60 xsub. ~800K params.
+    'large_efficient': {
+        'stem_channels':       64,
+        'channels':            [64, 128, 256],
+        'num_blocks':          [3, 4, 3],
+        'strides':             [1, 2, 2],
+        'drop_path_rate':      0.20,
+        'dropout':             0.10,
+        'tla_landmarks':       14,
+        'tla_reduce_ratio':    8,
+        'use_se':              False,
+        'use_k3_adj':          False,
+        'multi_gcn':           True,
+        'use_adyn':            False,
+        'use_efficient_block': True,
+        'use_tla':             True,    # TLA at last stage — temporal landmark attention
     },
 }
 
@@ -406,6 +446,7 @@ class EfficientZeroBlock(nn.Module):
         dropout:           float       = 0.1,
         num_joints:        int         = 25,
         stc_reduce_ratio:  int         = 4,
+        tla:               nn.Module   = None,
     ):
         super().__init__()
         self.K_gcn = len(A_gcn_partitions)
@@ -460,6 +501,9 @@ class EfficientZeroBlock(nn.Module):
 
         self.out_act = nn.Hardswish(inplace=True)
 
+        # ── Optional TLA (last block of last stage, large_efficient only) ────
+        self.tla = tla
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         res = x
 
@@ -496,7 +540,13 @@ class EfficientZeroBlock(nn.Module):
         x = self.drop_path(self.tcn(x))
 
         # ── Residual ─────────────────────────────────────────────────────────
-        return self.out_act(x + self.residual(res))
+        x = self.out_act(x + self.residual(res))
+
+        # ── TLA (large_efficient: last block of last stage only) ─────────────
+        if self.tla is not None:
+            x = self.tla(x)
+
+        return x
 
 
 # ---------------------------------------------------------------------------
@@ -555,6 +605,7 @@ class ShiftFuseZero(nn.Module):
         multi_gcn           = multi_gcn    if multi_gcn    is not None else cfg.get('multi_gcn', False)
         _use_adyn           = use_adyn     if use_adyn     is not None else cfg.get('use_adyn', False)
         use_efficient_block = cfg.get('use_efficient_block', False)
+        use_tla             = cfg.get('use_tla', False)
         K_adj               = 3 if use_k3_adj else 1
 
         self.variant      = variant
@@ -624,6 +675,11 @@ class ShiftFuseZero(nn.Module):
                 TemporalLandmarkAttention(stage_ch, tla_landmarks, tla_reduce)
                 if (is_last_stage and not use_efficient_block) else None
             )
+            # TLA for efficient blocks: only last stage, only when use_tla=True
+            stage_tla_eff = (
+                TemporalLandmarkAttention(stage_ch, tla_landmarks, tla_reduce)
+                if (is_last_stage and use_efficient_block and use_tla) else None
+            )
 
             A_learned_param = (
                 getattr(self, f'stage{stage_idx}_A_learned') if not multi_gcn else None
@@ -647,7 +703,7 @@ class ShiftFuseZero(nn.Module):
                         drop_path_rate   = dp_rate,
                         dropout          = _dropout,
                         num_joints       = num_joints,
-                        # JE is created internally per-block (in_channels sized)
+                        tla              = stage_tla_eff if (block_idx == n_blocks - 1) else None,
                     )
                 else:
                     block = ZeroGCNBlock(

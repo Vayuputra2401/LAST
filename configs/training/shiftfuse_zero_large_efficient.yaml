@@ -1,0 +1,60 @@
+training:
+  # Optimizer
+  optimizer: sgd
+  lr: 0.1
+  momentum: 0.9
+  nesterov: true
+  weight_decay: 0.0001  # EfficientGCN-exact
+
+  # Scheduler
+  scheduler: cosine_warmup
+  warmup_epochs: 10
+  warmup_start_lr: 0.005
+  min_lr: 0.00001  # lower floor for larger model — more fine-grained late-epoch tuning
+
+  # Duration — 400ep matches nano_efficient; large depth needs full budget
+  epochs: 400
+  batch_size: 64
+  gradient_accumulation_steps: 1
+
+  # Regularization
+  label_smoothing: 0.0
+  gradient_clip: 1.0
+
+  # Augmentation
+  mixup_alpha: 0.2   # more regularization for larger model
+  cutmix_prob: 0.5
+  cutmix_alpha: 1.0
+
+  # Input
+  input_frames: 64
+
+  # Precision
+  use_amp: true
+  use_compile: false
+
+  # DataLoader
+  num_workers: 4
+  pin_memory: true
+
+  # Logging
+  log_interval: 20
+  eval_interval: 1
+  save_interval: 5
+
+  # Reproducibility
+  seed: 42
+
+  # IB loss — disabled
+  ib_loss_weight: 0.0
+
+  # TTA: spatial flip — enable for final eval
+  tta_flip: false
+
+  # Knowledge distillation — disabled by default
+  use_kd: false
+  teacher_checkpoint: ""
+  teacher_variant: "large"
+  teacher_num_classes: 60
+  kd_weight: 0.5
+  kd_temperature: 4.0
