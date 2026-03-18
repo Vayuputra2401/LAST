@@ -9,8 +9,8 @@ environment:
 
 paths:
   # train.py builds: {data_base}/LAST-60/data/processed/{split_type}/
-  data_base:    "/lambda/nfs/research-last/data"
-  data_root:    "/lambda/nfs/research-last/data/LAST-60/data/processed/xsub"
+  data_base:    "/lambda/nfs/research-last/"
+  data_root:    "/lambda/nfs/research-last/LAST-60/data/processed/xsub"
   output_root:  "/lambda/nfs/research-last/LAST-runs"
   checkpoints:  "/lambda/nfs/research-last/LAST-runs/checkpoints"
   logs:         "/lambda/nfs/research-last/LAST-runs/logs"
