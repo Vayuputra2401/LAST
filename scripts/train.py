@@ -175,6 +175,7 @@ def main():
                             'shiftfuse_zero_nano_efficient',
                             'shiftfuse_zero_nano_lite_efficient',
                             'shiftfuse_zero_nano_tiny_efficient',
+                            'shiftfuse_zero_small_late_efficient',
                             'shiftfuse_zero_large_efficient',
                         ],
                         help='Model variant (default: shiftfuse_zero_nano)')
@@ -219,7 +220,8 @@ def main():
         _training_cfg_name = 'shiftfuse_zero_large'
     elif args.model == 'shiftfuse_zero_nano_efficient':
         _training_cfg_name = 'shiftfuse_zero_nano_efficient'
-    elif args.model in ('shiftfuse_zero_nano_lite_efficient', 'shiftfuse_zero_nano_tiny_efficient'):
+    elif args.model in ('shiftfuse_zero_nano_lite_efficient', 'shiftfuse_zero_nano_tiny_efficient',
+                        'shiftfuse_zero_small_late_efficient'):
         _training_cfg_name = 'shiftfuse_zero_nano_efficient'  # reuse same training config
     elif args.model == 'shiftfuse_zero_large_efficient':
         _training_cfg_name = 'shiftfuse_zero_large_efficient'
@@ -313,11 +315,12 @@ def main():
     num_classes = config['data']['dataset'].get('num_classes', 60 if args.dataset == 'ntu60' else 120)
     num_joints  = config['data']['dataset']['num_joints']
 
-    if args.model == 'shiftfuse_zero_large_late':
+    if args.model in ('shiftfuse_zero_large_late', 'shiftfuse_zero_small_late_efficient'):
         from src.models.shiftfuse_zero import build_shiftfuse_zero_late
-        print(f"\n  Creating ShiftFuse-Zero Late Fusion (large_late)...")
+        _bb_variant = 'small_late_efficient_bb' if args.model == 'shiftfuse_zero_small_late_efficient' else 'large_late'
+        print(f"\n  Creating ShiftFuse-Zero Late Fusion (variant={_bb_variant})...")
         model = build_shiftfuse_zero_late(
-            variant='large_late',
+            variant=_bb_variant,
             num_classes=num_classes,
             num_joints=num_joints,
             dropout=config['model'].get('dropout'),

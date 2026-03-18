@@ -173,6 +173,25 @@ ZERO_VARIANTS = {
         'use_efficient_block': True,
         'use_tla':             False,
     },
+    # small_late_efficient_bb: per-backbone config for ShiftFuseZeroLate (2-stream).
+    # Two of these form small_late_efficient: backbone_a (joint+vel), backbone_b (bone+bone_vel).
+    # Each backbone: nano_lite-scale EfficientZeroBlock. Total ~230K. Target: 88–90%.
+    'small_late_efficient_bb': {
+        'stem_channels':       24,
+        'channels':            [32, 64, 128],
+        'num_blocks':          [1, 2, 1],
+        'strides':             [1, 2, 2],
+        'drop_path_rate':      0.05,
+        'dropout':             0.10,
+        'tla_landmarks':       8,
+        'tla_reduce_ratio':    8,
+        'use_se':              False,
+        'use_k3_adj':          False,
+        'multi_gcn':           True,
+        'use_adyn':            False,
+        'use_efficient_block': True,
+        'use_tla':             False,
+    },
     # nano_tiny_efficient: minimum viable depth — 1 block per stage (3 total).
     # Same [32,64,128] width as nano_lite; isolates minimum depth question.
     # Target: ~84–85% NTU-60 xsub. ~80K params.
