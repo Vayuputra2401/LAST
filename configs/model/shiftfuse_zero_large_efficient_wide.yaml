@@ -1,0 +1,10 @@
+model:
+  name: shiftfuse_zero_large_efficient_wide
+  variant: large_efficient_wide
+  num_classes: 60
+  use_se: false
+  use_k3_adj: false
+  multi_gcn: true
+  use_adyn: false
+  drop_path_rate: 0.20
+  dropout: 0.10

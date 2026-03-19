@@ -192,6 +192,26 @@ ZERO_VARIANTS = {
         'use_efficient_block': True,
         'use_tla':             False,
     },
+    # large_efficient_wide: width-depth trade at large scale.
+    # Same param budget as large_efficient (~1.2M) but redistributed to width.
+    # Hypothesis: width >> depth pattern from nano scale holds here too.
+    # Target: 90%+ NTU-60 xsub.
+    'large_efficient_wide': {
+        'stem_channels':       64,
+        'channels':            [96, 192, 384],
+        'num_blocks':          [1, 2, 1],
+        'strides':             [1, 2, 2],
+        'drop_path_rate':      0.20,
+        'dropout':             0.10,
+        'tla_landmarks':       14,
+        'tla_reduce_ratio':    8,
+        'use_se':              False,
+        'use_k3_adj':          False,
+        'multi_gcn':           True,
+        'use_adyn':            False,
+        'use_efficient_block': True,
+        'use_tla':             True,
+    },
     # nano_tiny_efficient: minimum viable depth — 1 block per stage (3 total).
     # Same [32,64,128] width as nano_lite; isolates minimum depth question.
     # Target: ~84–85% NTU-60 xsub. ~80K params.
