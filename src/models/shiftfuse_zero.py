@@ -22,6 +22,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .blocks.stream_fusion_concat import StreamFusionConcat
+from .blocks.cross_stream_fusion import CrossStreamFusion
 from .blocks.body_region_shift import BodyRegionShift
 from .blocks.sgp_shift import SGPShift
 from .blocks.light_gcn import MultiScaleTCN
@@ -133,25 +134,25 @@ ZERO_VARIANTS = {
         'use_adyn':         True,
         'use_efficient_block': False,
     },
-    # nano_efficient: EfficientGCN-exact graph conv + DS-TCN + STC-Attention + our novelties.
-    # K=3 fully learnable per-partition adjacency A_k = normalize(Ã_k + A_k_learned).
-    # Channels=[32,64,128] — reduced to afford K=3 W_k via DS-TCN param savings.
-    # Target: 86–88% NTU-60 xsub. ~232K params. Validated: 84.82% at 100ep.
-    'nano_efficient': {
+    # large_late_efficient_bb: per-backbone config for ShiftFuseZeroLate4 (1-stream each).
+    # Four of these form large_late_efficient: one dedicated backbone per stream.
+    # Full per-stream specialisation — no inter-stream competition anywhere.
+    # Total ~1M params. Target: 91–92% NTU-60 xsub.
+    'large_late_efficient_bb': {
         'stem_channels':       32,
-        'channels':            [32, 64, 128],
-        'num_blocks':          [2, 3, 2],
+        'channels':            [48, 96, 192],
+        'num_blocks':          [1, 2, 1],
         'strides':             [1, 2, 2],
         'drop_path_rate':      0.10,
         'dropout':             0.10,
-        'tla_landmarks':       8,
+        'tla_landmarks':       14,
         'tla_reduce_ratio':    8,
         'use_se':              False,
         'use_k3_adj':          False,
         'multi_gcn':           True,
         'use_adyn':            False,
         'use_efficient_block': True,
-        'use_tla':             False,
+        'use_tla':             True,
     },
     # nano_lite_efficient: same EfficientZeroBlock, fewer blocks, smaller stem.
     # Channels kept at [32,64,128] (width is critical for accuracy).
@@ -172,6 +173,25 @@ ZERO_VARIANTS = {
         'use_adyn':            False,
         'use_efficient_block': True,
         'use_tla':             False,
+    },
+    # medium_late_efficient_bb: per-backbone config for ShiftFuseZeroLate (2-stream).
+    # Wider than small_late_efficient_bb: [48,96,192] channels + TLA with learnable anchors.
+    # Two of these form medium_late_efficient. Total ~530K. Target: 89.5–90.5%.
+    'medium_late_efficient_bb': {
+        'stem_channels':       32,
+        'channels':            [48, 96, 192],
+        'num_blocks':          [1, 2, 1],
+        'strides':             [1, 2, 2],
+        'drop_path_rate':      0.10,
+        'dropout':             0.10,
+        'tla_landmarks':       14,
+        'tla_reduce_ratio':    8,
+        'use_se':              False,
+        'use_k3_adj':          False,
+        'multi_gcn':           True,
+        'use_adyn':            False,
+        'use_efficient_block': True,
+        'use_tla':             True,
     },
     # small_late_efficient_bb: per-backbone config for ShiftFuseZeroLate (2-stream).
     # Two of these form small_late_efficient: backbone_a (joint+vel), backbone_b (bone+bone_vel).
@@ -797,10 +817,14 @@ class ShiftFuseZero(nn.Module):
             nn.Linear(final_ch, num_classes),
         )
 
-    def forward(self, stream_dict: dict) -> torch.Tensor:
-        # Unpack streams — batch-double for M=2 (both bodies processed independently)
-        # (B, C, T, V, 2) → cat([body0, body1], dim=0) → (2B, C, T, V)
-        # Predictions averaged at the end: recovers ~2-3pp on interaction classes.
+    def extract_features(self, stream_dict: dict):
+        """Run stream fusion + all backbone stages.
+
+        Returns:
+            feat:       (2B or B, C, T', V) — pre-pooling feature map.
+            B:          Original batch size.
+            multi_body: Whether M=2 body doubling was applied.
+        """
         streams = []
         B = None
         multi_body = False
@@ -816,47 +840,50 @@ class ShiftFuseZero(nn.Module):
                     B = s.shape[0]
             streams.append(s)
 
-        # Early fusion
         x = self.fusion(streams)
-
-        # Backbone
         for stage_blocks in self.stages:
             for block in stage_blocks:
                 x = block(x)
+        return x, B, multi_body
 
-        # Gated GAP+GMP pooling
+    def classify(self, x: torch.Tensor, B: int, multi_body: bool) -> torch.Tensor:
+        """Gated GAP+GMP pool → classifier → body average.
+
+        Args:
+            x:          (2B or B, C, T', V) feature map.
+            B:          Original batch size.
+            multi_body: Whether to average body-0 and body-1 logits.
+        Returns:
+            out: (B, num_classes) logits.
+        """
         x   = x.mean(dim=2)                   # (2B or B, C, V)
         gap = x.mean(dim=-1)                   # (2B or B, C)
         gmp = x.max(dim=-1).values             # (2B or B, C)
         g   = torch.sigmoid(self.pool_gate)
         x   = g * gap + (1 - g) * gmp         # (2B or B, C)
-
         out = self.classifier(x)
-
-        # Average body-0 and body-1 logits → (B, num_classes)
         if multi_body:
             out = (out[:B] + out[B:]) / 2
-
         return out
+
+    def forward(self, stream_dict: dict) -> torch.Tensor:
+        x, B, multi_body = self.extract_features(stream_dict)
+        return self.classify(x, B, multi_body)
 
 
 # ---------------------------------------------------------------------------
 # ShiftFuseZeroLate  (2-backbone late fusion)
 # ---------------------------------------------------------------------------
 class ShiftFuseZeroLate(nn.Module):
-    """Late-fusion ShiftFuse-Zero.
+    """2-backbone late-fusion ShiftFuse-Zero.
 
-    Two independent sub-backbones, each specialising on its stream pair:
-      Backbone A: joint + velocity  → logits_A
-      Backbone B: bone  + bone_vel  → logits_B
-      Final: (logits_A + logits_B) / 2
+    Backbone A: joint + velocity  → logits_A
+    Backbone B: bone  + bone_vel  → logits_B
+    Final: (logits_A + logits_B) / 2
 
-    large_late sub-backbone: per-partition GCN (W_intra+W_inter+W_cross) +
-    A_dynamic per-sample cosine adjacency + SE. ~680K total. Targeting 90-92%.
-
-    Stream specialisation recovers ~2-3pp over single-backbone early fusion.
-    Variance normalisation (y/K_gcn) in multi_gcn path prevents the slow-start
-    convergence issue seen in earlier late-fusion experiments.
+    Optional cross_stream=True: after backbone stages, each backbone's features
+    receive a gated bottleneck contribution from the other stream before pooling.
+    Adds ~37K params (C=192). Enables cross-stream context without full early fusion.
     """
 
     def __init__(
@@ -868,6 +895,7 @@ class ShiftFuseZeroLate(nn.Module):
         num_joints:   int   = 25,
         dropout:      float = None,
         use_se:       bool  = None,
+        cross_stream: bool  = False,
     ):
         super().__init__()
 
@@ -878,25 +906,76 @@ class ShiftFuseZeroLate(nn.Module):
             graph_layout = graph_layout,
             num_joints   = num_joints,
             dropout      = dropout,
-            use_se       = use_se,   # None → ShiftFuseZero reads from variant cfg
-            use_k3_adj   = False,    # replaced by multi_gcn structural partitions
+            use_se       = use_se,
+            use_k3_adj   = False,
             num_streams  = 2,
             multi_gcn    = True,
         )
 
         self.backbone_a = ShiftFuseZero(
-            **shared_kwargs,
-            stream_names=['joint', 'velocity'],
+            **shared_kwargs, stream_names=['joint', 'velocity'],
         )
         self.backbone_b = ShiftFuseZero(
-            **shared_kwargs,
-            stream_names=['bone', 'bone_velocity'],
+            **shared_kwargs, stream_names=['bone', 'bone_velocity'],
         )
 
+        self.cross_fusion = None
+        if cross_stream:
+            final_ch = ZERO_VARIANTS[variant]['channels'][-1]
+            self.cross_fusion = CrossStreamFusion(final_ch)
+
     def forward(self, stream_dict: dict) -> torch.Tensor:
-        logits_a = self.backbone_a(stream_dict)
-        logits_b = self.backbone_b(stream_dict)
+        if self.cross_fusion is not None:
+            feat_a, B_a, mb_a = self.backbone_a.extract_features(stream_dict)
+            feat_b, B_b, mb_b = self.backbone_b.extract_features(stream_dict)
+            feat_a, feat_b    = self.cross_fusion(feat_a, feat_b)
+            logits_a = self.backbone_a.classify(feat_a, B_a, mb_a)
+            logits_b = self.backbone_b.classify(feat_b, B_b, mb_b)
+        else:
+            logits_a = self.backbone_a(stream_dict)
+            logits_b = self.backbone_b(stream_dict)
         return (logits_a + logits_b) / 2
+
+
+class ShiftFuseZeroLate4(nn.Module):
+    """4-backbone late-fusion — one dedicated backbone per stream.
+
+    Each stream (joint, velocity, bone, bone_velocity) gets its own independent
+    EfficientZeroBlock backbone. Full per-stream specialisation — no inter-stream
+    competition at any point. Logits averaged at end.
+
+    large_late_efficient: 4 × large_late_efficient_bb (~252K each) ≈ 1M total.
+    Target: 91–92% NTU-60 xsub.
+    """
+
+    def __init__(
+        self,
+        num_classes:  int   = 60,
+        variant:      str   = 'large_late_efficient_bb',
+        in_channels:  int   = 3,
+        graph_layout: str   = 'ntu-rgb+d',
+        num_joints:   int   = 25,
+        dropout:      float = None,
+    ):
+        super().__init__()
+        _streams = ['joint', 'velocity', 'bone', 'bone_velocity']
+        self.backbones = nn.ModuleList([
+            ShiftFuseZero(
+                num_classes  = num_classes,
+                variant      = variant,
+                in_channels  = in_channels,
+                graph_layout = graph_layout,
+                num_joints   = num_joints,
+                dropout      = dropout,
+                num_streams  = 1,
+                stream_names = [s],
+            )
+            for s in _streams
+        ])
+
+    def forward(self, stream_dict: dict) -> torch.Tensor:
+        out = sum(bb(stream_dict) for bb in self.backbones)
+        return out / len(self.backbones)
 
 
 # ---------------------------------------------------------------------------
@@ -908,5 +987,10 @@ def build_shiftfuse_zero(variant: str = 'nano', num_classes: int = 60, **kwargs)
 
 
 def build_shiftfuse_zero_late(variant: str = 'large_late', num_classes: int = 60, **kwargs) -> ShiftFuseZeroLate:
-    """Build large_late (2-backbone late fusion) ShiftFuse-Zero."""
+    """Build 2-backbone late fusion ShiftFuse-Zero."""
     return ShiftFuseZeroLate(num_classes=num_classes, variant=variant, **kwargs)
+
+
+def build_shiftfuse_zero_late4(variant: str = 'large_late_efficient_bb', num_classes: int = 60, **kwargs) -> ShiftFuseZeroLate4:
+    """Build 4-backbone late fusion (one backbone per stream) ShiftFuse-Zero."""
+    return ShiftFuseZeroLate4(num_classes=num_classes, variant=variant, **kwargs)

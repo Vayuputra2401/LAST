@@ -172,12 +172,13 @@ def main():
                             'shiftfuse_zero_small',
                             'shiftfuse_zero_large',
                             'shiftfuse_zero_large_late',
-                            'shiftfuse_zero_nano_efficient',
                             'shiftfuse_zero_nano_lite_efficient',
                             'shiftfuse_zero_nano_tiny_efficient',
                             'shiftfuse_zero_small_late_efficient',
+                            'shiftfuse_zero_medium_late_efficient',
                             'shiftfuse_zero_large_efficient',
                             'shiftfuse_zero_large_efficient_wide',
+                            'shiftfuse_zero_large_late_efficient',
                         ],
                         help='Model variant (default: shiftfuse_zero_nano)')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
@@ -222,9 +223,10 @@ def main():
     elif args.model == 'shiftfuse_zero_nano_efficient':
         _training_cfg_name = 'shiftfuse_zero_nano_efficient'
     elif args.model in ('shiftfuse_zero_nano_lite_efficient', 'shiftfuse_zero_nano_tiny_efficient',
-                        'shiftfuse_zero_small_late_efficient'):
+                        'shiftfuse_zero_small_late_efficient', 'shiftfuse_zero_medium_late_efficient'):
         _training_cfg_name = 'shiftfuse_zero_nano_efficient'  # reuse same training config
-    elif args.model in ('shiftfuse_zero_large_efficient', 'shiftfuse_zero_large_efficient_wide'):
+    elif args.model in ('shiftfuse_zero_large_efficient', 'shiftfuse_zero_large_efficient_wide',
+                        'shiftfuse_zero_large_late_efficient'):
         _training_cfg_name = 'shiftfuse_zero_large_efficient'
     else:
         _training_cfg_name = 'shiftfuse_zero'
@@ -316,16 +318,31 @@ def main():
     num_classes = config['data']['dataset'].get('num_classes', 60 if args.dataset == 'ntu60' else 120)
     num_joints  = config['data']['dataset']['num_joints']
 
-    if args.model in ('shiftfuse_zero_large_late', 'shiftfuse_zero_small_late_efficient'):
+    if args.model == 'shiftfuse_zero_large_late_efficient':
+        from src.models.shiftfuse_zero import build_shiftfuse_zero_late4
+        print(f"\n  Creating ShiftFuse-Zero 4-Backbone Late Fusion (large_late_efficient)...")
+        model = build_shiftfuse_zero_late4(
+            variant='large_late_efficient_bb',
+            num_classes=num_classes,
+            num_joints=num_joints,
+            dropout=config['model'].get('dropout'),
+        )
+    elif args.model in ('shiftfuse_zero_large_late', 'shiftfuse_zero_small_late_efficient',
+                        'shiftfuse_zero_medium_late_efficient'):
         from src.models.shiftfuse_zero import build_shiftfuse_zero_late
-        _bb_variant = 'small_late_efficient_bb' if args.model == 'shiftfuse_zero_small_late_efficient' else 'large_late'
-        print(f"\n  Creating ShiftFuse-Zero Late Fusion (variant={_bb_variant})...")
+        _bb_variant = {
+            'shiftfuse_zero_small_late_efficient':  'small_late_efficient_bb',
+            'shiftfuse_zero_medium_late_efficient': 'medium_late_efficient_bb',
+        }.get(args.model, 'large_late')
+        _cross = (args.model == 'shiftfuse_zero_medium_late_efficient')
+        print(f"\n  Creating ShiftFuse-Zero Late Fusion (variant={_bb_variant}, cross_stream={_cross})...")
         model = build_shiftfuse_zero_late(
             variant=_bb_variant,
             num_classes=num_classes,
             num_joints=num_joints,
             dropout=config['model'].get('dropout'),
             use_se=config['model'].get('use_se', None),
+            cross_stream=_cross,
         )
     else:
         variant = args.model.replace('shiftfuse_zero_', '')

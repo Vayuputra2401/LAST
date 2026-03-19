@@ -2,19 +2,23 @@
 TemporalLandmarkAttention (TLA) — Efficient O(T×K) temporal attention.
 
 Replaces both MultiScaleTSM (zero learning) and full T×T LightweightTemporalAttention
-(O(T²) compute) with a learned, O(T×K) attention over K uniformly-spaced landmark frames.
+(O(T²) compute) with a learned, O(T×K) attention over K landmark frames.
+
+Two anchor modes:
+  fixed (default):    K uniformly-spaced frame indices — fast, no extra params.
+  learnable:          K scalars (sigmoid → [0,1] → ×(T-1)) learned via bilinear
+                      interpolation — model discovers discriminative frame positions.
+                      Only K extra no-decay params (anchor_logits).
 
 Design rationale:
   - TSM shifts channels by fixed ±2, ±4 — no learning, identical for all actions.
   - Full T×T attention: 64×64=4096 dot-products per head per block — expensive.
-  - T×K with K=14: 64×14=896 dot-products — 4.6× cheaper than T², still global temporal reach.
-    Each of T frames attends to 14 landmark frames spread across the sequence (~4.5-frame gaps).
-    Forces the model to summarise via temporal landmarks (phase structure of actions).
+  - T×K with K=14: 64×14=896 dot-products — 4.6× cheaper than T², still global reach.
 
 Forward:
   x (B, C, T, V)
     → pool over V → (B, T, C)
-    → extract K landmark frames: x_l (B, K, C) [uniformly spaced]
+    → extract/interpolate K landmark frames: x_l (B, K, C)
     → Q = Linear(C → d_k)(all T frames)     (B, T, d_k)
     → K = Linear(C → d_k)(landmarks)        (B, K, d_k)
     → V = Linear(C → d_k)(landmarks)        (B, K, d_k)
@@ -23,12 +27,9 @@ Forward:
     → gate × out.unsqueeze(-1) added back to x (B, C, T, V)
 
 Params (d_k = max(4, C//reduce_ratio), default reduce_ratio=8):
-  4 × C × d_k + 1  (Q/K/V/proj Linears + gate scalar)
-  Example C=128, d_k=16: 4×128×16 + 1 = 8,193 params
-  vs full attention at same d_k: same params, 8× less compute
-
-Reference: Longformer (Beltagy et al., 2020) — local+global attention;
-  adapted here as landmark-only global attention for skeleton sequences.
+  4 × C × d_k + 1          (Q/K/V/proj + gate)         — always
+  + K                       (anchor_logits, no-decay)   — learnable mode only
+  Example C=192, d_k=24: 4×192×24 + 1 = 18,433 params
 """
 
 import torch
@@ -37,27 +38,66 @@ import torch.nn.functional as F
 
 
 class TemporalLandmarkAttention(nn.Module):
-    """O(T×K) temporal attention over K uniformly-spaced landmark frames.
+    """O(T×K) temporal attention over K landmark frames.
 
     Args:
-        channels:       C — input/output channels.
-        num_landmarks:  K — number of landmark frames (default 8).
-        reduce_ratio:   r — channel reduction for Q/K/V (default 8 → d_k=C//8).
+        channels:          C — input/output channels.
+        num_landmarks:     K — number of landmark frames (default 14).
+        reduce_ratio:      r — channel reduction for Q/K/V (default 8 → d_k=C//8).
+        learnable_anchors: If True, K anchor positions are learned via bilinear
+                           interpolation instead of fixed uniform spacing.
     """
 
-    def __init__(self, channels: int, num_landmarks: int = 14, reduce_ratio: int = 8):
+    def __init__(
+        self,
+        channels:          int  = 128,
+        num_landmarks:     int  = 14,
+        reduce_ratio:      int  = 8,
+        learnable_anchors: bool = True,
+    ):
         super().__init__()
-        self.K   = num_landmarks
-        self.d_k = max(4, channels // reduce_ratio)
+        self.K                 = num_landmarks
+        self.d_k               = max(4, channels // reduce_ratio)
+        self.learnable_anchors = learnable_anchors
 
         self.q_proj   = nn.Linear(channels, self.d_k, bias=False)
         self.k_proj   = nn.Linear(channels, self.d_k, bias=False)
         self.v_proj   = nn.Linear(channels, self.d_k, bias=False)
         self.out_proj = nn.Linear(self.d_k, channels, bias=False)
 
-        # Gate: sigmoid(0) = 0.5 → attention active at 50% from epoch 1.
+        # Gate: sigmoid(0) = 0.5 → active at 50% from epoch 1.
         # Excluded from weight decay via '.gate' in name (trainer.py no_decay).
         self.gate = nn.Parameter(torch.zeros(1))
+
+        if learnable_anchors:
+            # K scalars initialised to uniform spacing in logit space.
+            # sigmoid(logits) × (T-1) → frame positions learned end-to-end.
+            # Excluded from weight decay via 'anchor_logits' in name.
+            uniform = torch.linspace(0.05, 0.95, num_landmarks)
+            # inverse sigmoid so initial positions ≈ uniform after sigmoid
+            self.anchor_logits = nn.Parameter(torch.log(uniform / (1 - uniform)))
+
+    def _get_landmarks(self, x_t: torch.Tensor, T: int) -> torch.Tensor:
+        """Extract K landmark frames from (B, T, C) sequence.
+
+        Fixed mode:     integer index slicing — O(1), no grad through positions.
+        Learnable mode: bilinear interpolation — differentiable anchor positions.
+        """
+        if not self.learnable_anchors:
+            stride  = max(1, T // self.K)
+            indices = list(range(0, T, stride))[: self.K]
+            return x_t[:, indices, :]                        # (B, K, C)
+
+        # Learnable: sigmoid → [0,1] → continuous positions in [0, T-1]
+        pos       = torch.sigmoid(self.anchor_logits) * (T - 1)   # (K,)
+        floor_idx = pos.long().clamp(0, T - 2)                     # (K,)
+        ceil_idx  = (floor_idx + 1).clamp(0, T - 1)               # (K,)
+        frac      = (pos - floor_idx.float()).unsqueeze(0)         # (1, K)
+
+        # Bilinear interpolation: differentiable, gradients flow to anchor_logits
+        x_floor = x_t[:, floor_idx, :]    # (B, K, C)
+        x_ceil  = x_t[:, ceil_idx,  :]    # (B, K, C)
+        return x_floor + frac.unsqueeze(-1) * (x_ceil - x_floor)  # (B, K, C)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -69,27 +109,25 @@ class TemporalLandmarkAttention(nn.Module):
         B, C, T, V = x.shape
 
         # Pool spatial dim → temporal sequence
-        x_t = x.mean(dim=-1).permute(0, 2, 1)   # (B, T, C)
+        x_t  = x.mean(dim=-1).permute(0, 2, 1)     # (B, T, C)
 
-        # Uniformly-spaced landmark indices
-        stride   = max(1, T // self.K)
-        indices  = list(range(0, T, stride))[: self.K]
-        x_land   = x_t[:, indices, :]            # (B, K, C)
+        # Landmark frames
+        x_land = self._get_landmarks(x_t, T)        # (B, K, C)
 
-        # Projections — float32 for softmax stability under AMP float16
-        q  = self.q_proj(x_t.float())            # (B, T, d_k)
-        k  = self.k_proj(x_land.float())         # (B, K, d_k)
-        v  = self.v_proj(x_land.float())         # (B, K, d_k)
+        # Projections — float32 for softmax stability under AMP bfloat16/float16
+        q = self.q_proj(x_t.float())                # (B, T, d_k)
+        k = self.k_proj(x_land.float())             # (B, K, d_k)
+        v = self.v_proj(x_land.float())             # (B, K, d_k)
 
-        # T × K attention — kept in float32 throughout to avoid float16 bmm overflow
+        # T × K attention
         scale = self.d_k ** 0.5
         attn  = torch.bmm(q, k.transpose(1, 2)) / scale   # (B, T, K) float32
-        attn  = F.softmax(attn, dim=-1)                    # (B, T, K) float32
+        attn  = F.softmax(attn, dim=-1)
 
         # Weighted combination of landmark features
-        out = torch.bmm(attn, v)                           # (B, T, d_k) float32
-        out = self.out_proj(out).to(x.dtype)               # (B, T, C) → cast at end
+        out = torch.bmm(attn, v)                           # (B, T, d_k)
+        out = self.out_proj(out).to(x.dtype)               # (B, T, C)
 
-        # Gated residual: broadcasts (B, C, T, 1) over V
+        # Gated residual: broadcasts over V
         out = out.permute(0, 2, 1).unsqueeze(-1)           # (B, C, T, 1)
         return x + torch.sigmoid(self.gate) * out

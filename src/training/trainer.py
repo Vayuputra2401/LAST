@@ -203,6 +203,7 @@ class Trainer:
                 or 'gcn_scale' in name       # per-block GCN output scale (shared GCN guard, v10)
                 or 'block_adj' in name       # per-block spatial adjacency matrix (ShiftFuse-Zero)
                 or 'A_k_learned' in name     # global learnable A_k residuals (nano_efficient)
+                or 'anchor_logits' in name   # TLA learnable temporal anchor positions
             ):
                 no_decay.append(param)
             else:
