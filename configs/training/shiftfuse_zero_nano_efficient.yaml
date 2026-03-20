@@ -12,9 +12,9 @@ training:
   warmup_start_lr: 0.005
   min_lr: 0.0001
 
-  # Duration — 400ep: STC residual gate fix removes ~80ep dead zone; remaining
-  # complexity (DS-TCN DW sparsity + K=3 W_k + per-block A_k_learned) adds ~40ep vs nano
-  epochs: 400
+  # Duration — 300ep: validated for nano (peaked ep288); small (267K) converges
+  # slightly faster than nano but Mixup α=0.1 keeps late-epoch gains — 300 is safe ceiling
+  epochs: 300
   batch_size: 64
   gradient_accumulation_steps: 1
 

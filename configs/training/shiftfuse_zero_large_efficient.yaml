@@ -12,18 +12,20 @@ training:
   warmup_start_lr: 0.005
   min_lr: 0.00001  # lower floor for larger model — more fine-grained late-epoch tuning
 
-  # Duration — 400ep matches nano_efficient; large depth needs full budget
-  epochs: 400
+  # Duration — 150ep: 1.1M params converges 2-3x faster than nano/small;
+  # Mixup/CutMix justifies ~2x B4's 70ep; cosine LR essentially flat by ep200+
+  epochs: 150
   batch_size: 64
   gradient_accumulation_steps: 1
 
   # Regularization
-  label_smoothing: 0.0
+  label_smoothing: 0.1  # lightweight soft targets — sufficient alongside drop_path=0.20
   gradient_clip: 1.0
 
-  # Augmentation
-  mixup_alpha: 0.2   # more regularization for larger model
-  cutmix_prob: 0.5
+  # Augmentation — keep light: DropPath 0.20 + WD is already adequate for 1.1M params
+  # B4 used NO Mixup/CutMix and hit 92.1% in 70ep; heavy aug just slows 150ep budget
+  mixup_alpha: 0.0
+  cutmix_prob: 0.0
   cutmix_alpha: 1.0
 
   # Input
