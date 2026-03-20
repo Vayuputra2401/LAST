@@ -1,10 +1,6 @@
 model:
   name: shiftfuse_zero_large_late_efficient
-  variant: large_late_efficient_bb
+  variant: large_efficient_3s
   num_classes: 60
-  use_se: false
-  use_k3_adj: false
-  multi_gcn: true
-  use_adyn: false
-  drop_path_rate: 0.10
+  drop_path_rate: 0.20
   dropout: 0.10

@@ -166,21 +166,13 @@ def _run_checkpoint_averaging(model, val_loader, run_dir, n_checkpoints, device)
 
 def main():
     parser = argparse.ArgumentParser(description='Train ShiftFuse-Zero model')
-    parser.add_argument('--model', type=str, default='shiftfuse_zero_nano',
+    parser.add_argument('--model', type=str, default='shiftfuse_zero_nano_tiny_efficient',
                         choices=[
-                            'shiftfuse_zero_nano',
-                            'shiftfuse_zero_small',
-                            'shiftfuse_zero_large',
-                            'shiftfuse_zero_large_late',
-                            'shiftfuse_zero_nano_lite_efficient',
                             'shiftfuse_zero_nano_tiny_efficient',
                             'shiftfuse_zero_small_late_efficient',
-                            'shiftfuse_zero_medium_late_efficient',
-                            'shiftfuse_zero_large_efficient',
-                            'shiftfuse_zero_large_efficient_wide',
                             'shiftfuse_zero_large_late_efficient',
                         ],
-                        help='Model variant (default: shiftfuse_zero_nano)')
+                        help='Model variant')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
                         help='Dataset (default: ntu60)')
     parser.add_argument('--split_type', type=str, default='xsub', choices=['xsub', 'xview', 'xset'],
@@ -218,18 +210,10 @@ def main():
     args = parser.parse_args()
 
     # ── 1. Load & merge config ──────────────────────────────────────────
-    if args.model in ('shiftfuse_zero_large', 'shiftfuse_zero_large_late'):
-        _training_cfg_name = 'shiftfuse_zero_large'
-    elif args.model == 'shiftfuse_zero_nano_efficient':
-        _training_cfg_name = 'shiftfuse_zero_nano_efficient'
-    elif args.model in ('shiftfuse_zero_nano_lite_efficient', 'shiftfuse_zero_nano_tiny_efficient',
-                        'shiftfuse_zero_small_late_efficient', 'shiftfuse_zero_medium_late_efficient'):
-        _training_cfg_name = 'shiftfuse_zero_nano_efficient'  # reuse same training config
-    elif args.model in ('shiftfuse_zero_large_efficient', 'shiftfuse_zero_large_efficient_wide',
-                        'shiftfuse_zero_large_late_efficient'):
+    if args.model == 'shiftfuse_zero_large_late_efficient':
         _training_cfg_name = 'shiftfuse_zero_large_efficient'
     else:
-        _training_cfg_name = 'shiftfuse_zero'
+        _training_cfg_name = 'shiftfuse_zero_nano_efficient'
 
     training_config_path = os.path.join(
         os.path.dirname(__file__), '..', 'configs', 'training', f'{_training_cfg_name}.yaml'
@@ -319,43 +303,31 @@ def main():
     num_joints  = config['data']['dataset']['num_joints']
 
     if args.model == 'shiftfuse_zero_large_late_efficient':
-        from src.models.shiftfuse_zero import build_shiftfuse_zero_late4
-        print(f"\n  Creating ShiftFuse-Zero 4-Backbone Late Fusion (large_late_efficient)...")
-        model = build_shiftfuse_zero_late4(
-            variant='large_late_efficient_bb',
+        from src.models.shiftfuse_zero import build_shiftfuse_zero_midfusion
+        print(f"\n  Creating ShiftFuse-Zero MidFusion (B4-style, 3-stream, ~1.09M)...")
+        model = build_shiftfuse_zero_midfusion(
             num_classes=num_classes,
             num_joints=num_joints,
             dropout=config['model'].get('dropout'),
         )
-    elif args.model in ('shiftfuse_zero_large_late', 'shiftfuse_zero_small_late_efficient',
-                        'shiftfuse_zero_medium_late_efficient'):
+    elif args.model == 'shiftfuse_zero_small_late_efficient':
         from src.models.shiftfuse_zero import build_shiftfuse_zero_late
-        _bb_variant = {
-            'shiftfuse_zero_small_late_efficient':  'small_late_efficient_bb',
-            'shiftfuse_zero_medium_late_efficient': 'medium_late_efficient_bb',
-        }.get(args.model, 'large_late')
-        _cross = (args.model == 'shiftfuse_zero_medium_late_efficient')
-        print(f"\n  Creating ShiftFuse-Zero Late Fusion (variant={_bb_variant}, cross_stream={_cross})...")
+        print(f"\n  Creating ShiftFuse-Zero 2-Backbone Late Fusion (small_late_efficient, cross_stream=True)...")
         model = build_shiftfuse_zero_late(
-            variant=_bb_variant,
+            variant='small_late_efficient_bb',
             num_classes=num_classes,
             num_joints=num_joints,
             dropout=config['model'].get('dropout'),
-            use_se=config['model'].get('use_se', None),
-            cross_stream=_cross,
+            cross_stream=True,
         )
     else:
-        variant = args.model.replace('shiftfuse_zero_', '')
         from src.models.shiftfuse_zero import build_shiftfuse_zero
-        print(f"\n  Creating ShiftFuse-Zero (variant={variant})...")
+        print(f"\n  Creating ShiftFuse-Zero nano_tiny_efficient...")
         model = build_shiftfuse_zero(
-            variant=variant,
+            variant='nano_tiny_efficient',
             num_classes=num_classes,
             num_joints=num_joints,
             dropout=config['model'].get('dropout'),
-            use_se=config['model'].get('use_se', None),
-            use_k3_adj=config['model'].get('use_k3_adj', None),
-            use_adyn=config['model'].get('use_adyn', None),
         )
 
     print(f"  Model created: {sum(p.numel() for p in model.parameters()):,} parameters")
