@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.3.21)  22 MAR 2026 02:18
+This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.3.21)  22 MAR 2026 02:56
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -2047,11 +2047,11 @@ Package rerunfilecheck Info: File `main.out' has not changed.
 (rerunfilecheck)             Checksum: 4445F3A4498EC1F7D57FE0A302AA347A;3049.
  ) 
 Here is how much of TeX's memory you used:
- 46227 strings out of 467871
- 1018521 string characters out of 5418376
- 1576983 words of memory out of 5000000
+ 46230 strings out of 467871
+ 1018596 string characters out of 5418376
+ 1575985 words of memory out of 5000000
  73172 multiletter control sequences out of 15000+600000
- 931747 words of font info for 711 fonts, out of 8000000 for 9000
+ 932020 words of font info for 713 fonts, out of 8000000 for 9000
  1302 hyphenation exceptions out of 8191
  95i,21n,131p,1003b,2373s stack positions out of 10000i,1000n,20000p,200000b,200000s
 <C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/inconsolata/
@@ -2073,7 +2073,7 @@ fb><C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/newtx/txexs
 iaX.pfb><C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/newtx/
 txsym.pfb><C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/newt
 x/txsys.pfb>
-Output written on main.pdf (8 pages, 691776 bytes).
+Output written on main.pdf (8 pages, 691797 bytes).
 PDF statistics:
  431 PDF objects out of 1000 (max. 8388607)
  118 named destinations out of 1000 (max. 500000)

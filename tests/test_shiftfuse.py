@@ -5,7 +5,7 @@ Covers:
   - Forward pass shape: dict input → (B, num_classes)  [eval]
   - Tensor (non-dict) input handling
   - Param count sanity for all variants
-  - nano_efficient: A_k_learned exists, K=3 tensors of (V,V)
+  - nano_efficient: A_learned exists, K=3 tensors of (V,V)
   - STCAttention: output shape, multiplicative attention
   - DepthwiseSepTCN: output shape, stride handling
   - BodyRegionShift: zero learnable parameters
@@ -461,37 +461,37 @@ class TestShiftFuseZero:
         assert out.shape == (B, NUM_CLASSES)
 
     def test_nano_efficient_a_k_learned(self):
-        """nano_tiny_efficient: each block must own K=3 A_k_learned tensors of shape (V,V)."""
+        """nano_tiny_efficient: each block must own K=3 A_learned tensors of shape (V,V)."""
         model = build_shiftfuse_zero('nano_tiny_efficient', num_classes=NUM_CLASSES)
-        assert not hasattr(model, 'A_k_learned'), \
-            "Global A_k_learned should be gone — per-block now"
-        # Check every EfficientZeroBlock has its own A_k_learned
+        assert not hasattr(model, 'A_learned'), \
+            "Global A_learned should be gone — per-block now"
+        # Check every EfficientZeroBlock has its own A_learned
         for si, stage in enumerate(model.stages):
             for bi, block in enumerate(stage):
-                assert hasattr(block, 'A_k_learned'), \
-                    f"Stage{si} Block{bi} missing A_k_learned"
-                assert len(block.A_k_learned) == 3, \
-                    f"Stage{si} Block{bi}: expected K=3, got {len(block.A_k_learned)}"
-                for k, p in enumerate(block.A_k_learned):
+                assert hasattr(block, 'A_learned'), \
+                    f"Stage{si} Block{bi} missing A_learned"
+                assert len(block.A_learned) == 3, \
+                    f"Stage{si} Block{bi}: expected K=3, got {len(block.A_learned)}"
+                for k, p in enumerate(block.A_learned):
                     assert p.shape == (V, V), \
-                        f"Stage{si} Block{bi} A_k_learned[{k}] shape {p.shape} != ({V},{V})"
+                        f"Stage{si} Block{bi} A_learned[{k}] shape {p.shape} != ({V},{V})"
                     assert p.requires_grad, \
-                        f"Stage{si} Block{bi} A_k_learned[{k}] must be trainable"
+                        f"Stage{si} Block{bi} A_learned[{k}] must be trainable"
         # nano_tiny_efficient blocks=[1,1,1] → 3 total blocks × K=3 × V×V
         n_blocks = sum(len(s) for s in model.stages)
-        total = sum(p.numel() for n, p in model.named_parameters() if 'A_k_learned' in n)
+        total = sum(p.numel() for n, p in model.named_parameters() if 'A_learned' in n)
         assert total == n_blocks * 3 * V * V, f"Expected {n_blocks*3*V*V}, got {total}"
 
     def test_nano_efficient_no_global_a_k_on_standard_nano(self):
-        """nano_tiny_efficient: no model-level A_k_learned, only per-block."""
+        """nano_tiny_efficient: no model-level A_learned, only per-block."""
         model = build_shiftfuse_zero('nano_tiny_efficient', num_classes=NUM_CLASSES)
-        assert not hasattr(model, 'A_k_learned'), \
-            "Global A_k_learned should not exist — per-block only"
-        # All per-block A_k_learned should be present
+        assert not hasattr(model, 'A_learned'), \
+            "Global A_learned should not exist — per-block only"
+        # All per-block A_learned should be present
         for si, stage in enumerate(model.stages):
             for bi, block in enumerate(stage):
-                assert hasattr(block, 'A_k_learned'), \
-                    f"Stage{si} Block{bi} missing per-block A_k_learned"
+                assert hasattr(block, 'A_learned'), \
+                    f"Stage{si} Block{bi} missing per-block A_learned"
 
     def test_nano_param_count(self):
         model = build_shiftfuse_zero('nano_tiny_efficient', num_classes=NUM_CLASSES)
@@ -650,7 +650,7 @@ if __name__ == '__main__':
     assert not torch.isnan(logits).any(), "FAIL: NaN in output"
     assert not torch.isinf(logits).any(), "FAIL: Inf in output"
     print(f'  Output: {tuple(logits.shape)}  range=[{logits.min():.4f}, {logits.max():.4f}]')
-    adj_p = sum(p.numel() for n, p in m_eff.named_parameters() if 'A_k_learned' in n)
-    print(f'  A_k_learned: per-block, total {adj_p:,} params (7 blocks × 3 × 25×25)')
+    adj_p = sum(p.numel() for n, p in m_eff.named_parameters() if 'A_learned' in n)
+    print(f'  A_learned: per-block, total {adj_p:,} params (7 blocks × 3 × 25×25)')
     print()
     print('All checks passed.')

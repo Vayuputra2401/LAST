@@ -8,7 +8,7 @@ Models:
 
 Block pipeline (EfficientZeroBlock):
     BRASP → SGPShift → JE(in_ch) → STCAttention(in_ch)
-    → GCN: (1/K) Σ_k W_k(normalize(Ã_k + A_k_learned[k]) @ x)
+    → GCN: (1/K) Σ_k W_k(normalize(Ã_k + A_learned[k]) @ x)
     → DepthwiseSepTCN → DropPath → residual
     → [TLA at last block of last stage when use_tla=True]
 """
@@ -61,14 +61,13 @@ ZERO_VARIANTS = {
         'dropout':             0.10,
         'tla_landmarks':       8,
         'tla_reduce_ratio':    8,
-        'use_efficient_block': True,
-        'use_tla':             True,
+        'use_tla':             False,
     },
     # large_efficient_3s: single backbone, 3-stream early fusion, B4-scale (~1.1M).
     # Streams: joint + bone + velocity (bone_velocity dropped — noisy standalone).
     # channels=[64,128,192], blocks=[3,4,4] — matched analytically to B4's 1.1M.
     # All EfficientZeroBlock novelties: BRASP, SGPShift, STC-Attn, K=3 GCN,
-    # per-block A_k_learned, DS-TCN, TLA with learnable K=14 temporal anchors.
+    # per-block A_learned, DS-TCN, TLA with learnable K=14 temporal anchors.
     # Target: >92% NTU-60 xsub (B4=92.1%).
     'large_efficient_3s': {
         'stem_channels':       64,
@@ -95,7 +94,7 @@ class EfficientZeroBlock(nn.Module):
 
     Pipeline:
         BRASP → SGPShift → JE(in_ch) → STCAttention(in_ch)
-        → GCN: (1/K) Σ_k W_k(normalize(Ã_k + A_k_learned[k]) @ x)
+        → GCN: (1/K) Σ_k W_k(normalize(Ã_k + A_learned[k]) @ x)
         → DepthwiseSepTCN → DropPath → residual → Hardswish
 
     Ordering rationale:
@@ -107,7 +106,7 @@ class EfficientZeroBlock(nn.Module):
          in_ch ≠ out_ch at stage boundaries without a channel mismatch.
 
     Key differences from earlier ZeroGCNBlock:
-      - A_k = normalize(Ã_k_fixed + A_k_learned[k]) — EfficientGCN-exact learnable graph
+      - A_k = normalize(Ã_k_fixed + A_learned[k]) — EfficientGCN-exact learnable graph
       - STC-Attention (spatial+temporal+channel) with residual gate replaces ChannelSE
       - DepthwiseSepTCN (~8× cheaper than MultiScaleTCN) enables K=3 W_k in budget
       - JE per-block on in_channels (not shared stage JE on out_channels)
@@ -146,7 +145,7 @@ class EfficientZeroBlock(nn.Module):
         self.K_gcn = len(A_gcn_partitions)
         # Per-block learnable adjacency residuals (EfficientGCN-exact)
         # Each block learns its own graph topology corrections, zero-initialized
-        self.A_k_learned = nn.ParameterList([
+        self.A_learned = nn.ParameterList([
             nn.Parameter(torch.zeros(num_joints, num_joints))
             for _ in range(self.K_gcn)
         ])
@@ -208,13 +207,13 @@ class EfficientZeroBlock(nn.Module):
         # ── STC-Attention gates the GCN input ────────────────────────────────
         x = self.stc_attn(x)
 
-        # ── GCN: y = (1/K) Σ_k W_k(normalize(Ã_k + A_k_learned[k]) @ x) ────
+        # ── GCN: y = (1/K) Σ_k W_k(normalize(Ã_k + A_learned[k]) @ x) ────
         B, C, T, V = x.shape
         x_flat = x.reshape(B, C * T, V)
         y = None
         for k in range(self.K_gcn):
             A_fixed  = getattr(self, f'_A_fixed_{k}')
-            A_learnt = self.A_k_learned[k]
+            A_learnt = self.A_learned[k]
             A_comb = (A_fixed + A_learnt).abs()
             d      = A_comb.sum(dim=1).clamp(min=1e-6).pow(-0.5)
             A_norm = d.unsqueeze(1) * A_comb * d.unsqueeze(0)
@@ -313,7 +312,7 @@ class ShiftFuseZero(nn.Module):
         self.register_buffer('A_flat',  A_flat)
 
         # Pass RAW (unnormalized) partitions to each block.
-        # EfficientZeroBlock.forward() normalizes (A_raw_fixed + A_k_learned) once inline.
+        # EfficientZeroBlock.forward() normalizes (A_raw_fixed + A_learned) once inline.
         # Passing pre-normalized A_sym here would cause double normalization, shrinking
         # the effective adjacency spectrum at every block across 9+ blocks.
         A_gcn_partitions = [
@@ -502,7 +501,7 @@ class ShiftFuseZeroMidFusion(nn.Module):
 
     Novel additions vs B4:
         BRASP (0-param anatomical shift), SGPShift (0-param semantic grouping),
-        STC-Attention, per-block A_k_learned residuals, TLA learnable anchors.
+        STC-Attention, per-block A_learned residuals, TLA learnable anchors.
     """
 
     STREAM_NAMES   = ['joint', 'bone', 'velocity']
@@ -651,7 +650,7 @@ def build_shiftfuse_zero_midfusion(num_classes: int = 60, **kwargs) -> ShiftFuse
 # ---------------------------------------------------------------------------
 # B4Block  — stripped block for ShiftFuseZeroB4
 # BRASP + SGPShift (0-param) + fixed K=3 GCN + DS-TCN
-# No STCAttention / JointEmbedding / A_k_learned / TLA
+# No STCAttention / JointEmbedding / A_learned / TLA
 # ---------------------------------------------------------------------------
 class B4Block(nn.Module):
     """B4-exact block: BRASP + SGPShift + fixed K=3 GCN + DS-TCN + residual."""

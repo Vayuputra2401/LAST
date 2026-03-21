@@ -1,0 +1,24 @@
+\textbf{Small} (233\,K) are hyper-efficient, quantisation-friendly solutions
+Strikingly, the Small variant strictly beats EfficientGCN-B0 with fewer parameters,
+SFZ-Small (233\,K) redefine edge-deployment by yielding ultra-low FLOPs and
+our Small variant achieves 89.8\%, strictly beating EfficientGCN-B0 with fewer parameters.
+  (97\,K), Small (267\,K), Large (1.67\,M) --- with Temporal Landmark
+  the Large teacher's relational knowledge to Nano and Small students
+  (b)~Small: two-backbone late fusion with Cross-Stream Fusion and TLA ($K{=}8$).
+Small  & 24 & [32,64,128]   & [1,2,1] & 8  & 8  & 0.10 & 267\,K \\
+\paragraph{Small (267\,K).}
+Nano/Small: lr 0.1, wd $4{\times}10^{-4}$, 300/350 epochs.
+Wall-clock training times on a single A100: Nano 2.5\,h, Small 6\,h,
+Nano/Small use Mixup~ ($\alpha{=}0.1$) and CutMix~
+Large is distilled into Nano and Small~\cite{kd}:
+Small & 267\,K & 1.07\,MB & 267\,KB & gather, conv, BN & RPi Zero \\
+\textbf{SFZ-Small}      & \textbf{0.23M} & 87.6 & 92.8 & 83.1 & 84.7 \\
+\textbf{SFZ-Small+KD}   & \textbf{0.23M} & \best{89.8} & \best{94.7} & 85.5 & 87.0 \\
+SFZ-Small achieves 87.6\% at 233\,K parameters, a 2.2\,pp gain over the
+SFZ-Small       & 0.23M & 0.69 & 24\,ms & 87.6 \\
+SFZ-Small+KD    & 0.23M & 0.69 & 24\,ms & \best{89.8} \\
+\textbf{SFZ-Small+KD}         & 0.23M & 89.8 & 359 \\
+Nano and Small benefit from moderate rates (0.10); Large requires a
+$p_d$ & Nano & Small & Large \\
+\paragraph{Cross-stream fusion (Small).}
+Small, Large) achieves a new Pareto-optimal trade-off across the

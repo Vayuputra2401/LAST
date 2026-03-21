@@ -190,9 +190,7 @@ class Trainer:
                 or 'freq_gate' in name      # FreqTemporalGate residual gate (v2)
                 or 'freq_mask' in name      # FrozenDCTGate learnable frequency mask (LAST-Lite)
                 or 'gate_logit' in name     # FrameDynamicsGate temporal position gate (LAST-Lite)
-                or 'joint_embed' in name    # JointEmbedding semantic table (LAST-Lite)
-                or 'sym_weight' in name     # BSE bilateral symmetry weights (LAST-Lite)
-                or 'sym_vel_weight' in name # BSE bilateral velocity weights (LAST-Lite)
+                or 'je.embed' in name       # JointEmbedding semantic table
                 or 'A_group' in name        # CTRLightGCN per-group adjacency corrections
                 or 'edge' in name            # SpatialGCN edge importance
                 or 'stream_weights' in name  # StreamFusion blend logits
@@ -201,8 +199,6 @@ class Trainer:
                 or 'bilateral.gate' in name  # BSE residual gate scalar (v5)
                 or '.gate' in name           # TLA + any future gated-residual scalars (v10)
                 or 'gcn_scale' in name       # per-block GCN output scale (shared GCN guard, v10)
-                or 'block_adj' in name       # per-block spatial adjacency matrix (ShiftFuse-Zero)
-                or 'A_k_learned' in name     # global learnable A_k residuals (nano_efficient)
                 or 'anchor_logits' in name   # TLA learnable temporal anchor positions
             ):
                 no_decay.append(param)
