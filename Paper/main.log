@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.3.21)  21 MAR 2026 18:18
+This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.3.21)  22 MAR 2026 01:38
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1548,10 +1548,11 @@ Package caption Info: End \AtBeginDocument code.
 Package pgfplots notification 'compat/show suggested version=true': document ha
 s been generated with the most recent feature set (\pgfplotsset{compat=1.18}).
 
+Excluding 'CCSXML' comment.
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 17.28pt on input line 86.
+(Font)              scaled to size 17.28pt on input line 98.
 LaTeX Font Info:    Trying to load font information for T1+LinuxBiolinumT-TLF o
-n input line 86.
+n input line 98.
 
 (C:\Users\pathi\AppData\Local\Programs\MiKTeX\tex/latex/libertine\t1linuxbiolin
 umt-tlf.fd
@@ -1559,23 +1560,23 @@ File: T1LinuxBiolinumT-TLF.fd 2017/03/20 (autoinst) Font definitions for T1/Lin
 uxBiolinumT-TLF.
 )
 LaTeX Font Info:    Font shape `T1/LinuxBiolinumT-TLF/m/n' will be
-(Font)              scaled to size 17.28pt on input line 86.
+(Font)              scaled to size 17.28pt on input line 98.
 Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `LinuxBiolinumT-TLF' (encoding: T1).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
 LaTeX Font Info:    Font shape `T1/LinuxBiolinumT-TLF/b/n' will be
-(Font)              scaled to size 17.28pt on input line 86.
+(Font)              scaled to size 17.28pt on input line 98.
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 12.0pt on input line 86.
+(Font)              scaled to size 12.0pt on input line 98.
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 10.0pt on input line 86.
+(Font)              scaled to size 10.0pt on input line 98.
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/b/n' will be
-(Font)              scaled to size 10.0pt on input line 86.
+(Font)              scaled to size 10.0pt on input line 98.
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/it' will be
-(Font)              scaled to size 7.0pt on input line 86.
+(Font)              scaled to size 7.0pt on input line 98.
 LaTeX Font Info:    Trying to load font information for TS1+LinuxLibertineT-TLF
- on input line 86.
+ on input line 98.
 
 (C:\Users\pathi\AppData\Local\Programs\MiKTeX\tex/latex/libertine\ts1linuxliber
 tinet-tlf.fd
@@ -1583,39 +1584,39 @@ File: TS1LinuxLibertineT-TLF.fd 2017/03/20 (autoinst) Font definitions for TS1/
 LinuxLibertineT-TLF.
 )
 LaTeX Font Info:    Font shape `TS1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 7.0pt on input line 86.
+(Font)              scaled to size 7.0pt on input line 98.
 Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `LinuxLibertineT-TLF' (encoding: TS1).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/b/n' will be
-(Font)              scaled to size 9.0pt on input line 86.
+(Font)              scaled to size 9.0pt on input line 98.
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/b/n' will be
-(Font)              scaled to size 10.95pt on input line 86.
+(Font)              scaled to size 10.95pt on input line 98.
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/it' will be
-(Font)              scaled to size 9.0pt on input line 86.
+(Font)              scaled to size 9.0pt on input line 98.
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/sc' will be
-(Font)              scaled to size 9.0pt on input line 86.
+(Font)              scaled to size 9.0pt on input line 98.
 LaTeX Font Info:    Font shape `OT1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 9.0pt on input line 86.
+(Font)              scaled to size 9.0pt on input line 98.
 Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `LinuxLibertineT-TLF' (encoding: OT1).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
 LaTeX Font Info:    Font shape `OT1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 6.6pt on input line 86.
+(Font)              scaled to size 6.6pt on input line 98.
 LaTeX Font Info:    Font shape `OML/nxlmi/m/it' will be
-(Font)              scaled to size 9.0pt on input line 86.
+(Font)              scaled to size 9.0pt on input line 98.
 LaTeX Font Info:    Font shape `OML/nxlmi/m/it' will be
-(Font)              scaled to size 6.6pt on input line 86.
+(Font)              scaled to size 6.6pt on input line 98.
 LaTeX Font Info:    Font shape `LMS/ntxsy/m/n' will be
-(Font)              scaled to size 9.0pt on input line 86.
+(Font)              scaled to size 9.0pt on input line 98.
 LaTeX Font Info:    Font shape `LMS/ntxsy/m/n' will be
-(Font)              scaled to size 6.6pt on input line 86.
+(Font)              scaled to size 6.6pt on input line 98.
 LaTeX Font Info:    Font shape `LMX/ntxexx/m/n' will be
-(Font)              scaled to size 9.0pt on input line 86.
+(Font)              scaled to size 9.0pt on input line 98.
 LaTeX Font Info:    Font shape `LMX/ntxexx/m/n' will be
-(Font)              scaled to size 6.6pt on input line 86.
+(Font)              scaled to size 6.6pt on input line 98.
 
 (C:\Users\pathi\AppData\Local\Programs\MiKTeX\tex/latex/microtype\mt-msa.cfg
 File: mt-msa.cfg 2006/02/04 v1.1 microtype config. file: AMS symbols (a) (RS)
@@ -1624,152 +1625,223 @@ File: mt-msa.cfg 2006/02/04 v1.1 microtype config. file: AMS symbols (a) (RS)
 File: mt-msb.cfg 2005/06/01 v1.0 microtype config. file: AMS symbols (b) (RS)
 )
 LaTeX Font Info:    Font shape `U/ntxmia/m/it' will be
-(Font)              scaled to size 9.0pt on input line 86.
+(Font)              scaled to size 9.0pt on input line 98.
 LaTeX Font Info:    Font shape `U/ntxmia/m/it' will be
-(Font)              scaled to size 6.6pt on input line 86.
+(Font)              scaled to size 6.6pt on input line 98.
 LaTeX Font Info:    Font shape `U/ntxsym/m/n' will be
-(Font)              scaled to size 9.0pt on input line 86.
+(Font)              scaled to size 9.0pt on input line 98.
 LaTeX Font Info:    Font shape `U/ntxsym/m/n' will be
-(Font)              scaled to size 6.6pt on input line 86.
+(Font)              scaled to size 6.6pt on input line 98.
 LaTeX Font Info:    Font shape `U/ntxsyc/m/n' will be
-(Font)              scaled to size 9.0pt on input line 86.
+(Font)              scaled to size 9.0pt on input line 98.
 LaTeX Font Info:    Font shape `U/ntxsyc/m/n' will be
-(Font)              scaled to size 6.6pt on input line 86.
+(Font)              scaled to size 6.6pt on input line 98.
 LaTeX Font Info:    Font shape `U/ntxexa/m/n' will be
-(Font)              scaled to size 9.0pt on input line 86.
+(Font)              scaled to size 9.0pt on input line 98.
 LaTeX Font Info:    Font shape `U/ntxexa/m/n' will be
-(Font)              scaled to size 6.6pt on input line 86.
+(Font)              scaled to size 6.6pt on input line 98.
 LaTeX Font Info:    Font shape `OT1/LinuxLibertineT-TLF/sb/n' will be
-(Font)              scaled to size 9.0pt on input line 86.
+(Font)              scaled to size 9.0pt on input line 98.
 LaTeX Font Info:    Font shape `OT1/LinuxLibertineT-TLF/sb/n' will be
-(Font)              scaled to size 6.6pt on input line 86.
+(Font)              scaled to size 6.6pt on input line 98.
 LaTeX Font Info:    Font shape `OML/nxlmi/b/it' will be
-(Font)              scaled to size 9.0pt on input line 86.
+(Font)              scaled to size 9.0pt on input line 98.
 LaTeX Font Info:    Font shape `OML/nxlmi/b/it' will be
-(Font)              scaled to size 6.6pt on input line 86.
+(Font)              scaled to size 6.6pt on input line 98.
 LaTeX Font Info:    Font shape `LMS/ntxsy/b/n' will be
-(Font)              scaled to size 9.0pt on input line 86.
+(Font)              scaled to size 9.0pt on input line 98.
 LaTeX Font Info:    Font shape `LMS/ntxsy/b/n' will be
-(Font)              scaled to size 6.6pt on input line 86.
+(Font)              scaled to size 6.6pt on input line 98.
 LaTeX Font Info:    Font shape `LMX/ntxexx/b/n' will be
-(Font)              scaled to size 9.0pt on input line 86.
+(Font)              scaled to size 9.0pt on input line 98.
 LaTeX Font Info:    Font shape `LMX/ntxexx/b/n' will be
-(Font)              scaled to size 6.6pt on input line 86.
+(Font)              scaled to size 6.6pt on input line 98.
+LaTeX Font Info:    Font shape `TS1/LinuxLibertineT-TLF/m/n' will be
+(Font)              scaled to size 9.0pt on input line 98.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\\' on input line 86.
+(hyperref)                removing `\\' on input line 98.
 
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 8.0pt on input line 86.
+(Font)              scaled to size 8.0pt on input line 98.
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/b/n' will be
-(Font)              scaled to size 8.0pt on input line 86.
+(Font)              scaled to size 8.0pt on input line 98.
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/it' will be
-(Font)              scaled to size 8.0pt on input line 86.
+(Font)              scaled to size 8.0pt on input line 98.
+
+LaTeX Warning: Reference `TotPages' on page 1 undefined on input line 98.
+
+
+Package natbib Warning: Citation `agcn' on page 1 undefined on input line 110.
+
+
+Package natbib Warning: Citation `ctrgcn' on page 1 undefined on input line 110
+.
+
+
+Package natbib Warning: Citation `infogcn' on page 1 undefined on input line 11
+0.
+
+
+Package natbib Warning: Citation `hdgcn' on page 1 undefined on input line 110.
+
+
+
+Package natbib Warning: Citation `skeleton_survey' on page 1 undefined on input
+ line 117.
+
+
+Package natbib Warning: Citation `ntu60' on page 1 undefined on input line 117.
+
+
+
+Package natbib Warning: Citation `gcn_survey' on page 1 undefined on input line
+ 118.
+
+
+Package natbib Warning: Citation `stgcn' on page 1 undefined on input line 119.
+
+
+
+Package natbib Warning: Citation `agcn' on page 1 undefined on input line 120.
+
+
+Package natbib Warning: Citation `msg3d' on page 1 undefined on input line 121.
+
+
+
+Package natbib Warning: Citation `ctrgcn' on page 1 undefined on input line 121
+.
+
+
+Package natbib Warning: Citation `infogcn' on page 1 undefined on input line 12
+2.
+
+
+Package natbib Warning: Citation `hdgcn' on page 1 undefined on input line 123.
+
+
+
+Package natbib Warning: Citation `efficientgcn' on page 1 undefined on input li
+ne 128.
+
+
+Package natbib Warning: Citation `sgn' on page 1 undefined on input line 128.
+
 
 Class acmart Warning: \vspace should only be used to provide space above/below 
-surrounding objects on input line 130.
+surrounding objects on input line 142.
 
 
-Overfull \hbox (11.11778pt too wide) in paragraph at lines 137--151
+Overfull \hbox (11.11778pt too wide) in paragraph at lines 149--163
 \T1/LinuxLibertineT-TLF/m/n/9 (-20) achieves a new Pareto-optimal trade-off acr
 oss the accuracy--parameter
  []
 
 
-Overfull \hbox (3.661pt too wide) in paragraph at lines 137--151
+Overfull \hbox (3.661pt too wide) in paragraph at lines 149--163
 \T1/LinuxLibertineT-TLF/m/n/9 (-20) pri-ors of BRASP and SG-P-Shift, these mod-
 ules cat-alyze hyper-efficient
  []
 
 
-Overfull \hbox (15.73547pt too wide) in paragraph at lines 137--151
+Overfull \hbox (15.73547pt too wide) in paragraph at lines 149--163
 \T1/LinuxLibertineT-TLF/m/n/9 (-20) re-de-fine edge-deployment by yield-ing ult
 ra-low FLOPs and quantisation-
  []
 
 
 Class acmart Warning: \vspace should only be used to provide space above/below 
-surrounding objects on input line 152.
+surrounding objects on input line 164.
+
+
+Underfull \vbox (badness 10000) has occurred while \output is active []
 
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 6.0pt on input line 162.
+(Font)              scaled to size 6.0pt on input line 166.
+LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/b/n' will be
+(Font)              scaled to size 7.0pt on input line 166.
+
+
+LaTeX Warning: Reference `TotPages' on page 1 undefined on input line 166.
+
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 36.135pt on input line 162.
-LaTeX Font Info:    Calculating math sizes for size <36.135> on input line 162.
+(Font)              scaled to size 36.135pt on input line 166.
+LaTeX Font Info:    Calculating math sizes for size <36.135> on input line 166.
 
 LaTeX Font Info:    Font shape `OT1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 36.135pt on input line 162.
+(Font)              scaled to size 36.135pt on input line 166.
 LaTeX Font Info:    Font shape `OT1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 26.37839pt on input line 162.
+(Font)              scaled to size 26.37839pt on input line 166.
 LaTeX Font Info:    Font shape `OT1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 19.87434pt on input line 162.
+(Font)              scaled to size 19.87434pt on input line 166.
 LaTeX Font Info:    Font shape `OML/nxlmi/m/it' will be
-(Font)              scaled to size 36.135pt on input line 162.
+(Font)              scaled to size 36.135pt on input line 166.
 LaTeX Font Info:    Font shape `OML/nxlmi/m/it' will be
-(Font)              scaled to size 26.37839pt on input line 162.
+(Font)              scaled to size 26.37839pt on input line 166.
 LaTeX Font Info:    Font shape `OML/nxlmi/m/it' will be
-(Font)              scaled to size 19.87434pt on input line 162.
+(Font)              scaled to size 19.87434pt on input line 166.
 LaTeX Font Info:    Font shape `LMS/ntxsy/m/n' will be
-(Font)              scaled to size 36.135pt on input line 162.
+(Font)              scaled to size 36.135pt on input line 166.
 LaTeX Font Info:    Font shape `LMS/ntxsy/m/n' will be
-(Font)              scaled to size 26.37839pt on input line 162.
+(Font)              scaled to size 26.37839pt on input line 166.
 LaTeX Font Info:    Font shape `LMS/ntxsy/m/n' will be
-(Font)              scaled to size 19.87434pt on input line 162.
+(Font)              scaled to size 19.87434pt on input line 166.
 LaTeX Font Info:    Font shape `LMX/ntxexx/m/n' will be
-(Font)              scaled to size 36.135pt on input line 162.
+(Font)              scaled to size 36.135pt on input line 166.
 LaTeX Font Info:    Font shape `LMX/ntxexx/m/n' will be
-(Font)              scaled to size 26.37839pt on input line 162.
+(Font)              scaled to size 26.37839pt on input line 166.
 LaTeX Font Info:    Font shape `LMX/ntxexx/m/n' will be
-(Font)              scaled to size 19.87434pt on input line 162.
+(Font)              scaled to size 19.87434pt on input line 166.
 LaTeX Font Info:    Font shape `U/ntxmia/m/it' will be
-(Font)              scaled to size 36.135pt on input line 162.
+(Font)              scaled to size 36.135pt on input line 166.
 LaTeX Font Info:    Font shape `U/ntxmia/m/it' will be
-(Font)              scaled to size 26.37839pt on input line 162.
+(Font)              scaled to size 26.37839pt on input line 166.
 LaTeX Font Info:    Font shape `U/ntxmia/m/it' will be
-(Font)              scaled to size 19.87434pt on input line 162.
+(Font)              scaled to size 19.87434pt on input line 166.
 LaTeX Font Info:    Font shape `U/ntxsym/m/n' will be
-(Font)              scaled to size 36.135pt on input line 162.
+(Font)              scaled to size 36.135pt on input line 166.
 LaTeX Font Info:    Font shape `U/ntxsym/m/n' will be
-(Font)              scaled to size 26.37839pt on input line 162.
+(Font)              scaled to size 26.37839pt on input line 166.
 LaTeX Font Info:    Font shape `U/ntxsym/m/n' will be
-(Font)              scaled to size 19.87434pt on input line 162.
+(Font)              scaled to size 19.87434pt on input line 166.
 LaTeX Font Info:    Font shape `U/ntxsyc/m/n' will be
-(Font)              scaled to size 36.135pt on input line 162.
+(Font)              scaled to size 36.135pt on input line 166.
 LaTeX Font Info:    Font shape `U/ntxsyc/m/n' will be
-(Font)              scaled to size 26.37839pt on input line 162.
+(Font)              scaled to size 26.37839pt on input line 166.
 LaTeX Font Info:    Font shape `U/ntxsyc/m/n' will be
-(Font)              scaled to size 19.87434pt on input line 162.
+(Font)              scaled to size 19.87434pt on input line 166.
 LaTeX Font Info:    Font shape `U/ntxexa/m/n' will be
-(Font)              scaled to size 36.135pt on input line 162.
+(Font)              scaled to size 36.135pt on input line 166.
 LaTeX Font Info:    Font shape `U/ntxexa/m/n' will be
-(Font)              scaled to size 26.37839pt on input line 162.
+(Font)              scaled to size 26.37839pt on input line 166.
 LaTeX Font Info:    Font shape `U/ntxexa/m/n' will be
-(Font)              scaled to size 19.87434pt on input line 162.
+(Font)              scaled to size 19.87434pt on input line 166.
 LaTeX Font Info:    Font shape `OT1/LinuxLibertineT-TLF/sb/n' will be
-(Font)              scaled to size 36.135pt on input line 162.
+(Font)              scaled to size 36.135pt on input line 166.
 LaTeX Font Info:    Font shape `OT1/LinuxLibertineT-TLF/sb/n' will be
-(Font)              scaled to size 26.37839pt on input line 162.
+(Font)              scaled to size 26.37839pt on input line 166.
 LaTeX Font Info:    Font shape `OT1/LinuxLibertineT-TLF/sb/n' will be
-(Font)              scaled to size 19.87434pt on input line 162.
+(Font)              scaled to size 19.87434pt on input line 166.
 LaTeX Font Info:    Font shape `OML/nxlmi/b/it' will be
-(Font)              scaled to size 36.135pt on input line 162.
+(Font)              scaled to size 36.135pt on input line 166.
 LaTeX Font Info:    Font shape `OML/nxlmi/b/it' will be
-(Font)              scaled to size 26.37839pt on input line 162.
+(Font)              scaled to size 26.37839pt on input line 166.
 LaTeX Font Info:    Font shape `OML/nxlmi/b/it' will be
-(Font)              scaled to size 19.87434pt on input line 162.
+(Font)              scaled to size 19.87434pt on input line 166.
 LaTeX Font Info:    Font shape `LMS/ntxsy/b/n' will be
-(Font)              scaled to size 36.135pt on input line 162.
+(Font)              scaled to size 36.135pt on input line 166.
 LaTeX Font Info:    Font shape `LMS/ntxsy/b/n' will be
-(Font)              scaled to size 26.37839pt on input line 162.
+(Font)              scaled to size 26.37839pt on input line 166.
 LaTeX Font Info:    Font shape `LMS/ntxsy/b/n' will be
-(Font)              scaled to size 19.87434pt on input line 162.
+(Font)              scaled to size 19.87434pt on input line 166.
 LaTeX Font Info:    Font shape `LMX/ntxexx/b/n' will be
-(Font)              scaled to size 36.135pt on input line 162.
+(Font)              scaled to size 36.135pt on input line 166.
 LaTeX Font Info:    Font shape `LMX/ntxexx/b/n' will be
-(Font)              scaled to size 26.37839pt on input line 162.
+(Font)              scaled to size 26.37839pt on input line 166.
 LaTeX Font Info:    Font shape `LMX/ntxexx/b/n' will be
-(Font)              scaled to size 19.87434pt on input line 162.
+(Font)              scaled to size 19.87434pt on input line 166.
 [1.1{C:/Users/pathi/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map}{C:/Users/
 pathi/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/libertine/lbtn_76gpa5.enc}{
 C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/libertine/lbtn_25t
@@ -1781,6 +1853,77 @@ e/lbtn_7grukw.enc}{C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/enc/dvips
 /libertine/lbtn_ncsllp.enc}{C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/
 enc/dvips/libertine/lbtn_oexx6f.enc}{C:/Users/pathi/AppData/Local/Programs/MiKT
 eX/fonts/enc/dvips/libertine/lbtn_naooyc.enc}]
+
+LaTeX Warning: Reference `sec:exp' on page 2 undefined on input line 191.
+
+
+Package natbib Warning: Citation `stgcn' on page 2 undefined on input line 198.
+
+
+
+Package natbib Warning: Citation `agcn' on page 2 undefined on input line 201.
+
+
+Package natbib Warning: Citation `msg3d' on page 2 undefined on input line 203.
+
+
+
+Package natbib Warning: Citation `ctrgcn' on page 2 undefined on input line 205
+.
+
+
+Package natbib Warning: Citation `infogcn' on page 2 undefined on input line 20
+7.
+
+
+Package natbib Warning: Citation `dstanet' on page 2 undefined on input line 21
+0.
+
+
+Package natbib Warning: Citation `hdgcn' on page 2 undefined on input line 218.
+
+
+
+Package natbib Warning: Citation `blockgcn' on page 2 undefined on input line 2
+22.
+
+
+Package natbib Warning: Citation `skateformer' on page 2 undefined on input lin
+e 224.
+
+
+Underfull \vbox (badness 3838) has occurred while \output is active []
+
+
+
+Package natbib Warning: Citation `efficientgcn' on page 2 undefined on input li
+ne 234.
+
+
+Package natbib Warning: Citation `sgn' on page 2 undefined on input line 238.
+
+
+Package natbib Warning: Citation `posec3d' on page 2 undefined on input line 24
+0.
+
+
+Package natbib Warning: Citation `shiftgcn' on page 2 undefined on input line 2
+50.
+
+
+Package natbib Warning: Citation `tsm' on page 2 undefined on input line 253.
+
+
+Package natbib Warning: Citation `shiftgcn' on page 2 undefined on input line 2
+55.
+
+
+Package natbib Warning: Citation `kd' on page 2 undefined on input line 265.
+
+
+Package natbib Warning: Citation `efficientgcn' on page 2 undefined on input li
+ne 268.
+
 (images/fig1_overview.tex
 LaTeX Font Info:    Font shape `OT1/LinuxLibertineT-TLF/m/n' will be
 (Font)              scaled to size 6.5pt on input line 46.
@@ -1812,14 +1955,18 @@ LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/b/n' will be
 (Font)              scaled to size 6.0pt on input line 68.
 )
 
-Class acmart Warning: A possible image without description on input line 280.
+Class acmart Warning: A possible image without description on input line 292.
 
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 6.6pt on input line 289.
+(Font)              scaled to size 6.6pt on input line 301.
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 5.5pt on input line 289.
+(Font)              scaled to size 5.5pt on input line 301.
 
-Overfull \hbox (12.07753pt too wide) in paragraph at lines 284--294
+Package natbib Warning: Citation `efficientgcn' on page 2 undefined on input li
+ne 303.
+
+
+Overfull \hbox (12.07753pt too wide) in paragraph at lines 296--306
 \T1/LinuxLibertineT-TLF/m/n/9 (-20) or-di-nates $\OT1/LinuxLibertineT-TLF/sb/n/
 9 (-20) X[]$\T1/LinuxLibertineT-TLF/m/n/9 (-20) , first-order tem-po-ral dif-fe
 r-ences (ve-loc-ity) $\OT1/LinuxLibertineT-TLF/sb/n/9 (-20) X[][]p[][]p[]$\T1/L
@@ -1831,14 +1978,26 @@ LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/b/n' will be
 (Font)              scaled to size 5.0pt on input line 26.
 )
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/b/n' will be
-(Font)              scaled to size 6.6pt on input line 304.
+(Font)              scaled to size 6.6pt on input line 316.
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/b/n' will be
-(Font)              scaled to size 5.5pt on input line 304.
+(Font)              scaled to size 5.5pt on input line 316.
 
 
-Class acmart Warning: A possible image without description on input line 306.
+Class acmart Warning: A possible image without description on input line 318.
 
-(images/fig3_sgpshift.tex
+
+Underfull \vbox (badness 2293) has occurred while \output is active []
+
+LaTeX Font Info:    Font shape `T1/LinuxBiolinumT-TLF/m/n' will be
+(Font)              scaled to size 9.0pt on input line 324.
+LaTeX Font Info:    Font shape `T1/LinuxBiolinumT-TLF/m/n' will be
+(Font)              scaled to size 7.0pt on input line 324.
+
+
+LaTeX Warning: Reference `TotPages' on page 2 undefined on input line 324.
+
+[2.2{C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/libertine/lbt
+n_fygcup.enc}] (images/fig3_sgpshift.tex
 LaTeX Font Info:    Font shape `OT1/LinuxLibertineT-TLF/m/n' will be
 (Font)              scaled to size 8.0pt on input line 47.
 LaTeX Font Info:    Font shape `OT1/LinuxLibertineT-TLF/m/n' will be
@@ -1889,21 +2048,23 @@ LaTeX Font Info:    Font shape `LMX/ntxexx/b/n' will be
 (Font)              scaled to size 6.0pt on input line 47.
 )
 
-Class acmart Warning: A possible image without description on input line 330.
+Class acmart Warning: A possible image without description on input line 342.
 
-LaTeX Font Info:    Font shape `T1/LinuxBiolinumT-TLF/m/n' will be
-(Font)              scaled to size 9.0pt on input line 330.
-LaTeX Font Info:    Font shape `T1/LinuxBiolinumT-TLF/m/n' will be
-(Font)              scaled to size 7.0pt on input line 330.
-[2.2{C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/libertine/lbt
-n_fygcup.enc}] (images/fig4_block.tex)
-Underfull \hbox (badness 2512) in paragraph at lines 358--358
+(images/fig4_block.tex)
+Underfull \hbox (badness 2512) in paragraph at lines 370--370
 []\T1/LinuxLibertineT-TLF/b/n/9 (+20) Figure 4: |Ef-fi-cientZero Block. Green =
  zero-parameter
  []
 
 
-Class acmart Warning: A possible image without description on input line 360.
+Class acmart Warning: A possible image without description on input line 372.
+
+
+Package natbib Warning: Citation `sgn' on page 3 undefined on input line 380.
+
+
+Package natbib Warning: Citation `stgcn' on page 3 undefined on input line 383.
+
 
 
 Package fancyhdr Warning: \headheight is too small (13.0pt): 
@@ -1912,71 +2073,220 @@ Package fancyhdr Warning: \headheight is too small (13.0pt):
 (fancyhdr)                You might also make \topmargin smaller:
 (fancyhdr)                \addtolength{\topmargin}{-2.19852pt}.
 
+
+LaTeX Warning: Reference `TotPages' on page 3 undefined on input line 389.
+
 [3.3] (images/fig5_family.tex)
 
-Class acmart Warning: A possible image without description on input line 426.
+Class acmart Warning: A possible image without description on input line 438.
 
 
-Overfull \hbox (5.01309pt too wide) in paragraph at lines 470--478
-\T1/LinuxLibertineT-TLF/m/n/9 (-20) EfficientGCN-B4's mid-network fu-sion [[]] 
-with Ef-fi-cientZero Blocks
+Package natbib Warning: Citation `efficientgcn' on page 4 undefined on input li
+ne 488.
+
+
+Overfull \hbox (1.94348pt too wide) in paragraph at lines 482--490
+\T1/LinuxLibertineT-TLF/m/n/9 (-20) EfficientGCN-B4's mid-network fu-sion [\T1/
+LinuxLibertineT-TLF/b/n/9 (-20) ? \T1/LinuxLibertineT-TLF/m/n/9 (-20) ] with Ef
+-fi-cientZero Blocks
  []
 
 
-Overfull \hbox (6.48628pt too wide) in paragraph at lines 500--502
+Package natbib Warning: Citation `efficientgcn' on page 4 undefined on input li
+ne 496.
+
+
+Overfull \hbox (18.54825pt too wide) in paragraph at lines 500--508
+[]\T1/LinuxLibertineT-TLF/b/n/9 (-20) Augmentation: \T1/LinuxLibertineT-TLF/m/n
+/9 (-20) Nano/Small use Mixup ($\OML/nxlmi/m/it/9 []\OT1/LinuxLibertineT-TLF/m
+/n/9 (-20) 0\OML/nxlmi/m/it/9 :\OT1/LinuxLibertineT-TLF/m/n/9 (-20) 1$\T1/Linux
+LibertineT-TLF/m/n/9 (-20) ) and Cut-Mix (prob.0.5)
+ []
+
+
+Overfull \hbox (4.38217pt too wide) in paragraph at lines 500--508
+\T1/LinuxLibertineT-TLF/m/n/9 (-20) to com-pen-sate for their lim-ited ca-pac-i
+ty. Large uses \T1/LinuxLibertineT-TLF/m/it/9 (-20) no \T1/LinuxLibertineT-TLF/
+m/n/9 (-20) Mixup/CutMix
+ []
+
+
+Package natbib Warning: Citation `kd' on page 4 undefined on input line 513.
+
+
+Overfull \hbox (1.54747pt too wide) in paragraph at lines 512--514
 []\T1/LinuxLibertineT-TLF/b/n/9 (-20) Knowledge dis-til-la-tion. \T1/LinuxLiber
-tineT-TLF/m/n/9 (-20) Large is dis-tilled into Nano and Small [[]]: 
+tineT-TLF/m/n/9 (-20) Large is dis-tilled into Nano and Small [\T1/LinuxLiberti
+neT-TLF/b/n/9 (-20) ?
  []
 
 
-Overfull \hbox (28.26724pt too wide) in paragraph at lines 529--538
+Overfull \hbox (28.26724pt too wide) in paragraph at lines 541--550
  [][] 
  []
 
-LaTeX Font Info:    Trying to load font information for T1+zi4 on input line 54
-1.
+LaTeX Font Info:    Trying to load font information for T1+zi4 on input line 55
+3.
 (C:\Users\pathi\AppData\Local\Programs\MiKTeX\tex/latex/inconsolata\t1zi4.fd
 File: t1zi4.fd 2018/01/14 T1/zi4 (Inconsolata)
 )
 LaTeX Font Info:    Font shape `T1/zi4/m/n' will be
-(Font)              scaled to size 9.0pt on input line 541.
+(Font)              scaled to size 9.0pt on input line 553.
 Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `zi4' (encoding: T1).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
 
+
+Package natbib Warning: Citation `agcn' on page 4 undefined on input line 559.
+
+
+Package natbib Warning: Citation `ctrgcn' on page 4 undefined on input line 559
+.
+
+
+LaTeX Warning: Reference `TotPages' on page 4 undefined on input line 571.
+
 [4.4{C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/inconsolata/i
 4-t1-4.enc}]
-Overfull \hbox (20.9632pt too wide) in paragraph at lines 607--614
+
+Package natbib Warning: Citation `ntu60' on page 5 undefined on input line 577.
+
+
+
+Package natbib Warning: Citation `ntu120' on page 5 undefined on input line 580
+.
+
+
+Package natbib Warning: Citation `stgcn' on page 5 undefined on input line 599.
+
+
+
+Package natbib Warning: Citation `agcn' on page 5 undefined on input line 600.
+
+
+Package natbib Warning: Citation `msg3d' on page 5 undefined on input line 601.
+
+
+
+Package natbib Warning: Citation `ctrgcn' on page 5 undefined on input line 602
+.
+
+
+Package natbib Warning: Citation `infogcn' on page 5 undefined on input line 60
+3.
+
+
+Package natbib Warning: Citation `hdgcn' on page 5 undefined on input line 604.
+
+
+
+Package natbib Warning: Citation `efficientgcn' on page 5 undefined on input li
+ne 606.
+
+
+Package natbib Warning: Citation `efficientgcn' on page 5 undefined on input li
+ne 607.
+
+
+Package natbib Warning: Citation `sgn' on page 5 undefined on input line 608.
+
+
+Overfull \hbox (20.9632pt too wide) in paragraph at lines 619--626
 \T1/LinuxLibertineT-TLF/m/n/9 (-20) SFZ-Large achieves 92.5% on NTU-60 X-Sub, o
 ut-per-form-ing EfficientGCN-
  []
 
-(images/fig6_scatter.tex)
 
-Class acmart Warning: A possible image without description on input line 624.
+LaTeX Warning: Reference `tab:accm' on page 5 undefined on input line 658.
 
 
-Overfull \hbox (19.23607pt too wide) in paragraph at lines 649--655
+Overfull \hbox (19.23607pt too wide) in paragraph at lines 653--659
 \T1/LinuxLibertineT-TLF/m/it/9 (-20) accuracy-per-million-parameters \T1/LinuxL
 ibertineT-TLF/m/n/9 (-20) met-ric $[] \U/ntxmia/m/it/9 = [] \LMS/ntxsy/m/n/9 ù 
 []$\T1/LinuxLibertineT-TLF/m/n/9 (-20) .
  []
 
 
+Package natbib Warning: Citation `stgcn' on page 5 undefined on input line 671.
+
+
+
+Package natbib Warning: Citation `agcn' on page 5 undefined on input line 672.
+
+
+Package natbib Warning: Citation `infogcn' on page 5 undefined on input line 67
+3.
+
+
+Package natbib Warning: Citation `hdgcn' on page 5 undefined on input line 674.
+
+
+
+Package natbib Warning: Citation `efficientgcn' on page 5 undefined on input li
+ne 675.
+
+
+Package natbib Warning: Citation `efficientgcn' on page 5 undefined on input li
+ne 676.
+
+
+LaTeX Warning: Reference `tab:ablation' on page 5 undefined on input line 696.
+
+
+LaTeX Warning: Reference `tab:gcn_k' on page 5 undefined on input line 725.
+
+
 Package fancyhdr Warning: \headheight is too small (13.0pt): 
 (fancyhdr)                Make it at least 15.19852pt, for example:
 (fancyhdr)                \setlength{\headheight}{15.19852pt}.
 (fancyhdr)                You might also make \topmargin smaller:
 (fancyhdr)                \addtolength{\topmargin}{-2.19852pt}.
 
-[5.5] (images/fig9_tla.tex)
 
-Class acmart Warning: A possible image without description on input line 814.
+LaTeX Warning: Reference `TotPages' on page 5 undefined on input line 750.
+
+[5.5]
+
+LaTeX Warning: Reference `tab:block_comp' on page 6 undefined on input line 753
+.
+
+
+LaTeX Warning: Reference `tab:droppath' on page 6 undefined on input line 781.
+
+
+LaTeX Warning: Reference `fig:tla_k' on page 6 undefined on input line 808.
+
+(images/fig9_tla.tex)
+
+Class acmart Warning: A possible image without description on input line 818.
+
+
+LaTeX Warning: Reference `tab:fusion' on page 6 undefined on input line 821.
+
+
+LaTeX Warning: Reference `TotPages' on page 6 undefined on input line 844.
 
 [6.6] (images/fig10_curves.tex)
 
-Class acmart Warning: A possible image without description on input line 850.
+Class acmart Warning: A possible image without description on input line 854.
+
+
+LaTeX Warning: Reference `tab:ablation' on page 7 undefined on input line 868.
+
+
+LaTeX Warning: Reference `tab:fusion' on page 7 undefined on input line 885.
+
+
+Package natbib Warning: Citation `agcn' on page 7 undefined on input line 914.
+
+
+Package natbib Warning: Citation `ctrgcn' on page 7 undefined on input line 914
+.
+
+
+Package natbib Warning: Citation `dstanet' on page 7 undefined on input line 94
+0.
 
 
 Package fancyhdr Warning: \headheight is too small (13.0pt): 
@@ -1985,7 +2295,16 @@ Package fancyhdr Warning: \headheight is too small (13.0pt):
 (fancyhdr)                You might also make \topmargin smaller:
 (fancyhdr)                \addtolength{\topmargin}{-2.19852pt}.
 
-[7.7] Excluding 'acks' comment. (main.bbl)
+
+LaTeX Warning: Reference `TotPages' on page 7 undefined on input line 956.
+
+[7.7] Excluding 'acks' comment. (main.bbl
+Underfull \vbox (badness 10000) has occurred while \output is active []
+
+)
+
+Package natbib Warning: There were undefined citations.
+
 
 Class acmart Warning: Some images may lack descriptions.
 (acmart)              ACM is committed to complying with the upcoming US ADA ht
@@ -2002,35 +2321,56 @@ rtant steps when creating your papers will ensure that the widest possible audi
 ence can ingest your work..
 
 
-Class acmart Warning: CCS concepts are mandatory for papers over two pages.
-
-
 Package balance Warning: You have called \balance in second column
 (balance)                Columns might not be balanced.
 
 
+LaTeX Warning: Reference `TotPages' on page 8 undefined on input line 985.
+
+[8.8]
 (C:\Users\pathi\AppData\Local\Programs\MiKTeX\tex/generic/stringenc\se-pdfdoc.d
 ef
 File: se-pdfdoc.def 2019/11/29 v1.12 stringenc: PDFDocEncoding
 )
 (C:\Users\pathi\AppData\Local\Programs\MiKTeX\tex/generic/stringenc\se-utf8.def
 File: se-utf8.def 2019/11/29 v1.12 stringenc: UTF-8
-) [8.8] (main.aux)
+) [9.8] (main.aux
+
+Package natbib Warning: Citation(s) may have changed.
+(natbib)                Rerun to get citations correct.
+
+)
  ***********
 LaTeX2e <2025-11-01>
 L3 programming layer <2025-12-24>
  ***********
-Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: 4445F3A4498EC1F7D57FE0A302AA347A;3049.
+
+
+LaTeX Warning: There were undefined references.
+
+
+LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
+
+
+LaTeX Warning: Temporary extra page added at the end. Rerun to get it removed.
+
+
+Package rerunfilecheck Warning: File `main.out' has changed.
+(rerunfilecheck)                Rerun to get outlines right
+(rerunfilecheck)                or use package `bookmark'.
+
+Package rerunfilecheck Info: Checksums for `main.out':
+(rerunfilecheck)             Before: D7D1A95A83B5BF91C249238E34D1609B;1633
+(rerunfilecheck)             After:  4445F3A4498EC1F7D57FE0A302AA347A;3049.
  ) 
 Here is how much of TeX's memory you used:
- 46208 strings out of 467871
- 1017782 string characters out of 5418376
- 1588255 words of memory out of 5000000
- 73201 multiletter control sequences out of 15000+600000
- 925526 words of font info for 673 fonts, out of 8000000 for 9000
+ 46243 strings out of 467871
+ 1019068 string characters out of 5418376
+ 1566432 words of memory out of 5000000
+ 73166 multiletter control sequences out of 15000+600000
+ 938690 words of font info for 725 fonts, out of 8000000 for 9000
  1302 hyphenation exceptions out of 8191
- 95i,21n,131p,1003b,2365s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 95i,21n,131p,1003b,2373s stack positions out of 10000i,1000n,20000p,200000b,200000s
 <C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/inconsolata/
 Inconsolata-zi4r.pfb><C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/
 public/newtx/LibertineMathMI.pfb><C:/Users/pathi/AppData/Local/Programs/MiKTeX/
@@ -2050,9 +2390,9 @@ fb><C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/newtx/txexs
 iaX.pfb><C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/newtx/
 txsym.pfb><C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/newt
 x/txsys.pfb>
-Output written on main.pdf (8 pages, 695026 bytes).
+Output written on main.pdf (9 pages, 676220 bytes).
 PDF statistics:
- 444 PDF objects out of 1000 (max. 8388607)
- 124 named destinations out of 1000 (max. 500000)
- 158405 words of extra memory for PDF output out of 184870 (max. 10000000)
+ 333 PDF objects out of 1000 (max. 8388607)
+ 118 named destinations out of 1000 (max. 500000)
+ 166517 words of extra memory for PDF output out of 184870 (max. 10000000)
 

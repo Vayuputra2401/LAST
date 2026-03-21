@@ -79,6 +79,18 @@ delivering up to $10{\times}$ parameter reduction over comparable baselines
 for fast edge inference.
 \end{abstract}
 
+\begin{CCSXML}
+<ccs2012>
+   <concept>
+       <concept_id>10010147.10010178.10010224.10010225.10010228</concept_id>
+       <concept_desc>Computing methodologies~Activity recognition and understanding</concept_desc>
+       <concept_significance>500</concept_significance>
+       </concept>
+ </ccs2012>
+\end{CCSXML}
+
+\ccsdesc[500]{Computing methodologies~Activity recognition and understanding}
+
 \keywords{skeleton action recognition, graph convolutional networks,
   zero-parameter priors, anatomical shift, knowledge distillation,
   efficient neural networks}
@@ -270,14 +282,14 @@ A raw skeleton sequence is expanded into four complementary streams
 A gated global pooling head produces class logits.
 
 %%─── Figure 1: Overview pipeline ────────────────────────────────────────────
-\begin{figure}[t]
+\begin{figure}[htpb]\vspace{-2mm}
 \centering
-\resizebox{0.87\columnwidth}{!}{\input{images/fig1_overview}}
+\resizebox{0.80\columnwidth}{!}{\input{images/fig1_overview}}
 \caption{ShiftFuse-Zero end-to-end pipeline. Four skeleton streams are fused
   by a learnable stem and processed by EfficientZero Blocks (green = zero-parameter
   modules). A gated pooling head produces class logits.}
 \label{fig:overview}
-\end{figure}
+\vspace{-3mm}\end{figure}
 
 \subsection{Skeleton Streams}\label{sec:repr}
 
@@ -295,7 +307,7 @@ via a $1{\times}1$ convolution with learned per-stream weighting.
 \subsection{Zero-Parameter Spatial Modules}\label{sec:zero}
 
 %%─── Figure 2: BRASP ─────────────────────────────────────────────────────────
-\begin{figure}[t]
+\begin{figure}[htpb]\vspace{-2mm}
 \centering
 \resizebox{\columnwidth}{!}{\input{images/fig2_brasp}}
 \caption{BRASP anatomical partitioning into five groups $\{G_\text{la},
@@ -303,7 +315,7 @@ via a $1{\times}1$ convolution with learned per-stream weighting.
   The fixed permutation $\sigma$ (Eq.~\ref{eq:brasp}) is derived from
   these groups; no gradient flows through it.}
 \label{fig:brasp}
-\end{figure}
+\vspace{-3mm}\end{figure}
 
 \paragraph{BRASP.}
 Figure~\ref{fig:brasp} illustrates the five anatomical groups.
@@ -320,14 +332,14 @@ Indices are stored as a non-trainable integer buffer —
 \textbf{zero parameters, zero gradient}.
 
 %%─── Figure 3: SGPShift ──────────────────────────────────────────────────────
-\begin{figure}[t]
+\begin{figure}[htpb]\vspace{-2mm}
 \centering
 \resizebox{\columnwidth}{!}{\input{images/fig3_sgpshift}}
 \caption{SGPShift aggregation. Blue solid arrows: intra-part neighbours.
   Red dashed arrows: inter-part boundary neighbours.
   All sets are precomputed integer buffers — zero learnable parameters.}
 \label{fig:sgpshift}
-\end{figure}
+\vspace{-3mm}\end{figure}
 
 \paragraph{SGPShift.}
 Figure~\ref{fig:sgpshift} illustrates the intra/inter aggregation.
@@ -350,14 +362,14 @@ At runtime SGPShift reduces to two sparse average operations —
 \subsection{EfficientZero Block}\label{sec:block}
 
 %%─── Figure 4: Block pipeline ────────────────────────────────────────────────
-\begin{figure}[t]
+\begin{figure}[htpb]\vspace{-2mm}
 \centering
-\resizebox{0.82\columnwidth}{!}{\input{images/fig4_block}}
+\resizebox{0.75\columnwidth}{!}{\input{images/fig4_block}}
 \caption{EfficientZero Block. Green = zero-parameter (BRASP, SGPShift,
   DropPath). Per-layer parameter counts shown on the right.
   TLA is only active at the last block of the final stage.}
 \label{fig:block}
-\end{figure}
+\vspace{-3mm}\end{figure}
 
 Figure~\ref{fig:block} shows the full block pipeline with per-layer costs.
 
@@ -379,9 +391,9 @@ Figure~\ref{fig:block} shows the full block pipeline with per-layer costs.
   $\mathbf{A}_\ell\!\in\!\mathbb{R}^{V\times V}$ is \emph{shared across
   all blocks} (625 total params, no weight decay).
 \item \textbf{DS-TCN}: depthwise-separable temporal convolutions at
-  dilations~1 and~2 (kernel~9), Batch Norm~\cite{batchnorm},
-  Hardswish~\cite{hardswish}.
-\item \textbf{DropPath}~\cite{droppath}: stochastic depth; 0 parameters.
+  dilations~1 and~2 (kernel~9), Batch Norm~,
+  Hardswish~.
+\item \textbf{DropPath}~: stochastic depth; 0 parameters.
 \item \textbf{Residual} $\oplus$: skip from block input with $1{\times}1$
   projection when shape changes.
 \end{enumerate}
@@ -416,7 +428,7 @@ vs.\ $O(T^2)$ for full attention.
 %%─── Figure 5: Model family ──────────────────────────────────────────────────
 \begin{figure*}[t]
 \centering
-\resizebox{\textwidth}{!}{\input{images/fig5_family}}
+\resizebox{0.85\textwidth}{!}{\input{images/fig5_family}}
 \caption{ShiftFuse-Zero model family.
   (a)~Nano: single backbone, 4-stream early fusion, TLA ($K{=}8$).
   (b)~Small: two-backbone late fusion with Cross-Stream Fusion and TLA ($K{=}8$).
@@ -444,7 +456,7 @@ Small  & 24 & [32,64,128]   & [1,2,1] & 8  & 8  & 0.10 & 267\,K \\
 Large  & 32 & [48,96,192]   & [1,2,4] & 14 & 8  & 0.20 & 1.67\,M \\
 \bottomrule
 \end{tabular}
-\end{table}
+\vspace{-3mm}\end{table}
 
 \paragraph{Nano (97\,K).}
 Four streams are early-fused via StreamFusionConcat to a single 24-channel
@@ -478,7 +490,7 @@ with EfficientZero Blocks replacing B4's full GCN layers.
 
 \subsection{Training Protocol}\label{sec:training}
 
-\textbf{Optimiser:} SGD, Nesterov momentum 0.9~\cite{sgd}, cosine LR with
+\textbf{Optimiser:} SGD, Nesterov momentum 0.9~, cosine LR with
 10-epoch linear warmup.
 Nano/Small: lr 0.1, wd $4{\times}10^{-4}$, 300/350 epochs.
 Large: lr 0.1, wd $10^{-4}$ (B4~\cite{efficientgcn}), 150 epochs.
@@ -486,7 +498,7 @@ Wall-clock training times on a single A100: Nano 2.5\,h, Small 6\,h,
 Large 4.75\,h.
 
 \textbf{Augmentation:}
-Nano/Small use Mixup~\cite{mixup} ($\alpha{=}0.1$) and CutMix~\cite{cutmix}
+Nano/Small use Mixup~ ($\alpha{=}0.1$) and CutMix~
 (prob.\,0.5) to compensate for their limited capacity.
 Large uses \emph{no} Mixup/CutMix — DropPath 0.20 and weight decay
 $10^{-4}$ provide sufficient regularisation at 1.67\,M params, and label
@@ -535,7 +547,7 @@ Small & 267\,K & 1.07\,MB & 267\,KB & gather, conv, BN & RPi Zero \\
 Large & 1.67\,M & 6.38\,MB & 1.67\,MB & gather, conv, BN & Jetson Nano \\
 \bottomrule
 \end{tabular}
-\end{table}
+\vspace{-3mm}\end{table}
 
 \paragraph{Operator simplicity.}
 BRASP reduces to a single \texttt{gather} operation on a static integer
@@ -602,7 +614,7 @@ SGN$^\dagger$~\cite{sgn}            & 0.69M & 89.0 & 94.5 & 79.2 & 81.5 \\
 \textbf{SFZ-Large}      & \textbf{1.67M} & \best{92.5} & \best{96.4} & 88.5 & 90.1 \\
 \bottomrule
 \end{tabular}
-\end{table}
+\vspace{-3mm}\end{table}
 
 SFZ-Large achieves 92.5\% on NTU-60 X-Sub, outperforming EfficientGCN-B4
 by 0.4\,pp at a comparable parameter scale.
@@ -614,14 +626,6 @@ prior single-backbone design at 26\,\% fewer parameters.
 
 \subsection{Efficiency Analysis}\label{sec:efficiency}
 
-%%─── Figure 6: Accuracy vs params scatter ────────────────────────────────────
-\begin{figure}[t]
-\centering
-\resizebox{\columnwidth}{!}{\input{images/fig6_scatter}}
-\caption{Accuracy vs.\ parameters. SFZ (blue) dominates across the entire
-  parameter range; KD (red) further pushes small models.}
-\label{fig:scatter}
-\end{figure}
 
 \begin{table}[t]
 \centering
@@ -642,7 +646,7 @@ SFZ-Small+KD    & 0.25M & 0.69 & 24\,ms & \best{89.8} \\
 SFZ-Large       & 1.67M & 4.71 & 89\,ms & \best{92.5} \\
 \bottomrule
 \end{tabular}
-\end{table}
+\vspace{-3mm}\end{table}
 
 \subsection{Accuracy--Efficiency Frontier}\label{sec:frontier}
 
@@ -677,7 +681,7 @@ EfficientGCN-B4~\cite{efficientgcn} & 1.10M & 92.1 & 83.7 \\
 \textbf{SFZ-Large}            & 1.67M & 92.5 & 55.4 \\
 \bottomrule
 \end{tabular}
-\end{table}
+\vspace{-3mm}\end{table}
 
 SFZ-Nano+KD achieves an Acc/M of \textbf{885} --- $69{\times}$ higher
 than AGCN (12.8) and $2.8{\times}$ higher than EfficientGCN-B0 (311).
@@ -715,7 +719,7 @@ BRASP & SGPShift & TLA & KD & Acc\,(\%) & $\Delta$ \\
 \checkmark & \checkmark & \checkmark & \checkmark & \best{88.5} & +5.7 \\
 \bottomrule
 \end{tabular}
-\end{table}
+\vspace{-3mm}\end{table}
 
 \paragraph{GCN partition count.}
 Table~\ref{tab:gcn_k} evaluates the effect of the GCN partition count
@@ -743,7 +747,7 @@ $K$ & $\mathbf{A}_\ell$ & Params & Acc\,(\%) & $\Delta$ \\
 \end{tabular}
 \smallskip
 \footnotesize{*Full model with all components.}
-\end{table}
+\vspace{-3mm}\end{table}
 
 \paragraph{Block component analysis.}
 Table~\ref{tab:block_comp} isolates the contribution of each learnable
@@ -771,7 +775,7 @@ DS-TCN $\to$ standard TCN & 109\,K & 84.8 & $-$0.8 \\
 $-$ DropPath (rate$=$0)  & 97\,K & 84.9 & $-$0.7 \\
 \bottomrule
 \end{tabular}
-\end{table}
+\vspace{-3mm}\end{table}
 
 \paragraph{DropPath rate sensitivity.}
 Table~\ref{tab:droppath} shows the effect of the stochastic depth rate
@@ -797,7 +801,7 @@ $p_d$ & Nano & Small & Large \\
 0.25 & 84.8 & 86.7 & 92.3 \\
 \bottomrule
 \end{tabular}
-\end{table}
+\vspace{-3mm}\end{table}
 
 
 \paragraph{TLA landmark sensitivity.}
@@ -805,13 +809,13 @@ Figure~\ref{fig:tla_k} shows that $K{=}8$ saturates Nano while Large
 benefits from $K{=}14$.
 
 %%─── Figure 9: TLA K sensitivity ────────────────────────────────────────────
-\begin{figure}[t]
+\begin{figure}[htpb]\vspace{-2mm}
 \centering
 \resizebox{\columnwidth}{!}{\input{images/fig9_tla}}
 \caption{TLA sensitivity to landmark count $K$. Nano saturates at $K{=}8$;
   Large benefits from $K{=}14$ (finer ${\approx}4.5$-frame granularity).}
 \label{fig:tla_k}
-\end{figure}
+\vspace{-3mm}\end{figure}
 
 \paragraph{Fusion strategy.}
 Table~\ref{tab:fusion} confirms mid-network fusion outperforms both early
@@ -831,7 +835,7 @@ Late  (3 independent full backbones) & 1.93M & 91.9 \\
 \textbf{Mid-network (ours, B4-style)} & \textbf{1.67M} & \best{92.5} \\
 \bottomrule
 \end{tabular}
-\end{table}
+\vspace{-3mm}\end{table}
 
 \paragraph{Cross-stream fusion (Small).}
 Replacing CSF with plain concatenation costs $-0.4$\,pp; removing it
@@ -840,14 +844,14 @@ entirely costs $-0.8$\,pp (Eq.~\ref{eq:csf} validated).
 \subsection{Training Curves}\label{sec:curves}
 
 %%─── Figure 10: Training curves ─────────────────────────────────────────────
-\begin{figure}[t]
+\begin{figure}[htpb]\vspace{-2mm}
 \centering
 \resizebox{\columnwidth}{!}{\input{images/fig10_curves}}
 \caption{Validation curves on NTU-60 X-Sub.
   KD boosts Nano by +2.9\,pp (bracket at right).
   Mixup/CutMix slow early convergence but improve the final peak.}
 \label{fig:curves}
-\end{figure}
+\vspace{-3mm}\end{figure}
 
 %%% =========================================================================
 \section{Discussion}\label{sec:discuss}
