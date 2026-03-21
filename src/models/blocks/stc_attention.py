@@ -62,9 +62,12 @@ class STCAttention(nn.Module):
         """
         B, C, T, V = x.shape
 
-        # Spatial attention
+        # Spatial attention — scale by V so mean weight = 1.0 (not 1/V).
+        # Without scaling: softmax over 25 joints gives mean 0.04/joint →
+        # attention branch contributes <1% even at full gate. ×V restores
+        # the spatial map to unit-mean so attention is meaningful when gate opens.
         x_s = x.mean(dim=(1, 2))                              # (B, V)
-        A_s = torch.softmax(self.spatial_fc(x_s), dim=-1)     # (B, V)
+        A_s = torch.softmax(self.spatial_fc(x_s), dim=-1) * V # (B, V), mean=1.0
         A_s = A_s.view(B, 1, 1, V)
 
         # Temporal attention

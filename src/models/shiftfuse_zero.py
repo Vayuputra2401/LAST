@@ -372,7 +372,7 @@ class ShiftFuseZero(nn.Module):
 
         # ── 4. Classifier head ────────────────────────────────────────────
         final_ch = channels[-1]
-        self.pool_gate  = nn.Parameter(torch.zeros(1))
+        self.pool_gate  = nn.Parameter(torch.full((1,), 4.0))  # sigmoid(4)≈0.98 → near-pure GAP (EfficientGCN approach)
         self.classifier = nn.Sequential(
             nn.Dropout(p=_dropout),
             nn.Linear(final_ch, num_classes),
@@ -603,7 +603,7 @@ class ShiftFuseZeroMidFusion(nn.Module):
             blk_global += 1
 
         # ── Classifier ─────────────────────────────────────────────────────
-        self.pool_gate  = nn.Parameter(torch.zeros(1))
+        self.pool_gate  = nn.Parameter(torch.full((1,), 4.0))  # sigmoid(4)≈0.98 → near-pure GAP (EfficientGCN approach)
         self.classifier = nn.Sequential(
             nn.Dropout(p=_dropout),
             nn.Linear(self.SHARED_CH, num_classes),
@@ -766,7 +766,7 @@ class ShiftFuseZeroB4(nn.Module):
 
         # ── Classifier ─────────────────────────────────────────────────────
         final_ch = self.SHARED_STAGES[-1][1]
-        self.pool_gate  = nn.Parameter(torch.zeros(1))
+        self.pool_gate  = nn.Parameter(torch.full((1,), 4.0))  # sigmoid(4)≈0.98 → near-pure GAP (EfficientGCN approach)
         self.classifier = nn.Sequential(
             nn.Dropout(p=_dropout),
             nn.Linear(final_ch, num_classes),
