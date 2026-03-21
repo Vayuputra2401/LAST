@@ -39,8 +39,8 @@
 %%% =========================================================================
 \begin{document}
 
-\title{ShiftFuse-Zero: Zero-Parameter Anatomical Priors\\
-       for Efficient Skeleton-Based Action Recognition}
+\title{Anatomy is Free: Zero-Parameter Structural Priors\\
+       for Efficient Skeleton Action Recognition}
 
 \author{Pathikreet Chowdhury}
 \affiliation{\institution{Institution}\country{India}}
@@ -69,12 +69,12 @@ These free structural priors reduce the burden on downstream learnable
 modules. By intelligently placing Joint Embedding and spatial attention
 \emph{before} the graph convolution, the \emph{EfficientZero Block}
 operates on an already anatomically-refined manifold.
-Three models cover the edge-to-server spectrum: \textbf{Nano} (97\,K) and
+Three models cover the edge-to-server spectrum: \textbf{Nano} (101\,K) and
 \textbf{Small} (233\,K) are hyper-efficient, quantisation-friendly solutions
 with ultra-low FLOPs, while \textbf{Large} (1.67\,M) targets maximum capacity.
 On NTU\,RGB+D\,60 cross-subject the trio achieves 85.85\,\%/87.6\,\%/92.5\,\%
 without distillation and 88.5\,\%/89.8\,\%/92.5\,\% with distillation.
-Strikingly, the Small variant strictly beats EfficientGCN-B0 with fewer parameters,
+Strikingly, the Small variant closely tracks EfficientGCN-B0 with fewer parameters,
 delivering up to $10{\times}$ parameter reduction over comparable baselines
 for fast edge inference.
 \end{abstract}
@@ -150,11 +150,11 @@ Our answer is \textbf{ShiftFuse-Zero}, a family of three models that
 achieves a new Pareto-optimal trade-off across the accuracy--parameter
 spectrum.
 While the core contribution remains the zero-parameter priors of BRASP and SGPShift,
-these modules catalyze hyper-efficient downstream architectures. SFZ-Nano (97\,K) and
+these modules catalyze hyper-efficient downstream architectures. SFZ-Nano (101\,K) and
 SFZ-Small (233\,K) redefine edge-deployment by yielding ultra-low FLOPs and
 quantisation-friendly operations for fast inference. On NTU-60 X-Sub, SFZ-Nano reaches
 \textbf{88.5\%} --- outperforming the 6.9\,M AGCN within 400\,KB. Strikingly,
-our Small variant achieves 89.8\%, strictly beating EfficientGCN-B0 with fewer parameters.
+our Small variant achieves 89.8\%, closely tracking EfficientGCN-B0 with fewer parameters.
 SFZ-Large limits the high-capacity spectrum, pushing the absolute accuracy
 frontier to \textbf{92.5\%} at 1.67\,M parameters.
 These results demonstrate that anatomy is a highly informative,
@@ -176,7 +176,7 @@ under-exploited.
   $K{=}3$ GCN refines an already anatomically structured representation
   (Section~\ref{sec:block}).
 \item \textbf{ShiftFuse-Zero model family}: three architectures --- Nano
-  (97\,K), Small (233\,K), Large (1.67\,M) --- with Temporal Landmark
+  (101\,K), Small (233\,K), Large (1.67\,M) --- with Temporal Landmark
   Attention, cross-stream gating, and mid-network fusion, covering the
   edge-to-server deployment spectrum (Section~\ref{sec:family}).
 \item \textbf{Knowledge distillation} across model scales, transferring
@@ -451,14 +451,14 @@ Table~\ref{tab:variants} lists the key hyperparameters per variant.
 \toprule
 Model  & $C_s$ & $C$           & $N$     & $K$ & $r$ & $p_d$ & Params \\
 \midrule
-Nano   & 24 & [32,64,128]   & [1,1,1] & 8  & 16 & 0.10 & 97\,K \\
+Nano   & 24 & [32,64,128]   & [1,1,1] & 8  & 16 & 0.10 & 101\,K \\
 Small  & 24 & [32,64,128]   & [1,2,1] & 8  & 8  & 0.10 & 233\,K \\
 Large  & 32 & [48,96,192]   & [1,2,4] & 14 & 8  & 0.20 & 1.67\,M \\
 \bottomrule
 \end{tabular}
 \vspace{-3mm}\end{table}
 
-\paragraph{Nano (97\,K).}
+\paragraph{Nano (101\,K).}
 Four streams are early-fused via StreamFusionConcat to a single 24-channel
 map.
 A single backbone $[32,64,128]$ with one block per stage processes it.
@@ -542,7 +542,7 @@ profile of each model variant.
 \toprule
 Model & Params & Mem (f32) & Mem (int8) & Operators & Target \\
 \midrule
-Nano  & 97\,K  & 388\,KB & 97\,KB  & gather, conv, BN & Cortex-M55 \\
+Nano  & 101\,K  & 388\,KB & 101\,KB  & gather, conv, BN & Cortex-M55 \\
 Small & 233\,K & 1.11\,MB & 220\,KB & gather, conv, BN & RPi Zero \\
 Large & 1.67\,M & 6.38\,MB & 1.67\,MB & gather, conv, BN & Jetson Nano \\
 \bottomrule
@@ -565,7 +565,7 @@ The zero-parameter modules are inherently quantisation-friendly:
 BRASP and SGPShift involve only integer indexing, and the remaining
 learnable layers (Conv2d, BN, Linear) are standard operators with
 well-established int8 quantisation support.
-SFZ-Nano at int8 precision requires only \textbf{97\,KB} of model
+SFZ-Nano at int8 precision requires only \textbf{101\,KB} of model
 storage --- fitting comfortably within the 512\,KB SRAM of an ARM
 Cortex-M55.
 
@@ -618,7 +618,7 @@ SGN$^\dagger$~\cite{sgn}            & 0.69M & 89.0 & 94.5 & 79.2 & 81.5 \\
 
 SFZ-Large achieves 92.5\% on NTU-60 X-Sub, outperforming EfficientGCN-B4
 by 0.4\,pp at a comparable parameter scale.
-SFZ-Nano achieves 85.85\% at only 97\,K parameters; with knowledge
+SFZ-Nano achieves 85.85\% at only 101\,K parameters; with knowledge
 distillation it reaches 88.5\%, surpassing AGCN with $70{\times}$ fewer
 parameters.
 SFZ-Small achieves 87.6\% at 233\,K parameters, a 2.2\,pp gain over the
@@ -742,7 +742,7 @@ $K$ & $\mathbf{A}_\ell$ & Params & Acc\,(\%) & $\Delta$ \\
 1 & --- & 89\,K & 83.4 & --- \\
 2 &     & 93\,K & 84.2 & +0.8 \\
 3 &     & 95\,K & 84.6 & +1.2 \\
-3 & \checkmark & 97\,K & \best{85.85} & +2.45* \\
+3 & \checkmark & 101\,K & \best{85.85} & +2.45* \\
 \bottomrule
 \end{tabular}
 \smallskip
@@ -768,11 +768,11 @@ per block.
 \toprule
 Configuration & Params & Acc\,(\%) & $\Delta$ \\
 \midrule
-Full EfficientZero Block & 97\,K & 85.85 & --- \\
+Full EfficientZero Block & 101\,K & 85.85 & --- \\
 $-$ STC-Attention        & 94\,K & 85.0 & $-$0.6 \\
 $-$ Joint Embedding      & 94\,K & 85.1 & $-$0.5 \\
 DS-TCN $\to$ standard TCN & 109\,K & 84.8 & $-$0.8 \\
-$-$ DropPath (rate$=$0)  & 97\,K & 84.9 & $-$0.7 \\
+$-$ DropPath (rate$=$0)  & 101\,K & 84.9 & $-$0.7 \\
 \bottomrule
 \end{tabular}
 \vspace{-3mm}\end{table}
@@ -869,7 +869,7 @@ The 1.8\,pp gain at zero parameter cost (Table~\ref{tab:ablation})
 confirms that anatomy is a highly informative prior that reduces the
 data and capacity needed to learn good spatial representations.
 Notably, the gain is proportionally \emph{larger} for smaller models:
-+1.8\,pp for Nano (97\,K) vs.\ an estimated +1.1\,pp for Large (1.1\,M),
++1.8\,pp for Nano (101\,K) vs.\ an estimated +1.1\,pp for Large (1.1\,M),
 suggesting that smaller models benefit more from free structural priors
 because they cannot afford to learn equivalent spatial structure from
 data alone.
@@ -908,8 +908,8 @@ computational cost}, democratising access to efficient skeleton
 recognition for research groups without large GPU budgets.
 
 \paragraph{Edge deployability.}
-SFZ-Nano's 97\,K parameters fit in $<$400\,KB of RAM (float32) and
-only 97\,KB at int8 precision (Table~\ref{tab:deploy}), well within
+SFZ-Nano's 101\,K parameters fit in $<$400\,KB of RAM (float32) and
+only 101\,KB at int8 precision (Table~\ref{tab:deploy}), well within
 the 512\,KB SRAM of an ARM Cortex-M55.
 The absence of per-sample dynamic adjacency~\cite{agcn,ctrgcn}
 eliminates the $O(V^2C)$ bottleneck on edge accelerators.
@@ -954,7 +954,7 @@ Small, Large) achieves a new Pareto-optimal trade-off across the
 accuracy--parameter--deployability spectrum.
 
 On NTU RGB+D\,60 X-Sub, SFZ-Nano+KD reaches \textbf{88.5\%} at only
-97\,K parameters --- outperforming 6.9\,M-param AGCN while occupying
+101\,K parameters --- outperforming 6.9\,M-param AGCN while occupying
 $<$400\,KB of memory --- and SFZ-Large achieves \textbf{92.5\%},
 surpassing EfficientGCN-B4.
 In terms of accuracy-per-parameter efficiency, SFZ-Nano+KD

@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.3.21)  22 MAR 2026 02:56
+This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.3.21)  22 MAR 2026 03:19
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1818,7 +1818,7 @@ LaTeX Font Info:    Font shape `LMX/ntxexx/b/n' will be
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/n' will be
 (Font)              scaled to size 5.0pt on input line 55.
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/b/n' will be
-(Font)              scaled to size 6.0pt on input line 68.
+(Font)              scaled to size 6.0pt on input line 67.
 )
 
 Class acmart Warning: A possible image without description on input line 292.
@@ -1919,10 +1919,10 @@ Class acmart Warning: A possible image without description on input line 372.
 
 
 Package fancyhdr Warning: \headheight is too small (13.0pt): 
-(fancyhdr)                Make it at least 15.19852pt, for example:
-(fancyhdr)                \setlength{\headheight}{15.19852pt}.
+(fancyhdr)                Make it at least 15.45749pt, for example:
+(fancyhdr)                \setlength{\headheight}{15.45749pt}.
 (fancyhdr)                You might also make \topmargin smaller:
-(fancyhdr)                \addtolength{\topmargin}{-2.19852pt}.
+(fancyhdr)                \addtolength{\topmargin}{-2.45749pt}.
 
 [3.3] (images/fig5_family.tex)
 
@@ -1988,10 +1988,10 @@ ibertineT-TLF/m/n/9 (-20) met-ric $[] \U/ntxmia/m/it/9 = [] \LMS/ntxsy/m/n/9 ù
 
 
 Package fancyhdr Warning: \headheight is too small (13.0pt): 
-(fancyhdr)                Make it at least 15.19852pt, for example:
-(fancyhdr)                \setlength{\headheight}{15.19852pt}.
+(fancyhdr)                Make it at least 15.45749pt, for example:
+(fancyhdr)                \setlength{\headheight}{15.45749pt}.
 (fancyhdr)                You might also make \topmargin smaller:
-(fancyhdr)                \addtolength{\topmargin}{-2.19852pt}.
+(fancyhdr)                \addtolength{\topmargin}{-2.45749pt}.
 
 [5.5] (images/fig9_tla.tex)
 
@@ -2003,10 +2003,10 @@ Class acmart Warning: A possible image without description on input line 854.
 
 
 Package fancyhdr Warning: \headheight is too small (13.0pt): 
-(fancyhdr)                Make it at least 15.19852pt, for example:
-(fancyhdr)                \setlength{\headheight}{15.19852pt}.
+(fancyhdr)                Make it at least 15.45749pt, for example:
+(fancyhdr)                \setlength{\headheight}{15.45749pt}.
 (fancyhdr)                You might also make \topmargin smaller:
-(fancyhdr)                \addtolength{\topmargin}{-2.19852pt}.
+(fancyhdr)                \addtolength{\topmargin}{-2.45749pt}.
 
 [7.7] Excluding 'acks' comment. (main.bbl
 Underfull \vbox (badness 10000) has occurred while \output is active []
@@ -2047,11 +2047,11 @@ Package rerunfilecheck Info: File `main.out' has not changed.
 (rerunfilecheck)             Checksum: 4445F3A4498EC1F7D57FE0A302AA347A;3049.
  ) 
 Here is how much of TeX's memory you used:
- 46230 strings out of 467871
- 1018596 string characters out of 5418376
- 1575985 words of memory out of 5000000
+ 46227 strings out of 467871
+ 1018512 string characters out of 5418376
+ 1575911 words of memory out of 5000000
  73172 multiletter control sequences out of 15000+600000
- 932020 words of font info for 713 fonts, out of 8000000 for 9000
+ 931649 words of font info for 711 fonts, out of 8000000 for 9000
  1302 hyphenation exceptions out of 8191
  95i,21n,131p,1003b,2373s stack positions out of 10000i,1000n,20000p,200000b,200000s
 <C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/inconsolata/
@@ -2073,7 +2073,7 @@ fb><C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/newtx/txexs
 iaX.pfb><C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/newtx/
 txsym.pfb><C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/newt
 x/txsys.pfb>
-Output written on main.pdf (8 pages, 691797 bytes).
+Output written on main.pdf (8 pages, 689497 bytes).
 PDF statistics:
  431 PDF objects out of 1000 (max. 8388607)
  118 named destinations out of 1000 (max. 500000)

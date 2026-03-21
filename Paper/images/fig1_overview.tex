@@ -61,8 +61,7 @@
 %% classifier
 \node[cls, minimum height=2.8cm, minimum width=1.5cm]
   (pool) at (7.5, -4.50) {Gated\\Pool\\+ FC};
-  
-\draw[arr] (tla.east)  -- (tla.east -| pool.west);
+\draw[arr] (tla.east) -- ++(0.5,0) |- (pool.west);
 
 %% output
 \node[right=0.6cm of pool] (out) {\textbf{Logits}};
