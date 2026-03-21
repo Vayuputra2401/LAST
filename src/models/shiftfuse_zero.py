@@ -43,7 +43,7 @@ ZERO_VARIANTS = {
         'strides':             [1, 2, 2],
         'drop_path_rate':      0.10,
         'dropout':             0.10,
-        'tla_landmarks':       8,
+        'tla_landmarks':       12,
         'tla_reduce_ratio':    16,   # C_r=8 — keeps TLA cost ~4K params
         'use_efficient_block': True,
         'use_tla':             True,
@@ -56,7 +56,7 @@ ZERO_VARIANTS = {
         'channels':            [32, 64, 128],
         'num_blocks':          [1, 2, 1],
         'strides':             [1, 2, 2],
-        'drop_path_rate':      0.05,
+        'drop_path_rate':      0.10,
         'dropout':             0.10,
         'tla_landmarks':       8,
         'tla_reduce_ratio':    8,

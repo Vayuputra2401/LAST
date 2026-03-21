@@ -3,4 +3,4 @@ model:
   variant: nano_tiny_efficient
   num_classes: 60
   drop_path_rate: 0.10
-  dropout: 0.10
+  dropout: 0.0
