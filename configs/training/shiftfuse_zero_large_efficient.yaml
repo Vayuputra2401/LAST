@@ -8,18 +8,19 @@ training:
 
   # Scheduler
   scheduler: cosine_warmup
-  warmup_epochs: 10
+  warmup_epochs: 5
   warmup_start_lr: 0.005
   min_lr: 0.00001  # lower floor for larger model — more fine-grained late-epoch tuning
 
-  # Duration — 150ep: 1.1M params converges 2-3x faster than nano/small;
-  # Mixup/CutMix justifies ~2x B4's 70ep; cosine LR essentially flat by ep200+
-  epochs: 150
-  batch_size: 64
+  # Duration — B4-exact: 70ep × (40320/16) = 176,400 gradient steps.
+  # warmup_epochs reduced to 5: batch=16 gradients are already noisy, long warmup wastes steps.
+  epochs: 100
+  batch_size: 16
   gradient_accumulation_steps: 1
 
-  # Regularization
-  label_smoothing: 0.1  # lightweight soft targets — sufficient alongside drop_path=0.20
+  # Regularization — B4-exact: no label smoothing, no augmentation.
+  # dropout=0.25 + drop_path=0.25 + WD=0.0001 is sufficient for 1.67M params.
+  label_smoothing: 0.0
   gradient_clip: 1.0
 
   # Augmentation — keep light: DropPath 0.20 + WD is already adequate for 1.1M params

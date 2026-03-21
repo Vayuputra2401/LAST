@@ -46,9 +46,11 @@ class STCAttention(nn.Module):
         self.channel_fc1 = nn.Linear(channels, C_r, bias=True)
         self.channel_fc2 = nn.Linear(C_r, channels, bias=True)
 
-        # Residual gate: sigmoid(-4) ≈ 0.018 at init → near-identity pass-through
-        # Fades in attention gradually; added to no_decay in trainer (contains 'gate')
-        self.gate = nn.Parameter(torch.full((1,), -4.0))
+        # Residual gate: sigmoid(0) = 0.5 at init → attention active at 50% from epoch 1.
+        # Matches B4's STJA which is always fully active (no gate). Gate can still
+        # learn to suppress attention if it's unhelpful for a given block.
+        # Added to no_decay in trainer (name contains 'gate').
+        self.gate = nn.Parameter(torch.zeros(1))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

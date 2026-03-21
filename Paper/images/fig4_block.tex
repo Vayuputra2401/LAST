@@ -18,32 +18,33 @@
   learn/.style={box, fill=blue!8,  draw=learnblue!50},
   hilit/.style={box, fill=blue!18, draw=learnblue!80},
   ann/.style={font=\tiny, text=gray!65, anchor=west},
-  arr/.style={-Stealth, thick, draw=gray!55}
+  arr/.style={-Stealth, thick, draw=gray!55},
+  skip/.style={-Stealth, thick, draw=gray!35, rounded corners=5pt}
 ]
-\node[free]  (brasp) at (0,0)    {BRASP\ \ (Eq.\,1)};
-\node[free]  (sgp)   at (0,-0.7) {SGPShift\ \ (Eq.\,2)};
-\node[learn] (je)    at (0,-1.4) {Joint Embedding $\mathbf{b}_v$};
-\node[learn] (stca)  at (0,-2.1) {STC-Attention ($V{\times}V$)};
-\node[learn] (gcn)   at (0,-2.8) {Graph Conv $K{=}3 + \mathbf{A}_\ell$\ \ (Eq.\,3)};
-\node[learn] (tcn)   at (0,-3.5) {DS-TCN\ (dil.\,1\,+\,dil.\,2)};
-\node[free]  (dp)    at (0,-4.2) {DropPath};
-\node[learn] (res)   at (0,-4.9) {Residual $\oplus$};
-\node[hilit] (tla)   at (0,-5.6) {TLA\ \ (last block only)\ \ (Eq.\,4)};
+\node[free]  (brasp) at (0,0)      {BRASP\ \ (Eq.\,1)};
+\node[free, below=0.60cm of brasp] (sgp)   {SGPShift\ \ (Eq.\,2)};
+\node[learn, below=0.60cm of sgp]  (je)    {Joint Embedding $\mathbf{b}_v$};
+\node[learn, below=0.60cm of je]   (stca)  {STC-Attention ($V{\times}V$)};
+\node[learn, below=0.60cm of stca] (gcn)   {Graph Conv $K{=}3 + \mathbf{A}_\ell$\ \ (Eq.\,3)};
+\node[learn, below=0.60cm of gcn]  (tcn)   {DS-TCN\ (dil.\,1\,+\,dil.\,2)};
+\node[free, below=0.60cm of tcn]   (dp)    {DropPath};
+\node[learn, below=0.60cm of dp]   (res)   {Residual $\oplus$};
+\node[hilit, below=0.60cm of res]  (tla)   {TLA\ \ (last block only)\ \ (Eq.\,4)};
 
 %% skip
-\draw[arr, gray!35]
-  (brasp.west) -- +(-0.6,0) |- (res.west);
+\draw[skip] (brasp.west) -- +(-0.6,0) |- (res.west);
 
 \foreach \a/\b in {brasp/sgp,sgp/je,je/stca,stca/gcn,gcn/tcn,tcn/dp,dp/res,res/tla}
   \draw[arr] (\a)--(\b);
 
 %% annotations right
-\node[ann] at (1.85, 0)    {0 params, 0 FLOPs};
-\node[ann] at (1.85,-0.7)  {0 params, sparse avg};
-\node[ann] at (1.85,-1.4)  {$C_\text{in}{\times}V$ params};
-\node[ann] at (1.85,-2.8)  {$3C^2$ params};
-\node[ann] at (1.85,-3.5)  {$\approx C^2/2$ params};
-\node[ann] at (1.85,-4.2)  {0 params};
-\node[ann] at (1.85,-5.6)  {$O(T{\cdot}K)$ complexity};
+\node[ann, right=0.35cm of brasp] {0 params, 0 FLOPs};
+\node[ann, right=0.35cm of sgp]   {0 params, sparse avg};
+\node[ann, right=0.35cm of je]    {$C_\text{in}{\times}V$ params};
+\node[ann, right=0.35cm of gcn]   {$3C^2$ params};
+\node[ann, right=0.35cm of tcn]   {$\approx C^2/2$ params};
+\node[ann, right=0.35cm of dp]    {0 params};
+\node[ann, right=0.35cm of tla]   {$O(T{\cdot}K)$ complexity};
+
 \end{tikzpicture}
 \end{document}

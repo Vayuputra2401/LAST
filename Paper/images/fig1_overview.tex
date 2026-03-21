@@ -19,60 +19,59 @@
   stem/.style={box, fill=orange!12, draw=orange!60},
   cls/.style={box, fill=gray!12, draw=gray!60},
   inp/.style={box, fill=yellow!12, draw=yellow!60!black, minimum width=1.4cm},
-  arr/.style={-Stealth, thick, draw=gray!60}
+  arr/.style={-Stealth, thick, draw=gray!60},
+  skip/.style={-Stealth, thick, draw=gray!40, rounded corners=5pt}
 ]
 
 %% input streams
 \node[inp] (xj)  at (0, 0)    {Joint};
-\node[inp]  (xv)  at (0,-0.75) {Velocity};
-\node[inp]  (xb)  at (0,-1.50) {Bone};
-\node[inp]  (xbv) at (0,-2.25) {Bone-vel};
+\node[inp]  (xv)  at (0,-1.00) {Velocity};
+\node[inp]  (xb)  at (0,-2.00) {Bone};
+\node[inp]  (xbv) at (0,-3.00) {Bone-vel};
 
 %% stem
-\node[stem, minimum height=2.8cm, minimum width=1.5cm]
-  (sfuse) at (2.1, -1.125) {Stream\\Fusion\\Concat};
+\node[stem, minimum height=3.6cm, minimum width=1.5cm]
+  (sfuse) at (2.1, -1.5) {Stream\\Fusion\\Concat};
 
 \foreach \s in {xj,xv,xb,xbv}
   \draw[arr] (\s.east) -- (\s.east -| sfuse.west);
 
 %% block internals (stacked, right of stem)
-\node[free]  (brasp) at (4.4,  0.10)  {BRASP};
-\node[free]  (sgp)   at (4.4, -0.42)  {SGPShift};
-\node[learn] (je)    at (4.4, -0.94)  {JointEmbed};
-\node[learn] (gcn)   at (4.4, -1.46)  {Graph Conv};
-\node[learn] (tcn)   at (4.4, -1.98)  {DS-TCN};
-\node[free]  (dp)    at (4.4, -2.50)  {DropPath};
-\node[learn] (res)   at (4.4, -3.02)  {$\oplus$ Skip};
+\node[free]  (brasp) at (5.0,  0.50)  {BRASP};
+\node[free, below=0.50cm of brasp]  (sgp)   {SGPShift};
+\node[learn, below=0.50cm of sgp]   (je)    {JointEmbed};
+\node[learn, below=0.50cm of je]    (gcn)   {Graph Conv};
+\node[learn, below=0.50cm of gcn]   (tcn)   {DS-TCN};
+\node[free, below=0.50cm of tcn]    (dp)    {DropPath};
+\node[learn, below=0.50cm of dp]    (res)   {$\oplus$ Skip};
 
 % skip bypass
-\draw[arr, gray!40]
-  (brasp.west) -- +(-0.35,0) |- (res.west);
+\draw[skip] (brasp.west) -- +(-0.6,0) |- (res.west);
 
-\draw[arr] (sfuse.east) -- (brasp.west |- sfuse.east)
-  -- (brasp.west);
+\draw[arr] (sfuse.east) -- ++(0.5,0) |- (brasp.west);
 \foreach \a/\b in {brasp/sgp, sgp/je, je/gcn, gcn/tcn, tcn/dp, dp/res}
   \draw[arr] (\a)--(\b);
 
-\node[font=\tiny, text=learnblue!80] at (4.4, 0.55) {EfficientZero Block $\times N$};
+\node[font=\tiny, text=learnblue!80] at (5.0, 1.0) {EfficientZero Block $\times N$};
 
 %% TLA
-\node[learn, fill=blue!15] (tla) at (4.4, -3.60) {TLA (last)};
+\node[learn, fill=blue!15, below=0.70cm of res] (tla) {TLA (last)};
 \draw[arr] (res)--(tla);
 
 %% classifier
 \node[cls, minimum height=2.8cm, minimum width=1.5cm]
-  (pool) at (6.5, -1.75) {Gated\\Pool\\+ FC};
-\draw[arr] (tla.east)  -- (tla.east  -| pool.west);
-\draw[arr] (brasp.east) -- (brasp.east -| pool.west);
+  (pool) at (7.5, -4.50) {Gated\\Pool\\+ FC};
+  
+\draw[arr] (tla.east)  -- (tla.east -| pool.west);
 
 %% output
 \node[right=0.6cm of pool] (out) {\textbf{Logits}};
 \draw[arr] (pool)--(out);
 
 %% legend
-\node[free,  minimum width=1.1cm] at (0,-3.10) {0-param};
-\node[learn, minimum width=1.1cm] at (1.55,-3.10) {learnable};
-\node[stem,  minimum width=1.1cm] at (3.1,-3.10) {fusion};
+\node[free,  minimum width=1.1cm] at (0,-7.50) {0-param};
+\node[learn, minimum width=1.1cm] at (1.55,-7.50) {learnable};
+\node[stem,  minimum width=1.1cm] at (3.1,-7.50) {fusion};
 
 \end{tikzpicture}
 \end{document}

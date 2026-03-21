@@ -743,21 +743,14 @@ class ShiftFuseZeroB4(nn.Module):
             self.stream_stages.append(per_stream)
 
         # ── Shared stages (after concat of 3×48=144) ──────────────────────
-        tla = TemporalLandmarkAttention(self.SHARED_STAGES[-1][1], self.TLA_K, self.TLA_REDUCE)
         self.shared_stages = nn.ModuleList()
-        prev_ch = None
-        last_si = len(self.SHARED_STAGES) - 1
         for si, (c_in, c_out, nb, stride_first) in enumerate(self.SHARED_STAGES):
-            last_bi = nb - 1
             stage_mods = nn.ModuleList()
             for b in range(nb):
                 dp     = self.DROP_PATH_RATE * blk_global / max(total_blocks - 1, 1)
                 stride = stride_first if b == 0 else 1
-                # first block of first shared stage takes c_in=144 (from concat)
                 c_b    = c_in if b == 0 else c_out
-                use_tla = (si == last_si and b == last_bi)
-                stage_mods.append(_make_block(c_b, c_out, stride, dp,
-                                              tla=tla if use_tla else None))
+                stage_mods.append(_make_block(c_b, c_out, stride, dp))
                 blk_global += 1
             self.shared_stages.append(stage_mods)
 
