@@ -644,6 +644,171 @@ def build_shiftfuse_zero_midfusion(num_classes: int = 60, **kwargs) -> ShiftFuse
 
 
 # ---------------------------------------------------------------------------
+# ShiftFuseZeroB4  (EfficientGCN-B4-exact Large — our novelties on top)
+# ---------------------------------------------------------------------------
+class ShiftFuseZeroB4(nn.Module):
+    """EfficientGCN-B4-exact Large model with our zero-param novelties on top.
+
+    Architecture mirrors B4-SG (1.1M) exactly:
+        Per-stream (J / V / B):
+            stem(3 → 64) → stage1[64→96, ×2 blocks] → stage2[96→48, ×2 blocks, stride=2]
+        Fusion: concat(3×48 = 144) — no projection conv; first shared block handles dim change
+        Shared:
+            stage1[144→128, ×3 blocks] → stage2[128→272, ×3 blocks, stride=2, +TLA at last]
+        Classifier: Dropout(0.25) → Linear(272 → num_classes)
+
+    Our additions on top of B4:
+        BRASP (0-param anatomical shift), SGPShift (0-param semantic grouping),
+        per-block A_k_learned adjacency residuals, TLA (K=14 learnable anchors).
+
+    Expected params: ~1.1M (B4 base) + ~20K novelties ≈ 1.12M total.
+    """
+
+    STREAM_NAMES   = ['joint', 'velocity', 'bone']
+    STREAM_STEM    = 64
+    # (in_ch, out_ch, n_blocks, stride_first)
+    STREAM_STAGES  = [(64, 96, 2, 1), (96, 48, 2, 2)]
+    SHARED_STAGES  = [(144, 128, 3, 1), (128, 272, 3, 2)]
+    DROP_PATH_RATE = 0.25
+    DROPOUT        = 0.25
+    TLA_K          = 14
+    TLA_REDUCE     = 8
+
+    def __init__(
+        self,
+        num_classes:  int   = 60,
+        graph_layout: str   = 'ntu-rgb+d',
+        num_joints:   int   = 25,
+        in_channels:  int   = 3,
+        dropout:      float = None,
+    ):
+        super().__init__()
+        self.num_classes = num_classes
+        _dropout = dropout if dropout is not None else self.DROPOUT
+
+        # ── Graph ─────────────────────────────────────────────────────────
+        graph   = Graph(layout=graph_layout, strategy='semantic_bodypart',
+                        max_hop=2, raw_partitions=True)
+        A_raw   = graph.A
+        A_sym   = normalize_symdigraph_full(A_raw)
+        A_intra = torch.tensor(A_sym[0], dtype=torch.float32)
+        A_inter = torch.tensor(A_sym[1], dtype=torch.float32)
+        A_flat  = torch.tensor((A_raw.sum(0) > 0).astype('float32'))
+        self.register_buffer('A_intra', A_intra)
+        self.register_buffer('A_inter', A_inter)
+        self.register_buffer('A_flat',  A_flat)
+        A_gcn_parts = [torch.tensor(A_sym[k], dtype=torch.float32)
+                       for k in range(A_sym.shape[0])]
+
+        # ── Drop-path schedule ─────────────────────────────────────────────
+        n_stream = sum(nb for _, _, nb, _ in self.STREAM_STAGES)
+        n_shared = sum(nb for _, _, nb, _ in self.SHARED_STAGES)
+        total_blocks = 3 * n_stream + n_shared
+
+        def _make_block(c_in, c_out, stride, dp, tla=None):
+            return EfficientZeroBlock(
+                in_channels=c_in, out_channels=c_out, stride=stride,
+                A_flat=A_flat, A_intra=A_intra, A_inter=A_inter,
+                A_gcn_partitions=A_gcn_parts,
+                drop_path_rate=dp, dropout=_dropout,
+                num_joints=num_joints,
+                tla=tla,
+            )
+
+        blk_global = 0
+
+        # ── Per-stream stems (one per stream, 1-stream input) ──────────────
+        self.stream_stems = nn.ModuleList([
+            StreamFusionConcat(in_channels=in_channels,
+                               out_channels=self.STREAM_STEM, num_streams=1)
+            for _ in range(3)
+        ])
+
+        # ── Per-stream stages (independent weights per stream) ─────────────
+        # stream_stages[stream_idx][stage_idx] = nn.ModuleList of blocks
+        self.stream_stages = nn.ModuleList()
+        for _ in range(3):
+            prev_ch = self.STREAM_STEM
+            per_stream = nn.ModuleList()
+            for (c_in, c_out, nb, stride_first) in self.STREAM_STAGES:
+                stage_mods = nn.ModuleList()
+                for b in range(nb):
+                    dp     = self.DROP_PATH_RATE * blk_global / max(total_blocks - 1, 1)
+                    stride = stride_first if b == 0 else 1
+                    c_b    = prev_ch if b == 0 else c_out
+                    stage_mods.append(_make_block(c_b, c_out, stride, dp))
+                    blk_global += 1
+                per_stream.append(stage_mods)
+                prev_ch = c_out
+            self.stream_stages.append(per_stream)
+
+        # ── Shared stages (after concat of 3×48=144) ──────────────────────
+        tla = TemporalLandmarkAttention(self.SHARED_STAGES[-1][1], self.TLA_K, self.TLA_REDUCE)
+        self.shared_stages = nn.ModuleList()
+        prev_ch = None
+        last_si = len(self.SHARED_STAGES) - 1
+        for si, (c_in, c_out, nb, stride_first) in enumerate(self.SHARED_STAGES):
+            last_bi = nb - 1
+            stage_mods = nn.ModuleList()
+            for b in range(nb):
+                dp     = self.DROP_PATH_RATE * blk_global / max(total_blocks - 1, 1)
+                stride = stride_first if b == 0 else 1
+                # first block of first shared stage takes c_in=144 (from concat)
+                c_b    = c_in if b == 0 else c_out
+                use_tla = (si == last_si and b == last_bi)
+                stage_mods.append(_make_block(c_b, c_out, stride, dp,
+                                              tla=tla if use_tla else None))
+                blk_global += 1
+            self.shared_stages.append(stage_mods)
+
+        # ── Classifier ─────────────────────────────────────────────────────
+        final_ch = self.SHARED_STAGES[-1][1]
+        self.pool_gate  = nn.Parameter(torch.zeros(1))
+        self.classifier = nn.Sequential(
+            nn.Dropout(p=_dropout),
+            nn.Linear(final_ch, num_classes),
+        )
+
+    def forward(self, stream_dict: dict) -> torch.Tensor:
+        raw = [stream_dict[n] for n in self.STREAM_NAMES]
+        B   = raw[0].shape[0]
+        multi_body = raw[0].dim() == 5
+        if multi_body:
+            raw = [torch.cat([s[..., 0], s[..., 1]], dim=0) for s in raw]
+
+        # Per-stream: stem → stage1 → stage2
+        feats = []
+        for s, stem, stages in zip(raw, self.stream_stems, self.stream_stages):
+            x = stem([s])
+            for stage_blocks in stages:
+                for block in stage_blocks:
+                    x = block(x)
+            feats.append(x)
+
+        # Fusion: direct concat (3×48=144, no projection)
+        x = torch.cat(feats, dim=1)
+
+        # Shared stages
+        for stage_blocks in self.shared_stages:
+            for block in stage_blocks:
+                x = block(x)
+
+        # Gated GAP+GMP → classifier
+        x   = x.mean(dim=2)
+        g   = torch.sigmoid(self.pool_gate)
+        x   = g * x.mean(dim=-1) + (1 - g) * x.max(dim=-1).values
+        out = self.classifier(x)
+        if multi_body:
+            out = (out[:B] + out[B:]) / 2
+        return out
+
+
+def build_shiftfuse_zero_b4(num_classes: int = 60, **kwargs) -> ShiftFuseZeroB4:
+    """Build large_b4_efficient (B4-exact mid-fusion, ~1.12M)."""
+    return ShiftFuseZeroB4(num_classes=num_classes, **kwargs)
+
+
+# ---------------------------------------------------------------------------
 # Build helpers
 # ---------------------------------------------------------------------------
 def build_shiftfuse_zero(

@@ -171,6 +171,7 @@ def main():
                             'shiftfuse_zero_nano_tiny_efficient',
                             'shiftfuse_zero_small_late_efficient',
                             'shiftfuse_zero_large_late_efficient',
+                            'shiftfuse_zero_large_b4_efficient',
                         ],
                         help='Model variant')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
@@ -210,7 +211,7 @@ def main():
     args = parser.parse_args()
 
     # ── 1. Load & merge config ──────────────────────────────────────────
-    if args.model == 'shiftfuse_zero_large_late_efficient':
+    if args.model in ('shiftfuse_zero_large_late_efficient', 'shiftfuse_zero_large_b4_efficient'):
         _training_cfg_name = 'shiftfuse_zero_large_efficient'
     else:
         _training_cfg_name = 'shiftfuse_zero_nano_efficient'
@@ -302,7 +303,15 @@ def main():
     num_classes = config['data']['dataset'].get('num_classes', 60 if args.dataset == 'ntu60' else 120)
     num_joints  = config['data']['dataset']['num_joints']
 
-    if args.model == 'shiftfuse_zero_large_late_efficient':
+    if args.model == 'shiftfuse_zero_large_b4_efficient':
+        from src.models.shiftfuse_zero import build_shiftfuse_zero_b4
+        print(f"\n  Creating ShiftFuse-Zero B4-Exact (3-stream, B4 channels+blocks, ~1.12M)...")
+        model = build_shiftfuse_zero_b4(
+            num_classes=num_classes,
+            num_joints=num_joints,
+            dropout=config['model'].get('dropout'),
+        )
+    elif args.model == 'shiftfuse_zero_large_late_efficient':
         from src.models.shiftfuse_zero import build_shiftfuse_zero_midfusion
         print(f"\n  Creating ShiftFuse-Zero MidFusion (B4-style, 3-stream, ~1.09M)...")
         model = build_shiftfuse_zero_midfusion(

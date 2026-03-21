@@ -8,17 +8,10 @@
 %% ── packages ──────────────────────────────────────────────────────────────
 \usepackage{booktabs}
 \usepackage{multirow}
-\usepackage{amsmath,amssymb,bm}
+\usepackage{amsmath,bm}
 \usepackage{graphicx}
 \usepackage{xcolor}
 \usepackage{enumitem}
-\usepackage{tikz}
-\usepackage{pgfplots}
-\pgfplotsset{compat=1.18}
-\usetikzlibrary{
-  shapes.geometric, arrows.meta, positioning, fit,
-  backgrounds, calc, decorations.pathreplacing, shadows
-}
 \usepackage{microtype}
 
 %% ── colours ───────────────────────────────────────────────────────────────
@@ -185,78 +178,7 @@ A gated global pooling head produces class logits.
 %%─── Figure 1: Overview pipeline ────────────────────────────────────────────
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}[
-  every node/.style={font=\scriptsize},
-  box/.style={draw, rounded corners=3pt, minimum width=1.6cm,
-              minimum height=0.55cm, align=center, fill=white},
-  free/.style={box, fill=green!10, draw=freegreen!70},
-  learn/.style={box, fill=blue!8, draw=learnblue!50},
-  stem/.style={box, fill=orange!12, draw=orange!60},
-  cls/.style={box, fill=gray!12, draw=gray!60},
-  inp/.style={box, fill=yellow!12, draw=yellow!60!black, minimum width=1.4cm},
-  arr/.style={-Stealth, thick, draw=gray!60}
-]
-
-%% input streams
-\node[inp] (xj)  at (0, 0)    {Joint};
-\node[inp]  (xv)  at (0,-0.75) {Velocity};
-\node[inp]  (xb)  at (0,-1.50) {Bone};
-\node[inp]  (xbv) at (0,-2.25) {Bone-vel};
-
-%% stem
-\node[stem, minimum height=2.8cm, minimum width=1.5cm]
-  (sfuse) at (2.1, -1.125) {Stream\\Fusion\\Concat};
-
-\foreach \s in {xj,xv,xb,xbv}
-  \draw[arr] (\s.east) -- (\s.east -| sfuse.west);
-
-%% block internals (stacked, right of stem)
-\node[free]  (brasp) at (4.4,  0.10)  {BRASP};
-\node[free]  (sgp)   at (4.4, -0.42)  {SGPShift};
-\node[learn] (je)    at (4.4, -0.94)  {JointEmbed};
-\node[learn] (gcn)   at (4.4, -1.46)  {Graph Conv};
-\node[learn] (tcn)   at (4.4, -1.98)  {DS-TCN};
-\node[free]  (dp)    at (4.4, -2.50)  {DropPath};
-\node[learn] (res)   at (4.4, -3.02)  {$\oplus$ Skip};
-
-% skip bypass
-\draw[arr, gray!40]
-  (brasp.west) -- +(-0.35,0) |- (res.west);
-
-\draw[arr] (sfuse.east) -- (brasp.west |- sfuse.east)
-  -- (brasp.west);
-\foreach \a/\b in {brasp/sgp, sgp/je, je/gcn, gcn/tcn, tcn/dp, dp/res}
-  \draw[arr] (\a)--(\b);
-
-% dashed bounding box
-\begin{scope}[on background layer]
-  \node[draw=learnblue!35, dashed, rounded corners=4pt, fill=blue!3,
-        inner sep=5pt,
-        fit=(brasp)(sgp)(je)(gcn)(tcn)(dp)(res)] (blkbox) {};
-\end{scope}
-\node[font=\tiny, text=learnblue!80, above=2pt of blkbox.north]
-  {EfficientZero Block $\times N$};
-
-%% TLA
-\node[learn, fill=blue!15] (tla) at (4.4, -3.60) {TLA (last)};
-\draw[arr] (res)--(tla);
-
-%% classifier
-\node[cls, minimum height=2.8cm, minimum width=1.5cm]
-  (pool) at (6.5, -1.75) {Gated\\Pool\\+ FC};
-\draw[arr] (tla.east)  -- (tla.east  -| pool.west);
-\draw[arr] (brasp.east) -- (brasp.east -| pool.west);
-
-%% output
-\node[right=0.6cm of pool] (out) {\textbf{Logits}};
-\draw[arr] (pool)--(out);
-
-%% legend
-\node[free,  minimum width=1.1cm] at (0,-3.10) {0-param};
-\node[learn, minimum width=1.1cm] at (1.55,-3.10) {learnable};
-\node[stem,  minimum width=1.1cm] at (3.1,-3.10) {fusion};
-
-\end{tikzpicture}
+\includegraphics[width=\columnwidth]{images/fig1_overview}
 \caption{ShiftFuse-Zero end-to-end pipeline. Four skeleton streams are fused
   by a learnable stem and processed by EfficientZero Blocks (green = zero-parameter
   modules). A gated pooling head produces class logits.}
@@ -281,58 +203,7 @@ via a $1{\times}1$ convolution with learned per-stream weighting.
 %%─── Figure 2: BRASP ─────────────────────────────────────────────────────────
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}[
-  every node/.style={font=\scriptsize},
-  jnt/.style={circle, draw, minimum size=0.48cm, inner sep=0pt,
-              font=\tiny\bfseries, thick},
-  la/.style ={jnt, fill=blue!25,   draw=blue!60},
-  ra/.style ={jnt, fill=red!25,    draw=red!60},
-  ll/.style ={jnt, fill=green!25,  draw=green!60},
-  rl/.style ={jnt, fill=orange!30, draw=orange!60},
-  tr/.style ={jnt, fill=purple!20, draw=purple!60},
-  grp/.style={draw, dashed, rounded corners=4pt, inner sep=4pt, thick},
-  sk/.style ={gray!50, thick}
-]
-%% joints
-\node[tr] (sp) at (0,0)     {Sp};
-\node[tr] (nk) at (0,0.9)   {Nk};
-\node[tr] (hd) at (0,1.7)   {Hd};
-\node[la] (ls) at (-1.0,0.65){LS};
-\node[la] (le) at (-1.7,0.15){LE};
-\node[la] (lw) at (-2.3,-0.3){LW};
-\node[ra] (rs) at ( 1.0,0.65){RS};
-\node[ra] (re) at ( 1.7,0.15){RE};
-\node[ra] (rw) at ( 2.3,-0.3){RW};
-\node[ll] (lh) at (-0.5,-0.8){LH};
-\node[ll] (lk) at (-0.6,-1.6){LK};
-\node[ll] (lf) at (-0.7,-2.3){LF};
-\node[rl] (rh) at ( 0.5,-0.8){RH};
-\node[rl] (rk) at ( 0.6,-1.6){RK};
-\node[rl] (rf) at ( 0.7,-2.3){RF};
-
-%% skeleton edges
-\foreach \a/\b in {sp/nk,nk/hd,sp/ls,sp/rs,ls/le,le/lw,rs/re,re/rw,
-                   sp/lh,sp/rh,lh/lk,lk/lf,rh/rk,rk/rf}
-  \draw[sk] (\a)--(\b);
-
-%% group outlines
-\begin{scope}[on background layer]
-  \node[grp,draw=blue!55,  fill=blue!5,   fit=(ls)(le)(lw)] {};
-  \node[grp,draw=red!55,   fill=red!5,    fit=(rs)(re)(rw)] {};
-  \node[grp,draw=green!55, fill=green!5,  fit=(lh)(lk)(lf)] {};
-  \node[grp,draw=orange!55,fill=orange!5, fit=(rh)(rk)(rf)] {};
-  \node[grp,draw=purple!55,fill=purple!5, fit=(sp)(nk)(hd)] {};
-\end{scope}
-
-%% legend (right side)
-\node[right=0.5cm of rw, align=left] (leg) {%
-  \textcolor{blue!70}{\rule{6pt}{6pt}}~Left arm\\[2pt]
-  \textcolor{red!70}{\rule{6pt}{6pt}}~Right arm\\[2pt]
-  \textcolor{green!60!black}{\rule{6pt}{6pt}}~Left leg\\[2pt]
-  \textcolor{orange!70}{\rule{6pt}{6pt}}~Right leg\\[2pt]
-  \textcolor{purple!60}{\rule{6pt}{6pt}}~Torso/Head
-};
-\end{tikzpicture}
+\includegraphics[width=\columnwidth]{images/fig2_brasp}
 \caption{BRASP anatomical partitioning into five groups $\{G_\text{la},
   G_\text{ra}, G_\text{ll}, G_\text{rl}, G_\text{tr}\}$.
   The fixed permutation $\sigma$ (Eq.~\ref{eq:brasp}) is derived from
@@ -357,49 +228,7 @@ Indices are stored as a non-trainable integer buffer —
 %%─── Figure 3: SGPShift ──────────────────────────────────────────────────────
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}[
-  every node/.style={font=\scriptsize},
-  jnt/.style={circle, draw, minimum size=0.52cm, inner sep=0pt,
-              font=\tiny\bfseries, thick},
-  blue jnt/.style={jnt, fill=blue!20, draw=blue!55},
-  purp jnt/.style={jnt, fill=purple!20, draw=purple!55},
-  sk/.style={gray!40, thick},
-  intra/.style={-Stealth, blue!60, thick, bend left=40},
-  inter/.style={-Stealth, red!60, thick, dashed, bend left=30}
-]
-%% Part A (e.g. arm, 3 joints)
-\node[blue jnt] (v1) at (0, 0)   {$v_1$};
-\node[blue jnt] (v2) at (1.3, 0) {$v_2$};
-\node[blue jnt] (v3) at (2.6, 0) {$v_3$};
-%% Part B boundary joints
-\node[purp jnt] (u1) at (-0.8,-1.0) {$u_1$};
-\node[purp jnt] (u2) at ( 3.4,-1.0) {$u_2$};
-
-%% skeleton
-\foreach \a/\b in {u1/v1, v1/v2, v2/v3, v3/u2}
-  \draw[sk] (\a)--(\b);
-
-%% intra arrows
-\draw[intra] (v1) to (v2);
-\draw[intra] (v2) to (v3);
-\draw[intra, bend right=40] (v2) to (v1);
-\draw[intra, bend right=40] (v3) to (v2);
-
-%% inter arrows
-\draw[inter, bend left=25]  (u1) to node[left,font=\tiny,text=red!60]{inter} (v1);
-\draw[inter, bend right=25] (u2) to (v3);
-
-%% labels below
-\node[below=0.5cm of v2, text=blue!70, align=center]
-  {\small$\mathcal{N}_{\text{intra}}(v_2){=}\{v_1,v_3\}$};
-\node[below=1.1cm of v2, text=red!70, align=center]
-  {\small$\mathcal{N}_{\text{inter}}(v_1){=}\{u_1\}$};
-
-%% part labels
-\node[above=0.15cm of v2, text=blue!70] {Part A};
-\node[below=0.05cm of u1, text=purple!70] {Part B};
-\node[below=0.05cm of u2, text=purple!70] {Part B};
-\end{tikzpicture}
+\includegraphics[width=\columnwidth]{images/fig3_sgpshift}
 \caption{SGPShift aggregation. Blue solid arrows: intra-part neighbours.
   Red dashed arrows: inter-part boundary neighbours.
   All sets are precomputed integer buffers — zero learnable parameters.}
@@ -429,42 +258,7 @@ At runtime SGPShift reduces to two sparse average operations —
 %%─── Figure 4: Block pipeline ────────────────────────────────────────────────
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}[
-  every node/.style={font=\scriptsize},
-  box/.style={draw, rounded corners=3pt, minimum width=3.5cm,
-              minimum height=0.56cm, align=center},
-  free/.style={box, fill=green!10, draw=freegreen!70},
-  learn/.style={box, fill=blue!8,  draw=learnblue!50},
-  hilit/.style={box, fill=blue!18, draw=learnblue!80},
-  ann/.style={font=\tiny, text=gray!65, anchor=west},
-  arr/.style={-Stealth, thick, draw=gray!55}
-]
-\node[free]  (brasp) at (0,0)    {BRASP\ \ (Eq.\,\ref{eq:brasp})};
-\node[free]  (sgp)   at (0,-0.7) {SGPShift\ \ (Eq.\,\ref{eq:sgp})};
-\node[learn] (je)    at (0,-1.4) {Joint Embedding $\mathbf{b}_v$};
-\node[learn] (stca)  at (0,-2.1) {STC-Attention ($V{\times}V$)};
-\node[learn] (gcn)   at (0,-2.8) {Graph Conv $K{=}3 + \mathbf{A}_\ell$\ \ (Eq.\,\ref{eq:gcn})};
-\node[learn] (tcn)   at (0,-3.5) {DS-TCN\ (dil.\,1\,+\,dil.\,2)};
-\node[free]  (dp)    at (0,-4.2) {DropPath};
-\node[learn] (res)   at (0,-4.9) {Residual $\oplus$};
-\node[hilit] (tla)   at (0,-5.6) {TLA\ \ (last block only)\ \ (Eq.\,\ref{eq:tla_anchors})};
-
-%% skip
-\draw[arr, gray!35]
-  (brasp.west) -- +(-0.6,0) |- (res.west);
-
-\foreach \a/\b in {brasp/sgp,sgp/je,je/stca,stca/gcn,gcn/tcn,tcn/dp,dp/res,res/tla}
-  \draw[arr] (\a)--(\b);
-
-%% annotations right
-\node[ann] at (1.85, 0)    {0 params, 0 FLOPs};
-\node[ann] at (1.85,-0.7)  {0 params, sparse avg};
-\node[ann] at (1.85,-1.4)  {$C_\text{in}{\times}V$ params};
-\node[ann] at (1.85,-2.8)  {$3C^2$ params};
-\node[ann] at (1.85,-3.5)  {$\approx C^2/2$ params};
-\node[ann] at (1.85,-4.2)  {0 params};
-\node[ann] at (1.85,-5.6)  {$O(T{\cdot}K)$ complexity};
-\end{tikzpicture}
+\includegraphics[width=\columnwidth]{images/fig4_block}
 \caption{EfficientZero Block. Green = zero-parameter (BRASP, SGPShift,
   DropPath). Per-layer parameter counts shown on the right.
   TLA is only active at the last block of the final stage.}
@@ -520,83 +314,7 @@ vs.\ $O(T^2)$ for full attention.
 %%─── Figure 5: Model family ──────────────────────────────────────────────────
 \begin{figure*}[t]
 \centering
-\begin{tikzpicture}[
-  every node/.style={font=\scriptsize},
-  blk/.style ={draw, rounded corners=3pt, minimum width=2.1cm,
-               minimum height=0.65cm, align=center,
-               fill=blue!8, draw=learnblue!50},
-  stem/.style={blk, fill=orange!12, draw=orange!55},
-  fus/.style ={blk, fill=red!10,    draw=fusred!55},
-  cls/.style ={blk, fill=gray!12,   draw=gray!55},
-  tlabox/.style={blk, fill=blue!18, draw=learnblue!80},
-  tit/.style={font=\small\bfseries},
-  arr/.style={-Stealth, thick, draw=gray!55}
-]
-
-%% ─── (a) Nano ──────────────────────────────────────────────────────────────
-\node[tit] (na_t) at (0, 0) {(a) SFZ-Nano\ \ 97\,K};
-\node[stem]   (na_sf)  at (0,-0.85)  {StreamFusion\\$4{\to}C_s{=}24$};
-\node[blk]    (na_s1)  at (0,-1.65)  {Stage 1 $\times$1\\$C{=}32$};
-\node[blk]    (na_s2)  at (0,-2.45)  {Stage 2 $\times$1\\$C{=}64,s{=}2$};
-\node[blk]    (na_s3)  at (0,-3.25)  {Stage 3 $\times$1\\$C{=}128,s{=}2$};
-\node[tlabox] (na_tla) at (0,-4.05)  {TLA $K{=}8, r{=}16$};
-\node[cls]    (na_cl)  at (0,-4.85)  {Pool-Gate + FC(60)};
-
-\foreach \a/\b in {na_t/na_sf, na_sf/na_s1, na_s1/na_s2,
-                   na_s2/na_s3, na_s3/na_tla, na_tla/na_cl}
-  \draw[arr] (\a)--(\b);
-
-%% ─── (b) Small ─────────────────────────────────────────────────────────────
-\node[tit] (sm_t) at (5.0, 0) {(b) SFZ-Small\ \ 267\,K};
-
-\node[stem] (sm_sfA) at (4.2,-0.85) {Stem A\\J+B};
-\node[stem] (sm_sfB) at (5.8,-0.85) {Stem B\\V+BV};
-\node[blk]  (sm_12a) at (4.2,-1.85) {S1-S2 $(1{+}2)$\\$C{=}32{\to}64$};
-\node[blk]  (sm_12b) at (5.8,-1.85) {S1-S2 $(1{+}2)$\\$C{=}32{\to}64$};
-\node[fus]  (sm_csf) at (5.0,-2.95) {Cross-Stream\\Fusion (Eq.\,\ref{eq:csf})};
-\node[tlabox](sm_s3a) at (4.2,-4.00){S3 $\times$1 + TLA\\$C{=}128$};
-\node[tlabox](sm_s3b) at (5.8,-4.00){S3 $\times$1 + TLA\\$C{=}128$};
-\node[cls]  (sm_cl)  at (5.0,-5.00) {Weighted avg + FC(60)};
-
-\draw[arr] (sm_t)--(sm_sfA);
-\draw[arr] (sm_t)--(sm_sfB);
-\draw[arr] (sm_sfA)--(sm_12a);
-\draw[arr] (sm_sfB)--(sm_12b);
-\draw[arr] (sm_12a.south) -- (sm_12a.south |- sm_csf.north) -- (sm_csf.north);
-\draw[arr] (sm_12b.south) -- (sm_12b.south |- sm_csf.north) -- (sm_csf.north);
-\draw[arr] (sm_csf.south) -- (sm_csf.south |- sm_s3a.north) -- (sm_s3a.north);
-\draw[arr] (sm_csf.south) -- (sm_csf.south |- sm_s3b.north) -- (sm_s3b.north);
-\draw[arr] (sm_s3a.south) -- (sm_s3a.south |- sm_cl.north) -- (sm_cl.north);
-\draw[arr] (sm_s3b.south) -- (sm_s3b.south |- sm_cl.north) -- (sm_cl.north);
-
-%% ─── (c) Large ─────────────────────────────────────────────────────────────
-\node[tit] (lg_t) at (11.0, 0) {(c) SFZ-Large\ \ 1.1\,M};
-
-\node[stem] (lg_sfJ) at ( 9.6,-0.85) {Stem J};
-\node[stem] (lg_sfB) at (11.0,-0.85) {Stem B};
-\node[stem] (lg_sfV) at (12.4,-0.85) {Stem V};
-\node[blk]  (lg_12J) at ( 9.6,-1.85) {S1-S2 $(1{+}2)$\\$C{=}48{\to}96$};
-\node[blk]  (lg_12B) at (11.0,-1.85) {S1-S2 $(1{+}2)$\\$C{=}48{\to}96$};
-\node[blk]  (lg_12V) at (12.4,-1.85) {S1-S2 $(1{+}2)$\\$C{=}48{\to}96$};
-\node[fus,minimum width=3.2cm] (lg_fc)
-                     at (11.0,-2.95) {FusionConv $288{\to}192$\\BN + Hardswish};
-\node[tlabox,minimum width=3.0cm]
-             (lg_s3) at (11.0,-4.05) {Shared Stage 3 $\times$4 + TLA\\$C{=}192,\,K{=}14$};
-\node[cls]   (lg_cl) at (11.0,-5.00) {Pool-Gate + FC(60)};
-
-\draw[arr] (lg_t)--(lg_sfJ);
-\draw[arr] (lg_t)--(lg_sfB);
-\draw[arr] (lg_t)--(lg_sfV);
-\draw[arr] (lg_sfJ)--(lg_12J);
-\draw[arr] (lg_sfB)--(lg_12B);
-\draw[arr] (lg_sfV)--(lg_12V);
-\draw[arr] (lg_12J.south) -- (lg_12J.south |- lg_fc.north) -- (lg_fc.north);
-\draw[arr] (lg_12B.south) -- (lg_12B.south |- lg_fc.north) -- (lg_fc.north);
-\draw[arr] (lg_12V.south) -- (lg_12V.south |- lg_fc.north) -- (lg_fc.north);
-\draw[arr] (lg_fc)--(lg_s3);
-\draw[arr] (lg_s3)--(lg_cl);
-
-\end{tikzpicture}
+\includegraphics[width=\textwidth]{images/fig5_family}
 \caption{ShiftFuse-Zero model family.
   (a)~Nano: single backbone, 4-stream early fusion, TLA ($K{=}8$).
   (b)~Small: two-backbone late fusion with Cross-Stream Fusion and TLA ($K{=}8$).
@@ -731,8 +449,8 @@ SGN$^\dagger$~\cite{sgn}            & 0.69M & 89.0 & 94.5 & 79.2 & 81.5 \\
 \midrule
 \textbf{SFZ-Nano}       & \textbf{0.10M} & 85.6 & 90.1 & 79.6 & 81.2 \\
 \textbf{SFZ-Nano+KD}    & \textbf{0.10M} & \best{88.5} & \best{93.2} & 82.9 & 84.5 \\
-\textbf{SFZ-Small}      & \textbf{0.27M} & 87.6 & 92.8 & 83.1 & 84.7 \\
-\textbf{SFZ-Small+KD}   & \textbf{0.27M} & \best{89.8} & \best{94.7} & 85.5 & 87.0 \\
+\textbf{SFZ-Small}      & \textbf{0.25M} & 87.6 & 92.8 & 83.1 & 84.7 \\
+\textbf{SFZ-Small+KD}   & \textbf{0.25M} & \best{89.8} & \best{94.7} & 85.5 & 87.0 \\
 \textbf{SFZ-Large}      & \textbf{1.10M} & \best{92.5} & \best{96.4} & 88.5 & 90.1 \\
 \bottomrule
 \end{tabular}
@@ -743,7 +461,7 @@ by 0.4\,pp at the same parameter budget.
 SFZ-Nano achieves 85.6\% at only 97\,K parameters; with knowledge
 distillation it reaches 88.5\%, surpassing AGCN with $70{\times}$ fewer
 parameters.
-SFZ-Small achieves 87.6\% at 267\,K parameters, a 2.2\,pp gain over the
+SFZ-Small achieves 87.6\% at 250\,K parameters, a 2.2\,pp gain over the
 prior single-backbone design at 26\,\% fewer parameters.
 
 \subsection{Efficiency Analysis}\label{sec:efficiency}
@@ -751,47 +469,7 @@ prior single-backbone design at 26\,\% fewer parameters.
 %%─── Figure 6: Accuracy vs params scatter ────────────────────────────────────
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}
-\begin{axis}[
-  width=7.6cm, height=5.5cm,
-  xlabel={Parameters (M)},
-  ylabel={NTU-60 X-Sub Accuracy (\%)},
-  xmin=-0.3, xmax=11.2,
-  ymin=79.5, ymax=94.5,
-  xtick={0,2,4,6,8,10},
-  ytick={80,82,84,86,88,90,92,94},
-  grid=both,
-  grid style={line width=0.3pt, draw=gray!25},
-  legend style={at={(0.98,0.05)}, anchor=south east,
-                font=\scriptsize, cells={anchor=west},
-                fill=white, draw=gray!40},
-  tick label style={font=\scriptsize},
-  label style={font=\small},
-  clip=false,
-]
-\addplot[only marks, mark=square*, mark size=2.8pt, color=gray!55]
-  coordinates {(3.1,81.5)(6.9,88.5)(6.4,91.5)(5.8,92.4)(9.9,93.0)(7.5,93.4)};
-\addplot[only marks, mark=triangle*, mark size=3pt, color=orange!80!black]
-  coordinates {(0.29,90.2)(1.1,92.1)};
-\addplot[thick, color=bestcol, opacity=0.35]
-  coordinates {(0.10,85.6)(0.27,87.6)(1.10,92.5)};
-\addplot[only marks, mark=*, mark size=3.8pt, color=bestcol]
-  coordinates {(0.10,85.6)(0.27,87.6)(1.10,92.5)};
-\addplot[only marks, mark=diamond*, mark size=3.8pt, color=red!65!black]
-  coordinates {(0.10,88.5)(0.27,89.8)};
-
-\node[font=\tiny, color=bestcol, anchor=south west] at (axis cs:0.10,85.6) {Nano};
-\node[font=\tiny, color=bestcol, anchor=south west] at (axis cs:0.27,88.5) {Small};
-\node[font=\tiny, color=bestcol, anchor=south west] at (axis cs:1.10,92.5) {Large};
-\node[font=\tiny, color=red!65!black, anchor=north east] at (axis cs:0.10,88.5) {+KD};
-\node[font=\tiny, color=red!65!black, anchor=north east] at (axis cs:0.27,90.2) {+KD};
-
-\addlegendentry{Prior work}
-\addlegendentry{EfficientGCN}
-\addlegendentry{SFZ (ours)}
-\addlegendentry{SFZ+KD (ours)}
-\end{axis}
-\end{tikzpicture}
+\includegraphics[width=\columnwidth]{images/fig6_scatter}
 \caption{Accuracy vs.\ parameters. SFZ (blue) dominates across the entire
   parameter range; KD (red) further pushes small models.}
 \label{fig:scatter}
@@ -811,8 +489,8 @@ EfficientGCN-B4 & 1.10M & 4.10 & 87\,ms & 92.1 \\
 \midrule
 SFZ-Nano        & 0.10M & \best{0.38} & \best{11\,ms} & 85.6 \\
 SFZ-Nano+KD     & 0.10M & \best{0.38} & \best{11\,ms} & \best{88.5} \\
-SFZ-Small       & 0.27M & 1.02 & 24\,ms & 88.5 \\
-SFZ-Small+KD    & 0.27M & 1.02 & 24\,ms & \best{90.2} \\
+SFZ-Small       & 0.25M & 1.02 & 24\,ms & 87.6 \\
+SFZ-Small+KD    & 0.25M & 1.02 & 24\,ms & \best{89.8} \\
 SFZ-Large       & 1.10M & 4.20 & 89\,ms & \best{92.5} \\
 \bottomrule
 \end{tabular}
@@ -821,7 +499,7 @@ SFZ-Large       & 1.10M & 4.20 & 89\,ms & \best{92.5} \\
 \subsection{Ablation Studies}\label{sec:ablation}
 
 \paragraph{Per-component ablation.}
-Table~\ref{tab:ablation} and Figure~\ref{fig:ablation_bar} quantify each
+Table~\ref{tab:ablation} quantifies each
 component's contribution on Nano (NTU-60 X-Sub).
 BRASP+SGPShift together contribute \textbf{+1.8\,pp at zero parameter cost}.
 
@@ -844,98 +522,7 @@ BRASP & SGPShift & TLA & KD & Acc\,(\%) & $\Delta$ \\
 \end{tabular}
 \end{table}
 
-%%─── Figure 7: Ablation bar chart ───────────────────────────────────────────
-\begin{figure}[t]
-\centering
-\begin{tikzpicture}
-\begin{axis}[
-  xbar,
-  width=7.6cm, height=4.2cm,
-  xlabel={NTU-60 X-Sub Accuracy (\%)},
-  xmin=80, xmax=90.5,
-  xtick={80,82,84,86,88,90},
-  xticklabel style={font=\scriptsize},
-  symbolic y coords={Baseline, +BRASP, +SGPShift, +TLA, +KD},
-  ytick=data,
-  yticklabel style={font=\scriptsize},
-  label style={font=\small},
-  nodes near coords,
-  nodes near coords style={font=\tiny, anchor=west},
-  bar width=0.38cm,
-  enlarge y limits=0.20,
-  grid=x,
-  grid style={line width=0.3pt, draw=gray!30},
-]
-\addplot[fill=blue!30, draw=blue!60] coordinates {
-  (82.8,Baseline)
-  (83.9,+BRASP)
-  (84.6,+SGPShift)
-  (85.6,+TLA)
-  (88.5,+KD)
-};
-\end{axis}
-\end{tikzpicture}
-\caption{Cumulative accuracy gains per component (Nano, NTU-60 X-Sub).
-  BRASP and SGPShift add +1.8\,pp at \emph{zero learnable parameters}.}
-\label{fig:ablation_bar}
-\end{figure}
 
-\paragraph{Parameter breakdown.}
-Figure~\ref{fig:param_bar} shows the parameter distribution per model.
-The zero-parameter modules (BRASP, SGPShift, DropPath) occupy 0\% of the
-budget yet provide the largest accuracy-per-parameter gain in the entire
-architecture.
-
-%%─── Figure 8: Parameter breakdown stacked bar ──────────────────────────────
-\begin{figure}[t]
-\centering
-\begin{tikzpicture}
-\begin{axis}[
-  ybar stacked,
-  width=7.6cm, height=4.8cm,
-  bar width=1.3cm,
-  ylabel={Parameters (K)},
-  symbolic x coords={Nano, Small, Large},
-  xtick=data,
-  xticklabel style={font=\small},
-  yticklabel style={font=\scriptsize},
-  label style={font=\small},
-  legend style={at={(0.5,-0.25)}, anchor=north,
-                font=\scriptsize, legend columns=4,
-                cells={anchor=west}},
-  enlarge x limits=0.38,
-  grid=y,
-  grid style={line width=0.3pt, draw=gray!30},
-  ymin=0, ymax=1200,
-]
-\addplot[fill=orange!50, draw=orange!70]
-  coordinates {(Nano,11) (Small,17) (Large,45)};
-\addplot[fill=blue!40, draw=blue!60]
-  coordinates {(Nano,28) (Small,56) (Large,420)};
-\addplot[fill=cyan!45, draw=cyan!65]
-  coordinates {(Nano,22) (Small,44) (Large,380)};
-\addplot[fill=green!45, draw=green!65]
-  coordinates {(Nano,5)  (Small,9)  (Large,30)};
-\addplot[fill=purple!40, draw=purple!60]
-  coordinates {(Nano,4)  (Small,16) (Large,90)};
-\addplot[fill=gray!40, draw=gray!60]
-  coordinates {(Nano,8)  (Small,14) (Large,25)};
-\addplot[fill=yellow!50, draw=yellow!70]
-  coordinates {(Nano,19) (Small,111)(Large,110)};
-\addlegendentry{Stem}
-\addlegendentry{GCN}
-\addlegendentry{DS-TCN}
-\addlegendentry{JointEmbed}
-\addlegendentry{TLA}
-\addlegendentry{Classifier}
-\addlegendentry{Other/BN}
-\end{axis}
-\end{tikzpicture}
-\caption{Parameter breakdown per model. Zero-parameter modules (BRASP,
-  SGPShift, DropPath) occupy \textbf{none} of the budget yet provide
-  +1.8\,pp accuracy gain.}
-\label{fig:param_bar}
-\end{figure}
 
 \paragraph{TLA landmark sensitivity.}
 Figure~\ref{fig:tla_k} shows that $K{=}8$ saturates Nano while Large
@@ -944,37 +531,7 @@ benefits from $K{=}14$.
 %%─── Figure 9: TLA K sensitivity ────────────────────────────────────────────
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}
-\begin{axis}[
-  width=7.6cm, height=4.5cm,
-  xlabel={TLA landmarks $K$},
-  ylabel={NTU-60 X-Sub (\%)},
-  xmin=1.5, xmax=17,
-  ymin=83.2, ymax=93.0,
-  xtick={2,4,6,8,10,12,14,16},
-  grid=both,
-  grid style={line width=0.3pt, draw=gray!25},
-  legend style={at={(0.5,0.04)}, anchor=south,
-                font=\scriptsize, legend columns=2,
-                cells={anchor=west}},
-  tick label style={font=\scriptsize},
-  label style={font=\small},
-  mark size=2.2pt,
-]
-\addplot[thick, color=bestcol, mark=*]
-  coordinates {(2,83.8)(4,84.5)(6,85.1)(8,85.6)(10,85.5)
-               (12,85.3)(14,85.2)(16,85.1)};
-\addlegendentry{Nano}
-\addplot[thick, color=red!65!black, mark=square*, dashed]
-  coordinates {(2,91.0)(4,91.6)(6,92.1)(8,92.3)(10,92.4)
-               (12,92.4)(14,92.5)(16,92.4)};
-\addlegendentry{Large}
-\draw[dotted, gray!55, thick] (axis cs:8,83.2)  -- (axis cs:8,93.0);
-\draw[dotted, gray!55, thick] (axis cs:14,83.2) -- (axis cs:14,93.0);
-\node[font=\tiny, text=gray!65, anchor=south] at (axis cs:8,83.2)  {opt.\,Nano};
-\node[font=\tiny, text=gray!65, anchor=south] at (axis cs:14,83.2) {opt.\,Large};
-\end{axis}
-\end{tikzpicture}
+\includegraphics[width=\columnwidth]{images/fig9_tla}
 \caption{TLA sensitivity to landmark count $K$. Nano saturates at $K{=}8$;
   Large benefits from $K{=}14$ (finer ${\approx}4.5$-frame granularity).}
 \label{fig:tla_k}
@@ -1009,49 +566,7 @@ entirely costs $-0.8$\,pp (Eq.~\ref{eq:csf} validated).
 %%─── Figure 10: Training curves ─────────────────────────────────────────────
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}
-\begin{axis}[
-  width=7.6cm, height=5.0cm,
-  xlabel={Training epoch},
-  ylabel={Validation accuracy (\%)},
-  xmin=0, xmax=405,
-  ymin=69, ymax=94,
-  xtick={0,100,200,300,400},
-  ytick={70,74,78,82,86,90,94},
-  grid=both,
-  grid style={line width=0.3pt, draw=gray!25},
-  legend style={at={(0.03,0.97)}, anchor=north west,
-                font=\scriptsize, cells={anchor=west},
-                fill=white, draw=gray!40},
-  tick label style={font=\scriptsize},
-  label style={font=\small},
-]
-\addplot[ultra thick, color=bestcol]
-  coordinates {(0,8)(30,52)(60,73)(100,85)(150,88)(200,90)
-               (250,91.2)(300,92.0)(350,92.3)(400,92.5)};
-\addlegendentry{SFZ-Large (1.1M)}
-
-\addplot[thick, color=orange!80!black, dashed]
-  coordinates {(0,8)(30,47)(60,67)(100,82)(150,85)(200,87)
-               (250,88.5)(300,89.5)(350,89.7)(400,89.8)};
-\addlegendentry{SFZ-Small+KD (267K)}
-
-\addplot[thick, color=red!65!black, dotted]
-  coordinates {(0,8)(30,43)(60,63)(100,77)(150,83)(200,85.5)
-               (250,87)(300,88.0)(350,88.4)(400,88.5)};
-\addlegendentry{SFZ-Nano+KD (97K)}
-
-\addplot[thick, color=gray!55, loosely dashed]
-  coordinates {(0,8)(30,40)(60,60)(100,73)(150,80)(200,83)
-               (250,84.5)(300,85.3)(350,85.5)(400,85.6)};
-\addlegendentry{SFZ-Nano (no KD)}
-
-% KD gain bracket
-\draw[<->, thick, gray!60]
-  (axis cs:402,85.6) -- (axis cs:402,88.5)
-  node[midway, right, font=\tiny, text=gray!70]{+2.9pp};
-\end{axis}
-\end{tikzpicture}
+\includegraphics[width=\columnwidth]{images/fig10_curves}
 \caption{Validation curves on NTU-60 X-Sub.
   KD boosts Nano by +2.9\,pp (bracket at right).
   Mixup/CutMix slow early convergence but improve the final peak.}

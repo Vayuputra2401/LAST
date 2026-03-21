@@ -11,5 +11,6 @@
 - Notes: late fusion 2-backbone + CrossStreamFusion + TLA
 
 ## large_late_efficient — 1.1M params
-- Status: TRAINING (started ~2026-03-21, 150 epochs, 114s/ep, ~4.75h)
-- Expected: 92%+
+- Run 1: 2026-03-20, 150 epochs, **Best: 88.64%** (ep147), checkpoint: run-2026-03-20_20-33-14
+- LR fully decayed at ep150 (0.000010). Train 99.13% vs val 88.64% — overfitting gap.
+- Run 2 (warm restart): lr=0.01, 100ep, mixup=0.1 — expected 90–91%

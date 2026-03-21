@@ -440,29 +440,29 @@ class TestBilateralSymmetryEncoding:
 
 class TestShiftFuseZero:
     def test_nano_forward_dict(self):
-        model = build_shiftfuse_zero('nano', num_classes=NUM_CLASSES)
+        model = build_shiftfuse_zero('nano_tiny_efficient', num_classes=NUM_CLASSES)
         model.eval()
         with torch.no_grad():
             out = model(_mib())
         assert out.shape == (B, NUM_CLASSES), f"Expected ({B},{NUM_CLASSES}), got {out.shape}"
 
     def test_small_forward_dict(self):
-        model = build_shiftfuse_zero('small', num_classes=NUM_CLASSES)
+        model = build_shiftfuse_zero('nano_tiny_efficient', num_classes=NUM_CLASSES)
         model.eval()
         with torch.no_grad():
             out = model(_mib())
         assert out.shape == (B, NUM_CLASSES)
 
     def test_nano_efficient_forward_dict(self):
-        model = build_shiftfuse_zero('nano_efficient', num_classes=NUM_CLASSES)
+        model = build_shiftfuse_zero('nano_tiny_efficient', num_classes=NUM_CLASSES)
         model.eval()
         with torch.no_grad():
             out = model(_mib())
         assert out.shape == (B, NUM_CLASSES)
 
     def test_nano_efficient_a_k_learned(self):
-        """nano_efficient: each block must own K=3 A_k_learned tensors of shape (V,V)."""
-        model = build_shiftfuse_zero('nano_efficient', num_classes=NUM_CLASSES)
+        """nano_tiny_efficient: each block must own K=3 A_k_learned tensors of shape (V,V)."""
+        model = build_shiftfuse_zero('nano_tiny_efficient', num_classes=NUM_CLASSES)
         assert not hasattr(model, 'A_k_learned'), \
             "Global A_k_learned should be gone — per-block now"
         # Check every EfficientZeroBlock has its own A_k_learned
@@ -477,50 +477,95 @@ class TestShiftFuseZero:
                         f"Stage{si} Block{bi} A_k_learned[{k}] shape {p.shape} != ({V},{V})"
                     assert p.requires_grad, \
                         f"Stage{si} Block{bi} A_k_learned[{k}] must be trainable"
-        # Total: 7 blocks × 3 × V×V
+        # nano_tiny_efficient blocks=[1,1,1] → 3 total blocks × K=3 × V×V
+        n_blocks = sum(len(s) for s in model.stages)
         total = sum(p.numel() for n, p in model.named_parameters() if 'A_k_learned' in n)
-        assert total == 7 * 3 * V * V, f"Expected {7*3*V*V}, got {total}"
+        assert total == n_blocks * 3 * V * V, f"Expected {n_blocks*3*V*V}, got {total}"
 
     def test_nano_efficient_no_global_a_k_on_standard_nano(self):
-        """Standard nano must NOT have block-level A_k_learned."""
-        model = build_shiftfuse_zero('nano', num_classes=NUM_CLASSES)
+        """nano_tiny_efficient: no model-level A_k_learned, only per-block."""
+        model = build_shiftfuse_zero('nano_tiny_efficient', num_classes=NUM_CLASSES)
+        assert not hasattr(model, 'A_k_learned'), \
+            "Global A_k_learned should not exist — per-block only"
+        # All per-block A_k_learned should be present
         for si, stage in enumerate(model.stages):
             for bi, block in enumerate(stage):
-                assert not hasattr(block, 'A_k_learned'), \
-                    f"Standard nano Stage{si} Block{bi} should not have A_k_learned"
+                assert hasattr(block, 'A_k_learned'), \
+                    f"Stage{si} Block{bi} missing per-block A_k_learned"
 
     def test_nano_param_count(self):
-        model = build_shiftfuse_zero('nano', num_classes=NUM_CLASSES)
+        model = build_shiftfuse_zero('nano_tiny_efficient', num_classes=NUM_CLASSES)
         n = sum(p.numel() for p in model.parameters())
-        assert n > 0, "nano must have parameters"
-        print(f"\n  nano params: {n:,}")
+        assert n > 0, "nano_tiny_efficient must have parameters"
+        print(f"\n  nano_tiny_efficient params: {n:,}")
 
     def test_nano_efficient_param_count(self):
-        model = build_shiftfuse_zero('nano_efficient', num_classes=NUM_CLASSES)
+        model = build_shiftfuse_zero('nano_tiny_efficient', num_classes=NUM_CLASSES)
         n = sum(p.numel() for p in model.parameters())
         assert n > 0
-        print(f"\n  nano_efficient params: {n:,}")
+        print(f"\n  nano_tiny_efficient params: {n:,}")
 
     def test_no_nan_output_nano(self):
-        model = build_shiftfuse_zero('nano', num_classes=NUM_CLASSES)
+        model = build_shiftfuse_zero('nano_tiny_efficient', num_classes=NUM_CLASSES)
         model.eval()
         with torch.no_grad():
             out = model(_mib())
-        assert not torch.isnan(out).any(), "nano output contains NaN"
-        assert not torch.isinf(out).any(), "nano output contains Inf"
+        assert not torch.isnan(out).any(), "nano_tiny_efficient output contains NaN"
+        assert not torch.isinf(out).any(), "nano_tiny_efficient output contains Inf"
 
     def test_no_nan_output_nano_efficient(self):
-        model = build_shiftfuse_zero('nano_efficient', num_classes=NUM_CLASSES)
+        model = build_shiftfuse_zero('nano_tiny_efficient', num_classes=NUM_CLASSES)
         model.eval()
         with torch.no_grad():
             out = model(_mib())
-        assert not torch.isnan(out).any(), "nano_efficient output contains NaN"
-        assert not torch.isinf(out).any(), "nano_efficient output contains Inf"
+        assert not torch.isnan(out).any(), "nano_tiny_efficient output contains NaN"
+        assert not torch.isinf(out).any(), "nano_tiny_efficient output contains Inf"
 
     def test_invalid_variant(self):
         import pytest
         with pytest.raises((ValueError, KeyError)):
             build_shiftfuse_zero('invalid_variant', num_classes=NUM_CLASSES)
+
+
+# ---------------------------------------------------------------------------
+# ShiftFuseZeroB4 tests
+# ---------------------------------------------------------------------------
+
+class TestShiftFuseZeroB4:
+    def test_forward_3stream(self):
+        from src.models.shiftfuse_zero import build_shiftfuse_zero_b4
+        model = build_shiftfuse_zero_b4(num_classes=NUM_CLASSES)
+        model.eval()
+        dummy = {k: torch.zeros(B, 3, T, V) for k in ['joint', 'velocity', 'bone']}
+        with torch.no_grad():
+            out = model(dummy)
+        assert out.shape == (B, NUM_CLASSES), f"Expected ({B},{NUM_CLASSES}), got {out.shape}"
+
+    def test_param_count_range(self):
+        from src.models.shiftfuse_zero import build_shiftfuse_zero_b4
+        model = build_shiftfuse_zero_b4(num_classes=60)
+        n = sum(p.numel() for p in model.parameters())
+        print(f"\n  ShiftFuseZeroB4 params: {n:,}")
+        assert 1_000_000 < n < 3_000_000, f"Expected 1-3M params, got {n:,}"
+
+    def test_no_nan_output(self):
+        from src.models.shiftfuse_zero import build_shiftfuse_zero_b4
+        model = build_shiftfuse_zero_b4(num_classes=NUM_CLASSES)
+        model.eval()
+        dummy = {k: torch.randn(B, 3, T, V) for k in ['joint', 'velocity', 'bone']}
+        with torch.no_grad():
+            out = model(dummy)
+        assert not torch.isnan(out).any(), "B4 output contains NaN"
+        assert not torch.isinf(out).any(), "B4 output contains Inf"
+
+    def test_multi_body_handling(self):
+        from src.models.shiftfuse_zero import build_shiftfuse_zero_b4
+        model = build_shiftfuse_zero_b4(num_classes=NUM_CLASSES)
+        model.eval()
+        dummy = {k: torch.zeros(B, 3, T, V, 2) for k in ['joint', 'velocity', 'bone']}
+        with torch.no_grad():
+            out = model(dummy)
+        assert out.shape == (B, NUM_CLASSES)
 
 
 # ---------------------------------------------------------------------------
@@ -587,17 +632,17 @@ if __name__ == '__main__':
     print(SEP)
     print('PARAM COUNT — ShiftFuse-Zero variants')
     print(SEP)
-    for variant in ('nano', 'small', 'large', 'nano_efficient'):
+    for variant in ('nano_tiny_efficient',):
         m = build_shiftfuse_zero(variant, num_classes=60)
         n = sum(p.numel() for p in m.parameters())
         cfg = ZERO_VARIANTS[variant]
-        print(f'  {variant:<16}: {n:>10,}  channels={cfg["channels"]}')
+        print(f'  {variant:<24}: {n:>10,}  channels={cfg["channels"]}')
     print()
 
     print(SEP)
-    print('SHAPE TRACE — nano_efficient, B=2, C=3, T=64, V=25')
+    print('SHAPE TRACE — nano_tiny_efficient, B=2, C=3, T=64, V=25')
     print(SEP)
-    m_eff = build_shiftfuse_zero('nano_efficient', num_classes=60)
+    m_eff = build_shiftfuse_zero('nano_tiny_efficient', num_classes=60)
     m_eff.eval()
     x_in = {k: torch.randn(2, 3, 64, 25) for k in ['joint', 'velocity', 'bone', 'bone_velocity']}
     with torch.no_grad():

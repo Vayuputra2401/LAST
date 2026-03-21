@@ -1,0 +1,6 @@
+model:
+  name: shiftfuse_zero_large_b4_efficient
+  variant: large_b4_efficient
+  num_classes: 60
+  drop_path_rate: 0.25   # B4-exact dropout_rate
+  dropout: 0.25          # B4-exact classifier dropout
