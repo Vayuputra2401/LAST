@@ -65,9 +65,11 @@ class TemporalLandmarkAttention(nn.Module):
         self.v_proj   = nn.Linear(channels, self.d_k, bias=False)
         self.out_proj = nn.Linear(self.d_k, channels, bias=False)
 
-        # Gate: sigmoid(0) = 0.5 → active at 50% from epoch 1.
-        # Excluded from weight decay via '.gate' in name (trainer.py no_decay).
-        self.gate = nn.Parameter(torch.zeros(1))
+        # Gate: sigmoid(-4) ≈ 0.018 at init → near-identity pass-through.
+        # Required: TLA injects attended features from epoch 1; without this gate
+        # the attention output (random at init) adds noise to every frame.
+        # Gate fades in gradually as projections learn. Added to no_decay via '.gate'.
+        self.gate = nn.Parameter(torch.full((1,), -4.0))
 
         if learnable_anchors:
             # K scalars initialised to uniform spacing in logit space.

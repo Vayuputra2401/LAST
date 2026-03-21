@@ -3,4 +3,4 @@ model:
   variant: nano_tiny_efficient
   num_classes: 60
   drop_path_rate: 0.10
-  dropout: 0.0
+  dropout: 0.10  # match variant default (0.10) — 0.0 risks late-epoch overfit at 300ep

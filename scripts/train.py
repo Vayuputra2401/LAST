@@ -213,6 +213,8 @@ def main():
     # ── 1. Load & merge config ──────────────────────────────────────────
     if args.model in ('shiftfuse_zero_large_late_efficient', 'shiftfuse_zero_large_b4_efficient'):
         _training_cfg_name = 'shiftfuse_zero_large_efficient'
+    elif args.model == 'shiftfuse_zero_small_late_efficient':
+        _training_cfg_name = 'shiftfuse_zero_small_efficient'  # 250 epochs (vs nano's 300)
     else:
         _training_cfg_name = 'shiftfuse_zero_nano_efficient'
 

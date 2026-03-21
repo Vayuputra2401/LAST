@@ -50,7 +50,8 @@ ZERO_VARIANTS = {
     },
     # small_late_efficient_bb: per-backbone config for 2-backbone late fusion.
     # Backbone A: joint+velocity. Backbone B: bone+bone_velocity.
-    # Two backbones + CrossStreamFusion ≈ 240K total.
+    # Two backbones + TLA + CrossStreamFusion ≈ 248K total.
+    # TLA enabled (gate init -4.0) — adds ~8K params per backbone (C=128, d_k=16).
     'small_late_efficient_bb': {
         'stem_channels':       24,
         'channels':            [32, 64, 128],
@@ -61,7 +62,7 @@ ZERO_VARIANTS = {
         'tla_landmarks':       8,
         'tla_reduce_ratio':    8,
         'use_efficient_block': True,
-        'use_tla':             False,
+        'use_tla':             True,
     },
     # large_efficient_3s: single backbone, 3-stream early fusion, B4-scale (~1.1M).
     # Streams: joint + bone + velocity (bone_velocity dropped — noisy standalone).
@@ -311,9 +312,13 @@ class ShiftFuseZero(nn.Module):
         self.register_buffer('A_inter', A_inter)
         self.register_buffer('A_flat',  A_flat)
 
+        # Pass RAW (unnormalized) partitions to each block.
+        # EfficientZeroBlock.forward() normalizes (A_raw_fixed + A_k_learned) once inline.
+        # Passing pre-normalized A_sym here would cause double normalization, shrinking
+        # the effective adjacency spectrum at every block across 9+ blocks.
         A_gcn_partitions = [
-            torch.tensor(A_sym[k], dtype=torch.float32)
-            for k in range(A_sym.shape[0])
+            torch.tensor(A_raw[k], dtype=torch.float32)
+            for k in range(A_raw.shape[0])
         ]
 
         # ── 2. Early-fusion stem ──────────────────────────────────────────
@@ -533,8 +538,8 @@ class ShiftFuseZeroMidFusion(nn.Module):
         self.register_buffer('A_intra', A_intra)
         self.register_buffer('A_inter', A_inter)
         self.register_buffer('A_flat',  A_flat)
-        A_gcn_parts = [torch.tensor(A_sym[k], dtype=torch.float32)
-                       for k in range(A_sym.shape[0])]
+        A_gcn_parts = [torch.tensor(A_raw[k], dtype=torch.float32)
+                       for k in range(A_raw.shape[0])]
 
         # ── Drop-path schedule ─────────────────────────────────────────────
         n_stream_blk = sum(self.STREAM_BLOCKS)
@@ -669,7 +674,7 @@ class ShiftFuseZeroB4(nn.Module):
     # (in_ch, out_ch, n_blocks, stride_first)
     STREAM_STAGES  = [(64, 96, 2, 1), (96, 48, 2, 2)]
     SHARED_STAGES  = [(144, 128, 3, 1), (128, 272, 3, 2)]
-    DROP_PATH_RATE = 0.25
+    DROP_PATH_RATE = 0.0   # B4-exact: no stochastic depth
     DROPOUT        = 0.25
     TLA_K          = 14
     TLA_REDUCE     = 8
@@ -697,8 +702,8 @@ class ShiftFuseZeroB4(nn.Module):
         self.register_buffer('A_intra', A_intra)
         self.register_buffer('A_inter', A_inter)
         self.register_buffer('A_flat',  A_flat)
-        A_gcn_parts = [torch.tensor(A_sym[k], dtype=torch.float32)
-                       for k in range(A_sym.shape[0])]
+        A_gcn_parts = [torch.tensor(A_raw[k], dtype=torch.float32)
+                       for k in range(A_raw.shape[0])]
 
         # ── Drop-path schedule ─────────────────────────────────────────────
         n_stream = sum(nb for _, _, nb, _ in self.STREAM_STAGES)
@@ -726,8 +731,12 @@ class ShiftFuseZeroB4(nn.Module):
 
         # ── Per-stream stages (independent weights per stream) ─────────────
         # stream_stages[stream_idx][stage_idx] = nn.ModuleList of blocks
+        # blk_global resets per stream — parallel streams at the same depth must
+        # receive identical drop_path rates (not accumulate across 3 streams).
+        stream_blocks = sum(nb for (_, _, nb, _) in self.STREAM_STAGES)
         self.stream_stages = nn.ModuleList()
         for _ in range(3):
+            blk_global = 0  # reset for each stream — symmetric DP across parallel streams
             prev_ch = self.STREAM_STEM
             per_stream = nn.ModuleList()
             for (c_in, c_out, nb, stride_first) in self.STREAM_STAGES:
@@ -741,6 +750,7 @@ class ShiftFuseZeroB4(nn.Module):
                 per_stream.append(stage_mods)
                 prev_ch = c_out
             self.stream_stages.append(per_stream)
+        blk_global = stream_blocks  # resume from end of one stream's block count
 
         # ── Shared stages (after concat of 3×48=144) ──────────────────────
         self.shared_stages = nn.ModuleList()
