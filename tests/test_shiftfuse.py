@@ -461,37 +461,37 @@ class TestShiftFuseZero:
         assert out.shape == (B, NUM_CLASSES)
 
     def test_nano_efficient_a_k_learned(self):
-        """nano_tiny_efficient: each block must own K=3 A_learned tensors of shape (V,V)."""
+        """nano_tiny_efficient: share_a_learned=True → single shared set, K=3 × V×V params."""
         model = build_shiftfuse_zero('nano_tiny_efficient', num_classes=NUM_CLASSES)
-        assert not hasattr(model, 'A_learned'), \
-            "Global A_learned should be gone — per-block now"
-        # Check every EfficientZeroBlock has its own A_learned
+        # nano redesign: global shared A_learned (1 set for all blocks)
+        assert hasattr(model, 'shared_a_learned'), \
+            "nano_tiny_efficient must have model.shared_a_learned (share_a_learned=True)"
+        assert len(model.shared_a_learned) == 3, \
+            f"shared_a_learned: expected K=3, got {len(model.shared_a_learned)}"
+        for k, p in enumerate(model.shared_a_learned):
+            assert p.shape == (V, V), f"shared_a_learned[{k}] shape {p.shape} != ({V},{V})"
+            assert p.requires_grad, f"shared_a_learned[{k}] must be trainable"
+        # Every block should reference the same shared object
         for si, stage in enumerate(model.stages):
             for bi, block in enumerate(stage):
-                assert hasattr(block, 'A_learned'), \
-                    f"Stage{si} Block{bi} missing A_learned"
-                assert len(block.A_learned) == 3, \
-                    f"Stage{si} Block{bi}: expected K=3, got {len(block.A_learned)}"
-                for k, p in enumerate(block.A_learned):
-                    assert p.shape == (V, V), \
-                        f"Stage{si} Block{bi} A_learned[{k}] shape {p.shape} != ({V},{V})"
-                    assert p.requires_grad, \
-                        f"Stage{si} Block{bi} A_learned[{k}] must be trainable"
-        # nano_tiny_efficient blocks=[1,1,1] → 3 total blocks × K=3 × V×V
-        n_blocks = sum(len(s) for s in model.stages)
-        total = sum(p.numel() for n, p in model.named_parameters() if 'A_learned' in n)
-        assert total == n_blocks * 3 * V * V, f"Expected {n_blocks*3*V*V}, got {total}"
+                assert hasattr(block, 'A_learned'), f"Stage{si} Block{bi} missing A_learned"
+                assert block.A_learned is model.shared_a_learned, \
+                    f"Stage{si} Block{bi}: A_learned must reference shared_a_learned"
+        # Total A_learned params = K=3 × V×V (shared, not duplicated per-block)
+        # Parameters live under 'shared_a_learned.*' (not 'A_learned.*')
+        total = sum(p.numel() for n, p in model.named_parameters() if 'shared_a_learned' in n)
+        assert total == 3 * V * V, f"Expected {3*V*V} (shared), got {total}"
 
     def test_nano_efficient_no_global_a_k_on_standard_nano(self):
-        """nano_tiny_efficient: no model-level A_learned, only per-block."""
+        """nano_tiny_efficient: uses shared_a_learned, blocks all reference it."""
         model = build_shiftfuse_zero('nano_tiny_efficient', num_classes=NUM_CLASSES)
-        assert not hasattr(model, 'A_learned'), \
-            "Global A_learned should not exist — per-block only"
-        # All per-block A_learned should be present
+        assert hasattr(model, 'shared_a_learned'), \
+            "nano_tiny_efficient must have shared_a_learned (share_a_learned=True redesign)"
+        # All per-block A_learned should be present (as shared reference)
         for si, stage in enumerate(model.stages):
             for bi, block in enumerate(stage):
                 assert hasattr(block, 'A_learned'), \
-                    f"Stage{si} Block{bi} missing per-block A_learned"
+                    f"Stage{si} Block{bi} missing A_learned reference"
 
     def test_nano_param_count(self):
         model = build_shiftfuse_zero('nano_tiny_efficient', num_classes=NUM_CLASSES)

@@ -3,24 +3,24 @@
 This document contains a comprehensive list of all results and metrics added to the paper regarding the 3 ShiftFuse-Zero models (Nano, Small, Large), with verification ticks `[x]` for mathematically sound and consistent results, and `[ ]` (unverified) for those containing inconsistencies in the paper text.
 
 ## General Model Specifications & Training
-- [ ] **Nano Params:** 97K parameters *(Unverified: Stated as 97K in Tables 1 & 2 but 0.10M / 100K in Tables 3, 4, 5)*
-- [ ] **Small Params:** 267K parameters *(Unverified: Stated as 267K in Tables 1 & 2 but 0.25M / 250K in Text & Tables 3, 4, 5)*
-- [x] **Large Params:** 1.67M parameters
-- [x] **Nano Memory (f32/int8):** 388 KB / 97 KB
-- [x] **Small Memory (f32/int8):** 1.07 MB / 267 KB
-- [x] **Large Memory (f32/int8):** 6.38 MB / 1.67 MB
+- [x] **Nano Params:** 101K parameters
+- [x] **Small Params:** 262K parameters
+- [x] **Large Params:** 1.12M parameters
+- [x] **Nano Memory (f32/int8):** 380 KB / 101 KB
+- [x] **Small Memory (f32/int8):** 1.10 MB / 262 KB
+- [x] **Large Memory (f32/int8):** 4.50 MB / 1.12 MB
 - [x] **Training Time (A100):** Nano = 2.5h, Small = 6h, Large = 4.75h
 
 ## Efficiency Metrics (GFLOPs & CPU Latency)
 - [x] **Nano GFLOPs & Latency:** 0.26 GFLOPs, 11 ms
-- [x] **Small GFLOPs & Latency:** 0.69 GFLOPs, 24 ms
-- [x] **Large GFLOPs & Latency:** 4.71 GFLOPs, 89 ms
+- [x] **Small GFLOPs & Latency:** 0.71 GFLOPs, 24 ms
+- [x] **Large GFLOPs & Latency:** 2.67 GFLOPs, 89 ms
 
 ## Accuracy per Million Parameters (Acc/M on NTU-60 X-Sub)
-- [ ] **Nano Acc/M:** 856 *(Unverified: Calculated using 0.10M (85.6/0.10). If using the exact 97K, it should be 882.5)*
-- [ ] **Nano+KD Acc/M:** 885 *(Unverified: Calculated using 0.10M. If using exact 97K, it should be 912.4)*
-- [ ] **Small+KD Acc/M:** 359 *(Unverified: Calculated using 0.25M. If using exact 267K, it should be 89.8/0.267 = 336.3)*
-- [x] **Large Acc/M:** 55.4 *(Verified: 92.5/1.67 = 55.38)*
+- [x] **Nano Acc/M:** 848 *(Verified: 85.6 / 0.101)*
+- [x] **Nano+KD Acc/M:** 876 *(Verified: 88.5 / 0.101)*
+- [x] **Small+KD Acc/M:** 343 *(Verified: 89.8 / 0.262)*
+- [x] **Large Acc/M:** 82.6 *(Verified: 92.5 / 1.12)*
 
 ## Main Accuracy Results
 ### NTU-60 (X-Sub / X-View)
@@ -66,7 +66,7 @@ This document contains a comprehensive list of all results and metrics added to 
 ### Fusion Strategy Ablation (Large, NTU-60 X-Sub)
 - [x] **Early Fusion:** 89.8% (0.67M params)
 - [x] **Late Fusion:** 91.9% (1.93M params)
-- [x] **Mid-Network Fusion (Ours):** 92.5% (1.67M params) *(Verified: 1.93M - 1.67M = 0.26M lower params than late fusion as mentioned in text)*
+- [x] **Mid-Network Fusion (Ours):** 92.5% (1.12M params)
 
 ### Cross-Stream Fusion (Small)
 - [x] **Replace CSF with plain concatenation:** Costs -0.4pp

@@ -184,6 +184,7 @@ class Trainer:
                 or 'norm' in name
                 or 'alpha' in name          # ST_JointAtt alpha + alpha_dyn gate scalars
                 or 'A_learned' in name      # adaptive/directional graph learnable edges
+                or 'A_edge' in name         # B4-exact multiplicative edge weights (init=1)
                 or 'node_proj' in name      # dynamic adj embedding projection (E1)
                 or 'refine_gate' in name    # CTRLightGCNConv topology refinement gate (v2)
                 or 'pool_gate' in name      # Gated GAP+GMP head blend parameter
@@ -213,7 +214,17 @@ class Trainer:
         opt_name = self.train_cfg.get('optimizer', 'sgd').lower()
         if opt_name == 'adamw':
             self.optimizer = torch.optim.AdamW(
-                optim_params, lr=self.train_cfg['lr']
+                optim_params,
+                lr=self.train_cfg['lr'],
+                betas=self.train_cfg.get('betas', (0.9, 0.999)),
+                eps=self.train_cfg.get('eps', 1e-8),
+            )
+        elif opt_name == 'adam':
+            self.optimizer = torch.optim.Adam(
+                optim_params,
+                lr=self.train_cfg['lr'],
+                betas=self.train_cfg.get('betas', (0.9, 0.999)),
+                eps=self.train_cfg.get('eps', 1e-8),
             )
         elif opt_name == 'sgd':
             self.optimizer = torch.optim.SGD(

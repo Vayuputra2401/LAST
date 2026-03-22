@@ -1,0 +1,6 @@
+model:
+  name: shiftfuse_zero_medium_late_efficient
+  variant: medium_late_efficient_bb
+  num_classes: 60
+  drop_path_rate: 0.10
+  dropout: 0.15

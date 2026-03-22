@@ -41,43 +41,52 @@ def set_seed(seed):
 
 def count_flops(model, input_shape, device):
     """
-    Estimate FLOPs using a forward pass with profiling.
+    Estimate FLOPs using torch.profiler with_flops=True.
 
     Args:
-        model: ShiftFuse-Zero model
-        input_shape: tuple (C, T, V, M)
-        device: torch device
+        model:        ShiftFuse-Zero model
+        input_shape:  tuple (C, T, V) — single stream, no batch or M dim
+        device:       torch device
 
     Returns:
         dict with flops, params, memory info
+
+    Notes:
+        PyTorch profiler only counts FLOPs for a subset of ops (conv2d, mm, bmm).
+        Raw torch.matmul calls inside the GCN loop are NOT captured, so the
+        reported GFLOPs will be a lower bound — treat as a relative ranking tool
+        rather than an absolute measure.  Consider replacing with fvcore or
+        thop if accurate absolute FLOPs are needed.
     """
     model = model.to(device)
     model.eval()
 
-    x_single = torch.randn(1, *input_shape).to(device)
+    # Build a single-sample (B=1, C, T, V) stream dict — no M dimension
+    C, T, V = input_shape[:3]
+    x_single = torch.randn(1, C, T, V, device=device)
     x = {
-        'joint':         x_single,
-        'velocity':      x_single,
-        'bone':          x_single,
-        'bone_velocity': x_single,
+        'joint':    x_single,
+        'velocity': x_single,
+        'bone':     x_single,
     }
 
-    total_params    = sum(p.numel() for p in model.parameters())
+    total_params     = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    param_size_mb   = sum(p.nelement() * p.element_size() for p in model.parameters()) / (1024 * 1024)
-    buffer_size_mb  = sum(b.nelement() * b.element_size() for b in model.buffers()) / (1024 * 1024)
+    param_size_mb    = sum(p.nelement() * p.element_size() for p in model.parameters()) / (1024 * 1024)
+    buffer_size_mb   = sum(b.nelement() * b.element_size() for b in model.buffers()) / (1024 * 1024)
 
     flops = 0
     try:
         from torch.profiler import profile, ProfilerActivity
-        with profile(activities=[ProfilerActivity.CPU], with_flops=True) as prof:
-            model(x)
+        with torch.no_grad():
+            with profile(activities=[ProfilerActivity.CPU], with_flops=True) as prof:
+                model(x)
         for evt in prof.key_averages():
             if evt.flops:
                 flops += evt.flops
     except Exception as e:
-        print(f"  [Profiler Error] Fallback triggered: {e}")
-        flops = total_params * 2
+        print(f"  [Profiler Error] FLOPs unavailable: {e}")
+        flops = 0
 
     gpu_memory_mb = 0
     if device.type == 'cuda':
@@ -90,14 +99,14 @@ def count_flops(model, input_shape, device):
             pass
 
     return {
-        'total_params':       total_params,
-        'trainable_params':   trainable_params,
-        'param_size_mb':      round(param_size_mb, 2),
-        'buffer_size_mb':     round(buffer_size_mb, 2),
+        'total_params':        total_params,
+        'trainable_params':    trainable_params,
+        'param_size_mb':       round(param_size_mb, 2),
+        'buffer_size_mb':      round(buffer_size_mb, 2),
         'total_model_size_mb': round(param_size_mb + buffer_size_mb, 2),
-        'flops':              flops,
-        'gflops':             round(flops / 1e9, 3),
-        'gpu_memory_mb':      round(gpu_memory_mb, 2),
+        'flops':               flops,
+        'gflops':              round(flops / 1e9, 3),
+        'gpu_memory_mb':       round(gpu_memory_mb, 2),
     }
 
 
@@ -170,8 +179,9 @@ def main():
                         choices=[
                             'shiftfuse_zero_nano_tiny_efficient',
                             'shiftfuse_zero_small_late_efficient',
-                            'shiftfuse_zero_large_late_efficient',
+                            'shiftfuse_zero_medium_late_efficient',
                             'shiftfuse_zero_large_b4_efficient',
+                            'shiftfuse_zero_x_efficient',
                         ],
                         help='Model variant')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
@@ -211,12 +221,14 @@ def main():
     args = parser.parse_args()
 
     # ── 1. Load & merge config ──────────────────────────────────────────
-    if args.model in ('shiftfuse_zero_large_late_efficient', 'shiftfuse_zero_large_b4_efficient'):
-        _training_cfg_name = 'shiftfuse_zero_large_efficient'
-    elif args.model == 'shiftfuse_zero_small_late_efficient':
-        _training_cfg_name = 'shiftfuse_zero_small_efficient'  # 250 epochs (vs nano's 300)
-    else:
-        _training_cfg_name = 'shiftfuse_zero_nano_efficient'
+    _training_cfg_map = {
+        'shiftfuse_zero_nano_tiny_efficient':   'shiftfuse_zero_nano_efficient',
+        'shiftfuse_zero_small_late_efficient':  'shiftfuse_zero_small_efficient',
+        'shiftfuse_zero_medium_late_efficient': 'shiftfuse_zero_medium_efficient',
+        'shiftfuse_zero_large_b4_efficient':    'shiftfuse_zero_large_efficient',
+        'shiftfuse_zero_x_efficient':           'shiftfuse_zero_x_efficient',
+    }
+    _training_cfg_name = _training_cfg_map.get(args.model, 'shiftfuse_zero_nano_efficient')
 
     training_config_path = os.path.join(
         os.path.dirname(__file__), '..', 'configs', 'training', f'{_training_cfg_name}.yaml'
@@ -301,52 +313,38 @@ def main():
     print(f"  Run Dir:   {run_dir}")
     print("=" * 70)
 
-    # ── 3. Model ────────────────────────────────────────────────────────
+    # ── 3. Model — dispatched from config['model']['variant'] ───────────
     num_classes = config['data']['dataset'].get('num_classes', 60 if args.dataset == 'ntu60' else 120)
     num_joints  = config['data']['dataset']['num_joints']
 
-    if args.model == 'shiftfuse_zero_large_b4_efficient':
-        from src.models.shiftfuse_zero import build_shiftfuse_zero_b4
-        print(f"\n  Creating ShiftFuse-Zero B4-Exact (3-stream, B4 channels+blocks, ~1.12M)...")
-        model = build_shiftfuse_zero_b4(
-            num_classes=num_classes,
-            num_joints=num_joints,
-            dropout=config['model'].get('dropout'),
-        )
-    elif args.model == 'shiftfuse_zero_large_late_efficient':
-        from src.models.shiftfuse_zero import build_shiftfuse_zero_midfusion
-        print(f"\n  Creating ShiftFuse-Zero MidFusion (B4-style, 3-stream, ~1.09M)...")
-        model = build_shiftfuse_zero_midfusion(
-            num_classes=num_classes,
-            num_joints=num_joints,
-            dropout=config['model'].get('dropout'),
-        )
-    elif args.model == 'shiftfuse_zero_small_late_efficient':
-        from src.models.shiftfuse_zero import build_shiftfuse_zero_late
-        print(f"\n  Creating ShiftFuse-Zero 2-Backbone Late Fusion (small_late_efficient, cross_stream=True)...")
-        model = build_shiftfuse_zero_late(
-            variant='small_late_efficient_bb',
-            num_classes=num_classes,
-            num_joints=num_joints,
-            dropout=config['model'].get('dropout'),
-            cross_stream=True,
-        )
+    from src.models.shiftfuse_zero import (
+        build_shiftfuse_zero, build_shiftfuse_zero_late,
+        build_shiftfuse_zero_b4, build_shiftfuse_zero_x,
+    )
+
+    variant = config['model']['variant']
+    common  = dict(num_classes=num_classes, num_joints=num_joints,
+                   dropout=config['model'].get('dropout'))
+
+    _LATE_VARIANTS = {'small_late_efficient_bb', 'medium_late_efficient_bb'}
+
+    print(f"\n  Building variant '{variant}'...")
+    if variant in _LATE_VARIANTS:
+        model = build_shiftfuse_zero_late(variant=variant, **common)
+    elif variant == 'large_b4_efficient':
+        model = build_shiftfuse_zero_b4(**common)
+    elif variant == 'x_b4_efficient':
+        model = build_shiftfuse_zero_x(**common)
     else:
-        from src.models.shiftfuse_zero import build_shiftfuse_zero
-        print(f"\n  Creating ShiftFuse-Zero nano_tiny_efficient...")
-        model = build_shiftfuse_zero(
-            variant='nano_tiny_efficient',
-            num_classes=num_classes,
-            num_joints=num_joints,
-            dropout=config['model'].get('dropout'),
-        )
+        # nano_tiny_efficient and any future single-backbone ShiftFuseZero variants
+        model = build_shiftfuse_zero(variant=variant, **common)
 
     print(f"  Model created: {sum(p.numel() for p in model.parameters()):,} parameters")
 
     # ── 4. Measure FLOPs & memory ───────────────────────────────────────
     device      = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     input_frames = config['training']['input_frames']
-    input_shape  = (3, input_frames, num_joints, 2)
+    input_shape  = (3, input_frames, num_joints)   # (C, T, V) — single stream, B=1
 
     print(f"  Measuring FLOPs on input {input_shape}...")
     model_stats = count_flops(model, input_shape, device)

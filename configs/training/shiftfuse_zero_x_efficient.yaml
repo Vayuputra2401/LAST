@@ -1,28 +1,29 @@
 training:
-  # Optimizer
-  optimizer: sgd
-  lr: 0.1
-  momentum: 0.9
-  nesterov: true
-  weight_decay: 0.0001  # EfficientGCN-exact
+  # Optimizer — AdamW for large B4-style model with attention at every stage
+  # Lower lr than medium (0.0005 vs 0.001): wider channels (384 final) need
+  # smaller step size to avoid oscillation.
+  optimizer: adamw
+  lr: 0.0005
+  weight_decay: 0.01
+  # No momentum/nesterov fields needed for AdamW
 
   # Scheduler
   scheduler: cosine_warmup
-  warmup_epochs: 10
-  warmup_start_lr: 0.005
-  min_lr: 0.00001  # cosine floor — 1e-5 for fine-tuning in last 50 epochs
+  warmup_epochs: 15
+  warmup_start_lr: 0.00005
+  min_lr: 0.00001
 
-  # Duration — 300ep: redesigned small has tcn_depth=2 + Part_Att, more capacity
-  # than original → needs extra epochs to fully converge. Aligns with nano's 300ep.
-  epochs: 300
-  batch_size: 64
+  # Duration — 350ep: 3 per-stream backbones + shared backbone with Part_Att/TLA
+  # all attention mechanisms need longer training to fully co-adapt.
+  epochs: 350
+  batch_size: 32
   gradient_accumulation_steps: 1
 
   # Regularization
   label_smoothing: 0.0
   gradient_clip: 1.0
 
-  # Augmentation — mixup=0.1 validated on nano; same for small
+  # Augmentation
   mixup_alpha: 0.1
   cutmix_prob: 0.0
   cutmix_alpha: 1.0

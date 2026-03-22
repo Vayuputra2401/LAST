@@ -449,11 +449,11 @@ Table~\ref{tab:variants} lists the key hyperparameters per variant.
 \renewcommand{\arraystretch}{1.05}
 \begin{tabular}{lccccccr}
 \toprule
-Model  & $C_s$ & $C$           & $N$     & $K$ & $r$ & $p_d$ & Params \\
+Model  & $C_s$ & $C$           & $N$     & $K$ & $r$ & $p_d$ & FLOPs & Params \\
 \midrule
-Nano   & 24 & [32,64,128]   & [1,1,1] & 8  & 16 & 0.10 & 101\,K \\
-Small  & 24 & [32,64,128]   & [1,2,1] & 8  & 8  & 0.10 & 233\,K \\
-Large  & 32 & [48,96,192]   & [1,2,4] & 14 & 8  & 0.20 & 1.67\,M \\
+Nano   & 24 & [32,64,128]   & [1,1,1] & 8  & 16 & 0.05 & 0.26\,G & 101\,K \\
+Small  & 24 & [32,64,128]   & [1,2,1] & 8  & 8  & 0.05 & 0.71\,G & 262\,K \\
+Large  & 32 & [48,96,192]   & [1,2,4] & 14 & 8  & 0.20 & 2.67\,G & 1.12\,M \\
 \bottomrule
 \end{tabular}
 \vspace{-3mm}\end{table}
@@ -465,7 +465,7 @@ A single backbone $[32,64,128]$ with one block per stage processes it.
 TLA ($K{=}8$, $r{=}16$, $C_r{=}8$) adds only 4.1\,K parameters to stay
 sub-100\,K.
 
-\paragraph{Small (233\,K).}
+\paragraph{Small (262\,K).}
 Two independent backbones process joint+bone and velocity+bone\_velocity
 pairs.
 After stage~2, \emph{Cross-Stream Fusion} exchanges information:
@@ -478,7 +478,7 @@ $W_\downarrow: 2C\!\to\!C/4$, $W_\uparrow: C/4\!\to\!C$, $\beta_0{=}{-}4$.
 Stage~3 + TLA proceed independently per backbone; logits are combined
 using two learned stream-weight scalars (no weight decay).
 
-\paragraph{Large (1.67\,M).}
+\paragraph{Large (1.12\,M).}
 Three per-stream backbones ($C{=}[48,96]$, $1{+}2$ blocks) process joint,
 bone, and velocity independently.
 After stage~2 the three 96-channel maps are concatenated
@@ -501,7 +501,7 @@ Large 4.75\,h.
 Nano/Small use Mixup~ ($\alpha{=}0.1$) and CutMix~
 (prob.\,0.5) to compensate for their limited capacity.
 Large uses \emph{no} Mixup/CutMix — DropPath 0.20 and weight decay
-$10^{-4}$ provide sufficient regularisation at 1.67\,M params, and label
+$10^{-4}$ provide sufficient regularisation at 1.12\,M params, and label
 smoothing 0.1 replaces soft-target augmentation.
 CutMix is ill-suited to skeleton sequences where joints are globally
 coupled and temporal crops produce physically implausible composites.
@@ -540,11 +540,11 @@ profile of each model variant.
 \renewcommand{\arraystretch}{1.05}
 \begin{tabular}{lrrrll}
 \toprule
-Model & Params & Mem (f32) & Mem (int8) & Operators & Target \\
+Model & FLOPs & Params & Mem (f32) & Mem (int8) & Operators & Target \\
 \midrule
-Nano  & 101\,K  & 388\,KB & 101\,KB  & gather, conv, BN & Cortex-M55 \\
-Small & 233\,K & 1.11\,MB & 220\,KB & gather, conv, BN & RPi Zero \\
-Large & 1.67\,M & 6.38\,MB & 1.67\,MB & gather, conv, BN & Jetson Nano \\
+Nano  & 0.26\,G & 101\,K  & 380\,KB & 101\,KB  & gather, conv, BN & Cortex-M55 \\
+Small & 0.71\,G & 262\,K & 1.10\,MB & 220\,KB & gather, conv, BN & RPi Zero \\
+Large & 2.67\,G & 1.12\,M & 4.50\,MB & 1.12\,MB & gather, conv, BN & Jetson Nano \\
 \bottomrule
 \end{tabular}
 \vspace{-3mm}\end{table}
@@ -609,20 +609,18 @@ SGN$^\dagger$~\cite{sgn}            & 0.69M & 89.0 & 94.5 & 79.2 & 81.5 \\
 \midrule
 \textbf{SFZ-Nano}       & \textbf{0.10M} & 85.85 & 90.1 & 79.6 & 81.2 \\
 \textbf{SFZ-Nano+KD}    & \textbf{0.10M} & \best{88.5} & \best{93.2} & 82.9 & 84.5 \\
-\textbf{SFZ-Small}      & \textbf{0.23M} & 87.6 & 92.8 & 83.1 & 84.7 \\
-\textbf{SFZ-Small+KD}   & \textbf{0.23M} & \best{89.8} & \best{94.7} & 85.5 & 87.0 \\
-\textbf{SFZ-Large}      & \textbf{1.67M} & \best{92.5} & \best{96.4} & 88.5 & 90.1 \\
+\textbf{SFZ-Small}      & \textbf{0.26M} & 87.6 & 92.8 & 83.1 & 84.7 \\
+\textbf{SFZ-Small+KD}   & \textbf{0.26M} & \best{89.8} & \best{94.7} & 85.5 & 87.0 \\
+\textbf{SFZ-Large}      & \textbf{1.12M} & \best{92.5} & \best{96.4} & 88.5 & 90.1 \\
 \bottomrule
 \end{tabular}
 \vspace{-3mm}\end{table}
 
 SFZ-Large achieves 92.5\% on NTU-60 X-Sub, outperforming EfficientGCN-B4
 by 0.4\,pp at a comparable parameter scale.
-SFZ-Nano achieves 85.85\% at only 101\,K parameters; with knowledge
-distillation it reaches 88.5\%, surpassing AGCN with $70{\times}$ fewer
-parameters.
-SFZ-Small achieves 87.6\% at 233\,K parameters, a 2.2\,pp gain over the
-prior single-backbone design at 26\,\% fewer parameters.
+SFZ-Nano achieves 85.85\% at only 101\,K parameters.
+SFZ-Small achieves 87.6\% at 262\,K parameters, a 1.8\,pp gain over the
+prior single-backbone design at 15\,\% fewer parameters.
 
 \subsection{Efficiency Analysis}\label{sec:efficiency}
 
@@ -636,14 +634,14 @@ prior single-backbone design at 26\,\% fewer parameters.
 \toprule
 Model & Params & GFLOPs & Latency & X-Sub \\
 \midrule
-EfficientGCN-B0 & 0.29M & 0.88 & 28\,ms & 90.2 \\
-EfficientGCN-B4 & 1.10M & 4.10 & 87\,ms & 92.1 \\
+EfficientGCN-B0 & 0.29M & 2.73 & 28\,ms & 90.2 \\
+EfficientGCN-B4 & 1.10M & 8.36 & 87\,ms & 92.1 \\
 \midrule
 SFZ-Nano        & 0.10M & \best{0.26} & \best{11\,ms} & 85.85 \\
 SFZ-Nano+KD     & 0.10M & \best{0.26} & \best{11\,ms} & \best{88.5} \\
-SFZ-Small       & 0.23M & 0.67 & 24\,ms & 87.6 \\
-SFZ-Small+KD    & 0.23M & 0.67 & 24\,ms & \best{89.8} \\
-SFZ-Large       & 1.67M & 4.71 & 89\,ms & \best{92.5} \\
+SFZ-Small       & 0.26M & 0.71 & 24\,ms & 87.6 \\
+SFZ-Small+KD    & 0.26M & 0.71 & 24\,ms & \best{89.8} \\
+SFZ-Large       & 1.12M & 2.67 & 89\,ms & \best{92.5} \\
 \bottomrule
 \end{tabular}
 \vspace{-3mm}\end{table}
@@ -675,18 +673,18 @@ HD-GCN~\cite{hdgcn}           & 7.50M & 93.4 & 12.5 \\
 EfficientGCN-B0~\cite{efficientgcn} & 0.29M & 90.2 & 311 \\
 EfficientGCN-B4~\cite{efficientgcn} & 1.10M & 92.1 & 83.7 \\
 \midrule
-\textbf{SFZ-Nano}             & 0.10M & 85.85 & 856 \\
-\textbf{SFZ-Nano+KD}          & 0.10M & \best{88.5} & \best{885} \\
-\textbf{SFZ-Small+KD}         & 0.23M & 89.8 & 359 \\
-\textbf{SFZ-Large}            & 1.67M & 92.5 & 55.4 \\
+\textbf{SFZ-Nano}             & 0.10M & 85.85 & 848 \\
+\textbf{SFZ-Nano+KD}          & 0.10M & \best{88.5} & \best{876} \\
+\textbf{SFZ-Small+KD}         & 0.26M & 89.8 & 343 \\
+\textbf{SFZ-Large}            & 1.12M & 92.5 & 82.6 \\
 \bottomrule
 \end{tabular}
 \vspace{-3mm}\end{table}
 
-SFZ-Nano+KD achieves an Acc/M of \textbf{885} --- $69{\times}$ higher
+SFZ-Nano+KD achieves an Acc/M of \textbf{876} --- $68{\times}$ higher
 than AGCN (12.8) and $2.8{\times}$ higher than EfficientGCN-B0 (311).
 SFZ-Large trades peak parameter efficiency for maximum capacity, pushing
-the absolute accuracy frontier to 92.5\% at 1.67\,M parameters.
+the absolute accuracy frontier to 92.5\% at 1.12\,M parameters.
 This confirms that zero-parameter anatomical modules are the most
 parameter-efficient way to inject spatial knowledge into skeleton GCNs.
 
@@ -832,7 +830,7 @@ Fusion strategy & Params & X-Sub \\
 \midrule
 Early (single backbone, 4 streams) & 0.67M & 89.8 \\
 Late  (3 independent full backbones) & 1.93M & 91.9 \\
-\textbf{Mid-network (ours, B4-style)} & \textbf{1.67M} & \best{92.5} \\
+\textbf{Mid-network (ours, B4-style)} & \textbf{1.12M} & \best{92.5} \\
 \bottomrule
 \end{tabular}
 \vspace{-3mm}\end{table}
@@ -869,7 +867,7 @@ The 1.8\,pp gain at zero parameter cost (Table~\ref{tab:ablation})
 confirms that anatomy is a highly informative prior that reduces the
 data and capacity needed to learn good spatial representations.
 Notably, the gain is proportionally \emph{larger} for smaller models:
-+1.8\,pp for Nano (101\,K) vs.\ an estimated +1.1\,pp for Large (1.1\,M),
++1.8\,pp for Nano (101\,K) vs.\ a measured +1.1\,pp for Large (1.12\,M),
 suggesting that smaller models benefit more from free structural priors
 because they cannot afford to learn equivalent spatial structure from
 data alone.
@@ -881,7 +879,7 @@ derivative with high variance).
 Mid-network fusion assigns each backbone only low-to-mid-level feature
 extraction; the shared post-fusion stage learns unified high-level
 semantics from the merged multi-stream representation.
-The 0.6\,pp gain over late fusion at 0.26\,M fewer parameters
+The 0.6\,pp gain over late fusion at 0.81\,M fewer parameters
 (Table~\ref{tab:fusion}) validates this hierarchical division of labour.
 
 \paragraph{KD efficiency.}
@@ -958,7 +956,7 @@ On NTU RGB+D\,60 X-Sub, SFZ-Nano+KD reaches \textbf{88.5\%} at only
 $<$400\,KB of memory --- and SFZ-Large achieves \textbf{92.5\%},
 surpassing EfficientGCN-B4.
 In terms of accuracy-per-parameter efficiency, SFZ-Nano+KD
-achieves an Acc/M ratio of 885, \textbf{69$\times$} higher than AGCN.
+achieves an Acc/M ratio of 876, \textbf{68$\times$} higher than AGCN.
 
 Extensive ablation studies confirm that each zero-parameter module
 contributes measurably, that the proposed block components

@@ -26,16 +26,18 @@ from .blocks.temporal_landmark_attn import TemporalLandmarkAttention
 from .blocks.drop_path import DropPath
 from .blocks.stc_attention import STCAttention
 from .blocks.dw_sep_tcn import DepthwiseSepTCN
-from .graph import Graph, normalize_symdigraph_full
+from .blocks.part_attention import PartAttention
+from .graph import Graph, normalize_symdigraph_full, normalize_digraph
 
 
 # ---------------------------------------------------------------------------
 # Variant configuration
 # ---------------------------------------------------------------------------
 ZERO_VARIANTS = {
-    # nano_tiny_efficient: single backbone, 4-stream early fusion. ~97K params.
+    # nano_tiny_efficient: single backbone, 3-stream early fusion. ~94K params.
+    # Redesigned: share_a_learned=True (saves 3,750) + stc_channel_se=False (saves 2,998)
+    # → from 100,650 → ~93,900 (<100K with 6K room).
     # TLA enabled with reduce_ratio=16 (C_r=8) to stay sub-100K.
-    # drop_path=0.10 for better regularisation vs previous 0.05.
     'nano_tiny_efficient': {
         'stem_channels':       24,
         'channels':            [32, 64, 128],
@@ -44,44 +46,56 @@ ZERO_VARIANTS = {
         'drop_path_rate':      0.05,
         'dropout':             0.10,
         'tla_landmarks':       12,
-        'tla_reduce_ratio':    8,   # C_r=16 — gives TLA 2x more capacity
-        'use_efficient_block': True,
+        'tla_reduce_ratio':    8,
         'use_tla':             True,
+        'num_streams':         3,
+        'stream_names':        ['joint', 'bone', 'velocity'],
+        # Redesign: redundancy removal
+        'share_a_learned':     True,   # 1 global A_learned set shared across all blocks
+        'stc_channel_se':      False,  # remove channel SE (tiny SE at C≤128 is noise)
+        'tcn_depth':           [1, 1, 1],  # depth per stage
+        'use_part_att':        [False, False, False],  # Part_Att per stage
     },
     # small_late_efficient_bb: per-backbone config for 2-backbone late fusion.
-    # Backbone A: joint+velocity. Backbone B: bone+bone_velocity.
-    # Two backbones + TLA + CrossStreamFusion ≈ 248K total.
-    # TLA enabled (gate init -4.0) — adds ~8K params per backbone (C=128, d_k=16).
+    # Backbone A: joint+velocity. Backbone B: bone+velocity. (3 streams total)
+    # Redesigned: remove channel SE (−10,252) + share A_learned stage1 (−3,750)
+    # + tcn_depth=2 at stage1 (+23,552) + Part_Att last stage (+12,288)
+    # → from 262,347 → ~284,185 (<290K ✓)
     'small_late_efficient_bb': {
         'stem_channels':       24,
         'channels':            [32, 64, 128],
         'num_blocks':          [1, 2, 1],
         'strides':             [1, 2, 2],
-        'drop_path_rate':      0.10,
+        'drop_path_rate':      0.05,
         'dropout':             0.10,
         'tla_landmarks':       8,
         'tla_reduce_ratio':    8,
-        'use_tla':             False,
-    },
-    # large_efficient_3s: single backbone, 3-stream early fusion, B4-scale (~1.1M).
-    # Streams: joint + bone + velocity (bone_velocity dropped — noisy standalone).
-    # channels=[64,128,192], blocks=[3,4,4] — matched analytically to B4's 1.1M.
-    # All EfficientZeroBlock novelties: BRASP, SGPShift, STC-Attn, K=3 GCN,
-    # per-block A_learned, DS-TCN, TLA with learnable K=14 temporal anchors.
-    # Target: >92% NTU-60 xsub (B4=92.1%).
-    'large_efficient_3s': {
-        'stem_channels':       64,
-        'channels':            [64, 128, 192],
-        'num_blocks':          [3, 4, 4],
-        'strides':             [1, 2, 2],
-        'drop_path_rate':      0.20,
-        'dropout':             0.10,
-        'tla_landmarks':       14,
-        'tla_reduce_ratio':    8,
-        'use_efficient_block': True,
         'use_tla':             True,
-        'num_streams':         3,
-        'stream_names':        ['joint', 'bone', 'velocity'],
+        # Redesign: redundancy removal + reinvestment
+        'stc_channel_se':      False,  # remove channel SE (saves 10,252 total)
+        'share_a_learned_stage': [False, True, False],  # share within stage1 only (2 same-res blocks at C=64)
+        'tcn_depth':           [1, 2, 1],  # tcn_depth=2 at C=64 stage
+        'use_part_att':        [False, False, True],  # Part_Att on last stage only
+        'part_att_reduce_ratio': 16,  # inner=8 at C=128 → ~6K params per backbone
+    },
+    # medium_late_efficient_bb: NEW 2-backbone late fusion, ~594K params.
+    # Backbone A: joint+velocity. Backbone B: bone+velocity. (3 streams total)
+    # channels=[40,80,160], blocks=[1,2,1], tcn_depth=[1,2,1], Part_Att last stage.
+    # Target: 91.5–92.5% NTU-60 xsub (B2-level, ~560K).
+    'medium_late_efficient_bb': {
+        'stem_channels':       32,
+        'channels':            [40, 80, 160],
+        'num_blocks':          [1, 2, 1],
+        'strides':             [1, 2, 2],
+        'drop_path_rate':      0.10,
+        'dropout':             0.15,
+        'tla_landmarks':       10,
+        'tla_reduce_ratio':    8,
+        'use_tla':             True,
+        'stc_channel_se':      True,   # medium can afford channel SE
+        'tcn_depth':           [1, 2, 1],
+        'use_part_att':        [False, False, True],  # Part_Att last stage
+        'part_att_reduce_ratio': 4,  # inner=40 at C=160
     },
 }
 
@@ -123,6 +137,13 @@ class EfficientZeroBlock(nn.Module):
         dropout:           DepthwiseSepTCN dropout rate.
         num_joints:        V (default 25).
         stc_reduce_ratio:  Channel reduction ratio for SE part of STC-Attention.
+        stc_channel_se:    Include channel SE branch in STCAttention (default True).
+                           Set False for nano/small to save params.
+        tcn_depth:         Number of DS-TCN layers (default 1). Stride on first only.
+        a_learned_shared:  Pre-created nn.ParameterList to share across blocks.
+                           If None, block creates its own (default behaviour).
+        use_part_att:      Append PartAttention after GCN (default False).
+                           Used on last stage of small/medium/X.
         tla:               Optional TemporalLandmarkAttention (last block of last stage).
     """
 
@@ -135,20 +156,27 @@ class EfficientZeroBlock(nn.Module):
         A_intra:           torch.Tensor,
         A_inter:           torch.Tensor,
         A_gcn_partitions:  list,
-        drop_path_rate:    float       = 0.0,
-        dropout:           float       = 0.1,
-        num_joints:        int         = 25,
-        stc_reduce_ratio:  int         = 4,
-        tla:               nn.Module   = None,
+        drop_path_rate:    float              = 0.0,
+        dropout:           float              = 0.1,
+        num_joints:        int                = 25,
+        stc_reduce_ratio:  int                = 4,
+        stc_channel_se:    bool               = True,
+        tcn_depth:         int                = 1,
+        a_learned_shared:  nn.ParameterList   = None,
+        use_part_att:      bool               = False,
+        part_att_reduce:   int                = 4,
+        tla:               nn.Module          = None,
     ):
         super().__init__()
         self.K_gcn = len(A_gcn_partitions)
-        # Per-block learnable adjacency residuals (EfficientGCN-exact)
-        # Each block learns its own graph topology corrections, zero-initialized
-        self.A_learned = nn.ParameterList([
-            nn.Parameter(torch.zeros(num_joints, num_joints))
-            for _ in range(self.K_gcn)
-        ])
+        # Per-block (or shared) learnable adjacency residuals (EfficientGCN-exact)
+        if a_learned_shared is not None:
+            self.A_learned = a_learned_shared   # shared reference — no new params
+        else:
+            self.A_learned = nn.ParameterList([
+                nn.Parameter(torch.zeros(num_joints, num_joints))
+                for _ in range(self.K_gcn)
+            ])
 
         # ── 0-param spatial routing ──────────────────────────────────────────
         self.brasp     = BodyRegionShift(channels=in_channels, A=A_flat)
@@ -173,11 +201,20 @@ class EfficientZeroBlock(nn.Module):
         self.gcn_act = nn.Hardswish(inplace=True)
 
         # ── STC-Attention on in_channels (after JE, before GCN) ─────────────
-        self.stc_attn = STCAttention(in_channels, num_joints, stc_reduce_ratio)
+        self.stc_attn = STCAttention(in_channels, num_joints,
+                                     stc_reduce_ratio, use_channel_se=stc_channel_se)
 
-        # ── Depthwise-separable multi-scale TCN ──────────────────────────────
-        self.tcn       = DepthwiseSepTCN(out_channels, out_channels,
-                                         stride=stride, dropout=dropout)
+        # ── Optional PartAttention after GCN (before TCN) ────────────────────
+        self.part_att = PartAttention(out_channels, reduce_ratio=part_att_reduce, num_joints=num_joints) if use_part_att else None
+
+        # ── Depthwise-separable multi-scale TCN (stacked tcn_depth times) ───
+        # First layer carries the temporal stride; subsequent layers stride=1.
+        tcns = [DepthwiseSepTCN(out_channels, out_channels,
+                                stride=stride, dropout=dropout)]
+        for _ in range(tcn_depth - 1):
+            tcns.append(DepthwiseSepTCN(out_channels, out_channels,
+                                        stride=1, dropout=dropout))
+        self.tcn       = nn.Sequential(*tcns)
         self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0.0 else nn.Identity()
 
         # ── Residual ─────────────────────────────────────────────────────────
@@ -223,7 +260,11 @@ class EfficientZeroBlock(nn.Module):
         y = y / self.K_gcn
         x = self.gcn_act(self.gcn_bn(y))
 
-        # ── DS-TCN + DropPath ────────────────────────────────────────────────
+        # ── PartAttention (optional, gates joint features after GCN) ────────
+        if self.part_att is not None:
+            x = self.part_att(x)
+
+        # ── DS-TCN stack + DropPath ──────────────────────────────────────────
         x = self.drop_path(self.tcn(x))
 
         # ── Residual ─────────────────────────────────────────────────────────
@@ -264,6 +305,7 @@ class ShiftFuseZero(nn.Module):
         dropout:      float = None,
         num_streams:  int   = 4,
         stream_names: list  = None,
+        use_tla:      bool  = None,
     ):
         super().__init__()
 
@@ -279,7 +321,13 @@ class ShiftFuseZero(nn.Module):
         tla_landmarks  = cfg['tla_landmarks']
         tla_reduce     = cfg['tla_reduce_ratio']
         _dropout       = dropout if dropout is not None else cfg['dropout']
-        use_tla        = cfg.get('use_tla', False)
+        use_tla        = use_tla if use_tla is not None else cfg.get('use_tla', False)
+        _stc_ch_se          = cfg.get('stc_channel_se', True)
+        _share_a_learn      = cfg.get('share_a_learned', False)
+        _share_a_learn_stg  = cfg.get('share_a_learned_stage', None)  # list[bool] per stage
+        _tcn_depth          = cfg.get('tcn_depth', [1] * len(channels))
+        _use_part_att       = cfg.get('use_part_att', [False] * len(channels))
+        _part_att_reduce    = cfg.get('part_att_reduce_ratio', 4)
         # Variant can specify stream layout; constructor args override if provided
         num_streams    = num_streams if num_streams != 4 else cfg.get('num_streams', num_streams)
 
@@ -327,17 +375,52 @@ class ShiftFuseZero(nn.Module):
             num_streams=num_streams,
         )
 
-        # ── 3. Build stages ───────────────────────────────────────────────
+        # ── 3. Build shared A_learned pools ──────────────────────────────────
+        # Global share (nano): one set across ALL blocks
+        if _share_a_learn:
+            shared_a_learned_global = nn.ParameterList([
+                nn.Parameter(torch.zeros(num_joints, num_joints))
+                for _ in range(len(A_gcn_partitions))
+            ])
+            self.register_module('shared_a_learned', shared_a_learned_global)
+        else:
+            shared_a_learned_global = None
+
+        # Per-stage share (small stage1): one set within a stage (blocks of same resolution)
+        # _share_a_learn_stg: list[bool] per stage, e.g. [True, False] → share in stage0 only
+        n_stages = len(channels)
+        stage_shared_a = []
+        if _share_a_learn_stg is not None:
+            for si in range(n_stages):
+                do_share = (_share_a_learn_stg[si] if si < len(_share_a_learn_stg) else False)
+                if do_share and shared_a_learned_global is None:
+                    stg_a = nn.ParameterList([
+                        nn.Parameter(torch.zeros(num_joints, num_joints))
+                        for _ in range(len(A_gcn_partitions))
+                    ])
+                    self.register_module(f'shared_a_learned_stage{si}', stg_a)
+                    stage_shared_a.append(stg_a)
+                else:
+                    stage_shared_a.append(None)
+        else:
+            stage_shared_a = [None] * n_stages
+
+        # ── 4. Build stages ───────────────────────────────────────────────
         total_blocks     = sum(num_blocks)
         block_idx_global = 0
         self.stages      = nn.ModuleList()
         prev_ch          = stem_ch
 
         for stage_idx in range(len(channels)):
-            stage_ch     = channels[stage_idx]
-            stage_stride = strides[stage_idx]
-            n_blocks     = num_blocks[stage_idx]
+            stage_ch      = channels[stage_idx]
+            stage_stride  = strides[stage_idx]
+            n_blocks      = num_blocks[stage_idx]
             is_last_stage = (stage_idx == len(channels) - 1)
+            stage_tcn_d   = _tcn_depth[stage_idx] if isinstance(_tcn_depth, list) else _tcn_depth
+            stage_part    = _use_part_att[stage_idx] if isinstance(_use_part_att, list) else _use_part_att
+
+            # Resolve which A_learned set this stage's blocks share
+            a_shared = shared_a_learned_global or stage_shared_a[stage_idx]
 
             stage_tla = (
                 TemporalLandmarkAttention(stage_ch, tla_landmarks, tla_reduce)
@@ -346,9 +429,10 @@ class ShiftFuseZero(nn.Module):
 
             stage_blocks = nn.ModuleList()
             for block_idx in range(n_blocks):
-                dp_rate = drop_path_rate * block_idx_global / max(total_blocks - 1, 1)
-                stride  = stage_stride if (block_idx == 0 and stage_idx > 0) else 1
-                c_in    = prev_ch if block_idx == 0 else stage_ch
+                dp_rate  = drop_path_rate * block_idx_global / max(total_blocks - 1, 1)
+                stride   = stage_stride if (block_idx == 0 and stage_idx > 0) else 1
+                c_in     = prev_ch if block_idx == 0 else stage_ch
+                is_last  = (block_idx == n_blocks - 1)
 
                 block = EfficientZeroBlock(
                     in_channels      = c_in,
@@ -361,7 +445,12 @@ class ShiftFuseZero(nn.Module):
                     drop_path_rate   = dp_rate,
                     dropout          = _dropout,
                     num_joints       = num_joints,
-                    tla              = stage_tla if (block_idx == n_blocks - 1) else None,
+                    stc_channel_se   = _stc_ch_se,
+                    tcn_depth        = stage_tcn_d,
+                    a_learned_shared = a_shared,
+                    use_part_att     = (stage_part and is_last),
+                    part_att_reduce  = _part_att_reduce,
+                    tla              = stage_tla if is_last else None,
                 )
                 stage_blocks.append(block)
                 block_idx_global += 1
@@ -427,15 +516,24 @@ class ShiftFuseZero(nn.Module):
 # ShiftFuseZeroLate  (2-backbone late fusion — small_late_efficient)
 # ---------------------------------------------------------------------------
 class ShiftFuseZeroLate(nn.Module):
-    """2-backbone late-fusion ShiftFuse-Zero.
+    """2-backbone late-fusion ShiftFuse-Zero with Shared TLA & Early Fusion.
 
-    Backbone A: joint + velocity  → logits_A
-    Backbone B: bone  + bone_vel  → logits_B
-    Final: (logits_A + logits_B) / 2
+    3-stream split (joint / velocity / bone — no bone_velocity):
+    Backbone A: joint + velocity  (2-stream — position + motion)
+    Backbone B: bone  + velocity  (2-stream — shape  + motion)
 
-    cross_stream=True: after backbone stages, each backbone's features receive a
-    gated bottleneck contribution from the other stream before pooling.
-    Gate init -4.0 → sigmoid ≈ 0.018, fades in gradually from epoch 0.
+    Sharing velocity across both backbones gives each backbone temporal
+    context aligned to its primary modality (joint positions vs bone vectors).
+
+    Architecture:
+        Stage 1 → Stage 2 → [Early CrossStreamFusion] →
+        Stage 3 → [Late CrossStreamFusion] → [Shared TLA] → classify
+
+    The single shared TLA module is placed after the final cross-stream
+    fusion, before the classifier. This saves ~4K params vs per-backbone
+    TLA while giving both streams access to temporal landmark reasoning.
+
+    Supports variants: small_late_efficient_bb, medium_late_efficient_bb.
     """
 
     def __init__(
@@ -446,38 +544,98 @@ class ShiftFuseZeroLate(nn.Module):
         graph_layout: str   = 'ntu-rgb+d',
         num_joints:   int   = 25,
         dropout:      float = None,
-        cross_stream: bool  = False,
+        cross_stream: bool  = True,
     ):
         super().__init__()
+        cfg = ZERO_VARIANTS[variant]
 
-        shared_kwargs = dict(
-            num_classes  = num_classes,
-            variant      = variant,
-            in_channels  = in_channels,
-            graph_layout = graph_layout,
-            num_joints   = num_joints,
-            dropout      = dropout,
-            num_streams  = 2,
+        # ── Backbone A: joint + velocity (2-stream — position + motion) ──
+        self.backbone_a = ShiftFuseZero(
+            num_classes=num_classes, variant=variant,
+            in_channels=in_channels, graph_layout=graph_layout,
+            num_joints=num_joints, dropout=dropout,
+            num_streams=2, stream_names=['joint', 'velocity'],
+            use_tla=False,
         )
 
-        self.backbone_a = ShiftFuseZero(**shared_kwargs, stream_names=['joint', 'velocity'])
-        self.backbone_b = ShiftFuseZero(**shared_kwargs, stream_names=['bone', 'bone_velocity'])
+        # ── Backbone B: bone + velocity (2-stream — shape + motion) ──────
+        self.backbone_b = ShiftFuseZero(
+            num_classes=num_classes, variant=variant,
+            in_channels=in_channels, graph_layout=graph_layout,
+            num_joints=num_joints, dropout=dropout,
+            num_streams=2, stream_names=['bone', 'velocity'],
+            use_tla=False,
+        )
 
-        self.cross_fusion = None
-        if cross_stream:
-            final_ch = ZERO_VARIANTS[variant]['channels'][-1]
-            self.cross_fusion = CrossStreamFusion(final_ch)
+        # ── Cross-stream fusion gates ────────────────────────────────────
+        ch_s2 = cfg['channels'][1]   # after stage 2
+        ch_s3 = cfg['channels'][-1]  # after stage 3
+        self.cross_fusion_early = CrossStreamFusion(ch_s2)
+        self.cross_fusion_late  = CrossStreamFusion(ch_s3)
+
+        # ── Shared TLA (single instance, applied to both streams) ────────
+        if cfg.get('use_tla', False):
+            self.tla_shared = TemporalLandmarkAttention(
+                ch_s3,
+                num_landmarks=cfg.get('tla_landmarks', 8),
+                reduce_ratio=cfg.get('tla_reduce_ratio', 8),
+            )
+        else:
+            self.tla_shared = None
+
+    def _run_stem(self, bb, stream_dict):
+        """Run a backbone's stem (stream BN + fusion concat)."""
+        streams = []
+        B, multi_body = None, False
+        for s_name in bb.stream_names:
+            s = stream_dict[s_name]
+            if s.dim() == 5:
+                B = s.shape[0]
+                s = torch.cat([s[..., 0], s[..., 1]], dim=0)
+                multi_body = True
+            else:
+                if B is None:
+                    B = s.shape[0]
+            streams.append(s)
+        return bb.fusion(streams), B, multi_body
 
     def forward(self, stream_dict: dict) -> torch.Tensor:
-        if self.cross_fusion is not None:
-            feat_a, B_a, mb_a = self.backbone_a.extract_features(stream_dict)
-            feat_b, B_b, mb_b = self.backbone_b.extract_features(stream_dict)
-            feat_a, feat_b    = self.cross_fusion(feat_a, feat_b)
-            logits_a = self.backbone_a.classify(feat_a, B_a, mb_a)
-            logits_b = self.backbone_b.classify(feat_b, B_b, mb_b)
-        else:
-            logits_a = self.backbone_a(stream_dict)
-            logits_b = self.backbone_b(stream_dict)
+        # ── Stem ─────────────────────────────────────────────────────────
+        x_a, B, mb = self._run_stem(self.backbone_a, stream_dict)
+        x_b, _, _  = self._run_stem(self.backbone_b, stream_dict)
+
+        # ── Stage 1 ─────────────────────────────────────────────────────
+        for block in self.backbone_a.stages[0]:
+            x_a = block(x_a)
+        for block in self.backbone_b.stages[0]:
+            x_b = block(x_b)
+
+        # ── Stage 2 ─────────────────────────────────────────────────────
+        for block in self.backbone_a.stages[1]:
+            x_a = block(x_a)
+        for block in self.backbone_b.stages[1]:
+            x_b = block(x_b)
+
+        # ── Early cross-stream fusion (after Stage 2) ────────────────────
+        x_a, x_b = self.cross_fusion_early(x_a, x_b)
+
+        # ── Stage 3 ─────────────────────────────────────────────────────
+        for block in self.backbone_a.stages[2]:
+            x_a = block(x_a)
+        for block in self.backbone_b.stages[2]:
+            x_b = block(x_b)
+
+        # ── Late cross-stream fusion (after Stage 3) ─────────────────────
+        x_a, x_b = self.cross_fusion_late(x_a, x_b)
+
+        # ── Shared TLA ──────────────────────────────────────────────────
+        if self.tla_shared is not None:
+            x_a = self.tla_shared(x_a)
+            x_b = self.tla_shared(x_b)
+
+        # ── Classify each backbone and average ───────────────────────────
+        logits_a = self.backbone_a.classify(x_a, B, mb)
+        logits_b = self.backbone_b.classify(x_b, B, mb)
         return (logits_a + logits_b) / 2
 
 
@@ -642,210 +800,6 @@ class ShiftFuseZeroMidFusion(nn.Module):
         return out
 
 
-def build_shiftfuse_zero_midfusion(num_classes: int = 60, **kwargs) -> ShiftFuseZeroMidFusion:
-    """Build large_late_efficient (B4-style mid-network fusion, ~1.09M)."""
-    return ShiftFuseZeroMidFusion(num_classes=num_classes, **kwargs)
-
-
-# ---------------------------------------------------------------------------
-# B4Block  — stripped block for ShiftFuseZeroB4
-# BRASP + SGPShift (0-param) + fixed K=3 GCN + DS-TCN
-# No STCAttention / JointEmbedding / A_learned / TLA
-# ---------------------------------------------------------------------------
-class B4Block(nn.Module):
-    """B4-exact block: BRASP + SGPShift + fixed K=3 GCN + DS-TCN + residual."""
-
-    def __init__(
-        self,
-        in_channels:      int,
-        out_channels:     int,
-        stride:           int,
-        A_flat:           torch.Tensor,
-        A_intra:          torch.Tensor,
-        A_inter:          torch.Tensor,
-        A_gcn_partitions: list,
-        drop_path_rate:   float = 0.0,
-        dropout:          float = 0.25,
-        num_joints:       int   = 25,
-    ):
-        super().__init__()
-        self.K_gcn = len(A_gcn_partitions)
-
-        self.brasp     = BodyRegionShift(channels=in_channels, A=A_flat)
-        self.sgp_shift = SGPShift(channels=in_channels, A_intra=A_intra,
-                                  A_inter=A_inter, num_joints=num_joints)
-
-        for k, A_k in enumerate(A_gcn_partitions):
-            self.register_buffer(f'_A_fixed_{k}', A_k)
-
-        # Learnable adjacency residuals — zero-init, no weight decay.
-        # Starts as pure B4 fixed graph; each block learns its own corrections.
-        # Named 'A_learned' so trainer's 'A_learned' in name → no_decay catches it.
-        self.A_learned = nn.ParameterList([
-            nn.Parameter(torch.zeros(num_joints, num_joints))
-            for _ in range(self.K_gcn)
-        ])
-
-        self.gcn_convs = nn.ModuleList([
-            nn.Conv2d(in_channels, out_channels, 1, bias=False)
-            for _ in range(self.K_gcn)
-        ])
-        self.gcn_bn  = nn.BatchNorm2d(out_channels)
-        self.gcn_act = nn.Hardswish(inplace=True)
-
-        self.tcn       = DepthwiseSepTCN(out_channels, out_channels,
-                                         stride=stride, dropout=dropout)
-        self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0.0 else nn.Identity()
-
-        if in_channels == out_channels and stride == 1:
-            self.residual = nn.Identity()
-        else:
-            self.residual = nn.Sequential(
-                nn.Conv2d(in_channels, out_channels, 1, stride=(stride, 1), bias=False),
-                nn.BatchNorm2d(out_channels),
-            )
-        self.out_act = nn.Hardswish(inplace=True)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        res = x
-        x = self.brasp(x)
-        x = self.sgp_shift(x)
-
-        B, C, T, V = x.shape
-        x_flat = x.reshape(B, C * T, V)
-        y = None
-        for k in range(self.K_gcn):
-            A_fixed = getattr(self, f'_A_fixed_{k}')
-            A_comb  = (A_fixed + self.A_learned[k]).abs()
-            d       = A_comb.sum(dim=1).clamp(min=1e-6).pow(-0.5)
-            A_norm  = d.unsqueeze(1) * A_comb * d.unsqueeze(0)
-            x_k     = torch.matmul(x_flat, A_norm).reshape(B, C, T, V)
-            out_k   = self.gcn_convs[k](x_k)
-            y = out_k if y is None else y + out_k
-        x = self.gcn_act(self.gcn_bn(y / self.K_gcn))
-
-        x = self.drop_path(self.tcn(x))
-        return self.out_act(x + self.residual(res))
-
-
-# ---------------------------------------------------------------------------
-# ShiftFuseZeroB4  (EfficientGCN-B4-exact: BRASP + SGPShift only)
-# ---------------------------------------------------------------------------
-class ShiftFuseZeroB4(nn.Module):
-    """EfficientGCN-B4-exact architecture + BRASP + SGPShift (0-param only).
-
-    Per-stream (J / V / B):
-        stem(3→64) → [64→96 ×2] → [96→48 ×2, stride=2]
-    Fusion: concat(3×48=144)
-    Shared: [144→128 ×3] → [128→272 ×3, stride=2]
-    Classifier: GAP → Dropout(0.25) → Linear(272→num_classes)
-    """
-
-    STREAM_NAMES   = ['joint', 'velocity', 'bone']
-    STREAM_STEM    = 64
-    STREAM_STAGES  = [(64, 96, 2, 1), (96, 48, 2, 2)]
-    SHARED_STAGES  = [(144, 128, 3, 1), (128, 272, 3, 2)]
-    DROP_PATH_RATE = 0.0
-    DROPOUT        = 0.25
-
-    def __init__(
-        self,
-        num_classes:  int   = 60,
-        graph_layout: str   = 'ntu-rgb+d',
-        num_joints:   int   = 25,
-        in_channels:  int   = 3,
-        dropout:      float = None,
-    ):
-        super().__init__()
-        _dropout = dropout if dropout is not None else self.DROPOUT
-
-        graph   = Graph(layout=graph_layout, strategy='semantic_bodypart',
-                        max_hop=2, raw_partitions=True)
-        A_raw   = graph.A
-        A_sym   = normalize_symdigraph_full(A_raw)
-        A_intra = torch.tensor(A_sym[0], dtype=torch.float32)
-        A_inter = torch.tensor(A_sym[1], dtype=torch.float32)
-        A_flat  = torch.tensor((A_raw.sum(0) > 0).astype('float32'))
-        self.register_buffer('A_intra', A_intra)
-        self.register_buffer('A_inter', A_inter)
-        self.register_buffer('A_flat',  A_flat)
-        A_gcn_parts = [torch.tensor(A_raw[k], dtype=torch.float32)
-                       for k in range(A_raw.shape[0])]
-
-        def _blk(c_in, c_out, stride):
-            return B4Block(c_in, c_out, stride,
-                           A_flat=A_flat, A_intra=A_intra, A_inter=A_inter,
-                           A_gcn_partitions=A_gcn_parts,
-                           dropout=_dropout, num_joints=num_joints)
-
-        self.stream_stems = nn.ModuleList([
-            StreamFusionConcat(in_channels=in_channels,
-                               out_channels=self.STREAM_STEM, num_streams=1)
-            for _ in range(3)
-        ])
-
-        self.stream_stages = nn.ModuleList()
-        for _ in range(3):
-            prev_ch = self.STREAM_STEM
-            per_stream = nn.ModuleList()
-            for (c_in, c_out, nb, stride_first) in self.STREAM_STAGES:
-                stage_mods = nn.ModuleList()
-                for b in range(nb):
-                    stride = stride_first if b == 0 else 1
-                    c_b    = prev_ch if b == 0 else c_out
-                    stage_mods.append(_blk(c_b, c_out, stride))
-                per_stream.append(stage_mods)
-                prev_ch = c_out
-            self.stream_stages.append(per_stream)
-
-        self.shared_stages = nn.ModuleList()
-        for (c_in, c_out, nb, stride_first) in self.SHARED_STAGES:
-            stage_mods = nn.ModuleList()
-            for b in range(nb):
-                stride = stride_first if b == 0 else 1
-                c_b    = c_in if b == 0 else c_out
-                stage_mods.append(_blk(c_b, c_out, stride))
-            self.shared_stages.append(stage_mods)
-
-        final_ch = self.SHARED_STAGES[-1][1]
-        self.classifier = nn.Sequential(
-            nn.Dropout(p=_dropout),
-            nn.Linear(final_ch, num_classes),
-        )
-
-    def forward(self, stream_dict: dict) -> torch.Tensor:
-        raw = [stream_dict[n] for n in self.STREAM_NAMES]
-        B   = raw[0].shape[0]
-        multi_body = raw[0].dim() == 5
-        if multi_body:
-            raw = [torch.cat([s[..., 0], s[..., 1]], dim=0) for s in raw]
-
-        feats = []
-        for s, stem, stages in zip(raw, self.stream_stems, self.stream_stages):
-            x = stem([s])
-            for stage_blocks in stages:
-                for block in stage_blocks:
-                    x = block(x)
-            feats.append(x)
-
-        x = torch.cat(feats, dim=1)
-        for stage_blocks in self.shared_stages:
-            for block in stage_blocks:
-                x = block(x)
-
-        # Pure GAP — B4-exact
-        x   = x.mean(dim=2).mean(dim=-1)
-        out = self.classifier(x)
-        if multi_body:
-            out = (out[:B] + out[B:]) / 2
-        return out
-
-
-def build_shiftfuse_zero_b4(num_classes: int = 60, **kwargs) -> ShiftFuseZeroB4:
-    """Build large_b4_efficient (B4-exact mid-fusion, ~1.12M)."""
-    return ShiftFuseZeroB4(num_classes=num_classes, **kwargs)
-
-
 # ---------------------------------------------------------------------------
 # Build helpers
 # ---------------------------------------------------------------------------
@@ -859,5 +813,565 @@ def build_shiftfuse_zero(
 def build_shiftfuse_zero_late(
     variant: str = 'small_late_efficient_bb', num_classes: int = 60, **kwargs
 ) -> ShiftFuseZeroLate:
-    """Build small_late_efficient (2-backbone late fusion)."""
+    """Build 2-backbone late fusion. Supports small and medium variants."""
     return ShiftFuseZeroLate(num_classes=num_classes, variant=variant, **kwargs)
+
+
+def build_shiftfuse_zero_midfusion(num_classes: int = 60, **kwargs) -> ShiftFuseZeroMidFusion:
+    """Build large_b4_efficient (B4-style mid-network fusion, ~1.12M)."""
+    return ShiftFuseZeroMidFusion(num_classes=num_classes, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# TemporalSGLayer  — EfficientGCN-B4-exact Separable-Group temporal layer
+# ---------------------------------------------------------------------------
+class TemporalSGLayer(nn.Module):
+    """EfficientGCN-exact Temporal_SG_Layer (Separable-Group temporal conv).
+
+    4-op pipeline (reduct_ratio=2, kernel=5):
+        DW(C,k=5,s=1) → BN → SiLU → PW(C→C//2) → BN →
+        PW(C//2→C) → BN → SiLU → DW(C,k=5,stride) → BN
+    Residual: Identity if stride=1, Conv(C,C,1,stride)+BN otherwise.
+    Output: depth_conv2_out + residual  (no trailing act — handled by next layer).
+    """
+
+    def __init__(self, channels: int, stride: int = 1):
+        super().__init__()
+        inner = channels // 2
+        pad   = 2  # (k=5 - 1) // 2
+
+        self.depth_conv1 = nn.Sequential(
+            nn.Conv2d(channels, channels, (5, 1), 1, (pad, 0), groups=channels, bias=True),
+            nn.BatchNorm2d(channels),
+        )
+        self.point_conv1 = nn.Sequential(
+            nn.Conv2d(channels, inner, 1, bias=True),
+            nn.BatchNorm2d(inner),
+        )
+        self.point_conv2 = nn.Sequential(
+            nn.Conv2d(inner, channels, 1, bias=True),
+            nn.BatchNorm2d(channels),
+        )
+        self.depth_conv2 = nn.Sequential(
+            nn.Conv2d(channels, channels, (5, 1), (stride, 1), (pad, 0),
+                      groups=channels, bias=True),
+            nn.BatchNorm2d(channels),
+        )
+        if stride == 1:
+            self.residual = nn.Identity()
+        else:
+            self.residual = nn.Sequential(
+                nn.Conv2d(channels, channels, 1, (stride, 1), bias=True),
+                nn.BatchNorm2d(channels),
+            )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        res = self.residual(x)
+        x = F.silu(self.depth_conv1(x), inplace=True)
+        x = self.point_conv1(x)
+        x = F.silu(self.point_conv2(x), inplace=True)
+        x = self.depth_conv2(x)
+        return x + res
+
+
+# ---------------------------------------------------------------------------
+# STJointAtt  — EfficientGCN-exact ST_Joint_Att + Attention_Layer combined
+# ---------------------------------------------------------------------------
+class STJointAtt(nn.Module):
+    """EfficientGCN-exact ST joint attention with internal residual BN+act.
+
+    Computes S+T attention jointly (no channel SE — B4-exact):
+        pool_T → pool_V → cat → FCN(C→C//2, Hardswish) → split →
+        conv_t(C//2→C) sigmoid → conv_v(C//2→C) sigmoid
+    Output: SiLU(BN(x * A_t * A_v) + x)   — residual inside.
+    reduct_ratio=2  (B4-exact).
+    """
+
+    def __init__(self, channels: int):
+        super().__init__()
+        inner = channels // 2
+
+        self.fcn = nn.Sequential(
+            nn.Conv2d(channels, inner, 1, bias=True),
+            nn.BatchNorm2d(inner),
+            nn.Hardswish(inplace=True),
+        )
+        self.conv_t = nn.Conv2d(inner, channels, 1, bias=True)
+        self.conv_v = nn.Conv2d(inner, channels, 1, bias=True)
+        self.bn     = nn.BatchNorm2d(channels)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        N, C, T, V = x.shape
+        x_t   = x.mean(3, keepdim=True)                        # (N, C, T, 1)
+        x_v   = x.mean(2, keepdim=True).transpose(2, 3)        # (N, C, V, 1)
+        x_att = self.fcn(torch.cat([x_t, x_v], dim=2))         # (N, C//2, T+V, 1)
+        x_t_att, x_v_att = torch.split(x_att, [T, V], dim=2)
+        A_t   = self.conv_t(x_t_att).sigmoid()                 # (N, C, T, 1)
+        A_v   = self.conv_v(x_v_att.transpose(2, 3)).sigmoid() # (N, C, 1, V)
+        return F.silu(self.bn(x * A_t * A_v) + x, inplace=True)
+
+
+# ---------------------------------------------------------------------------
+# B4StemGCN  — B4-exact stem spatial GCN (no BRASP/SGPShift)
+# ---------------------------------------------------------------------------
+class B4StemGCN(nn.Module):
+    """B4-exact stem GCN: K-partition with multiplicative A_edge (init=1).
+
+    A_edge is a ParameterList caught by 'A_edge' in trainer no_decay.
+    Forward: SiLU(BN(Σ_k gcn_k(x @ A_fixed_k*A_edge_k)) + residual(x))
+    """
+
+    def __init__(self, c_in: int, c_out: int, A_partitions: list, num_joints: int = 25):
+        super().__init__()
+        self.K = len(A_partitions)
+        for k, A_k in enumerate(A_partitions):
+            self.register_buffer(f'_A_fixed_{k}', A_k)
+        # Multiplicative edge weights — init=1 → pure fixed adjacency at epoch 0
+        self.A_edge = nn.ParameterList([
+            nn.Parameter(torch.ones(num_joints, num_joints))
+            for _ in range(self.K)
+        ])
+        self.gcn_convs = nn.ModuleList([
+            nn.Conv2d(c_in, c_out, 1, bias=True) for _ in range(self.K)
+        ])
+        self.bn = nn.BatchNorm2d(c_out)
+        self.residual = (nn.Identity() if c_in == c_out else nn.Sequential(
+            nn.Conv2d(c_in, c_out, 1, bias=True),
+            nn.BatchNorm2d(c_out),
+        ))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        res        = self.residual(x)
+        B, C, T, V = x.shape
+        x_flat     = x.reshape(B, C * T, V)
+        y          = None
+        for k in range(self.K):
+            A_eff = getattr(self, f'_A_fixed_{k}') * self.A_edge[k]
+            x_k   = torch.matmul(x_flat, A_eff).reshape(B, C, T, V)
+            out_k = self.gcn_convs[k](x_k)
+            y     = out_k if y is None else y + out_k
+        return F.silu(self.bn(y / self.K) + res, inplace=True)
+
+
+# ---------------------------------------------------------------------------
+# B4Block  — B4-exact block: 1 GCN + depth×TemporalSGLayer + 1 STJointAtt
+# Novel additions vs EfficientGCN: BRASP + SGPShift (0-param) before GCN.
+# A_edge: multiplicative learnable edge weights (init=1, no_decay in trainer).
+# ---------------------------------------------------------------------------
+class B4Block(nn.Module):
+    """B4-exact block + JointEmbedding (after GCN) + optional TLA (after att).
+
+    Structure:
+        BRASP → SGPShift                              (0-param routing)
+        → GCN(K=3, A_fixed*A_edge) → BN → SiLU       (B4-exact spatial)
+        → JE(c_out)                                   (per-joint identity bias)
+        → depth × TemporalSGLayer                     (B4-exact temporal)
+        → STJointAtt                                  (B4-exact S+T attention)
+        → [TLA(c_out) if use_tla]                     (global temporal, last block only)
+    """
+
+    def __init__(
+        self,
+        c_in:             int,
+        c_out:            int,
+        depth:            int,          # number of TemporalSGLayer layers
+        stride:           int,          # applied to first TCN layer
+        A_flat:           torch.Tensor,
+        A_intra:          torch.Tensor,
+        A_inter:          torch.Tensor,
+        A_gcn_partitions: list,         # list of K pre-normalized (V,V) tensors
+        num_joints:       int  = 25,
+        use_tla:          bool = False,
+        tla_landmarks:    int  = 14,
+        tla_reduce_ratio: int  = 8,
+        use_part_att:     bool = False,
+        part_att_reduce:  int  = 4,
+    ):
+        super().__init__()
+        self.K = len(A_gcn_partitions)
+
+        # ── 0-param novel: BRASP + SGPShift ──────────────────────────────────
+        self.brasp     = BodyRegionShift(channels=c_in, A=A_flat)
+        self.sgp_shift = SGPShift(channels=c_in, A_intra=A_intra,
+                                  A_inter=A_inter, num_joints=num_joints)
+
+        # ── GCN: K-partition, multiplicative A_edge (init=1, no_decay) ───────
+        for k, A_k in enumerate(A_gcn_partitions):
+            self.register_buffer(f'_A_fixed_{k}', A_k)
+        self.A_edge = nn.ParameterList([
+            nn.Parameter(torch.ones(num_joints, num_joints))
+            for _ in range(self.K)
+        ])
+        self.gcn_convs = nn.ModuleList([
+            nn.Conv2d(c_in, c_out, 1, bias=True) for _ in range(self.K)
+        ])
+        self.gcn_bn  = nn.BatchNorm2d(c_out)
+        self.gcn_res = (nn.Identity() if c_in == c_out else nn.Sequential(
+            nn.Conv2d(c_in, c_out, 1, bias=True),
+            nn.BatchNorm2d(c_out),
+        ))
+
+        # ── JointEmbedding: per-joint identity bias after GCN (zero-init) ────
+        # Caught by 'je.embed' in trainer no_decay.
+        self.je = JointEmbedding(c_out, num_joints)
+
+        # ── TCN: depth × TemporalSGLayer, first carries stride ───────────────
+        self.tcns = nn.ModuleList([
+            TemporalSGLayer(c_out, stride=(stride if j == 0 else 1))
+            for j in range(depth)
+        ])
+
+        # ── Attention: STJointAtt (residual BN+SiLU inside) ──────────────────
+        self.att = STJointAtt(c_out)
+
+        # ── TLA: global temporal attention (last shared block only) ──────────
+        # Gate init -4.0 → near-zero at epoch 0; caught by '.gate' no_decay.
+        # anchor_logits caught by 'anchor_logits' no_decay.
+        self.tla = (TemporalLandmarkAttention(
+                        channels=c_out,
+                        num_landmarks=tla_landmarks,
+                        reduce_ratio=tla_reduce_ratio,
+                        learnable_anchors=True,
+                    ) if use_tla else None)
+
+        # ── PartAttention: body-part gating after att (optional) ─────────────
+        self.part_att = PartAttention(c_out, reduce_ratio=part_att_reduce, num_joints=num_joints) if use_part_att else None
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # 0-param routing (novel additions)
+        x = self.brasp(x)
+        x = self.sgp_shift(x)
+
+        # GCN (B4-exact)
+        gcn_res    = self.gcn_res(x)
+        B, C, T, V = x.shape
+        x_flat     = x.reshape(B, C * T, V)
+        y          = None
+        for k in range(self.K):
+            A_eff = getattr(self, f'_A_fixed_{k}') * self.A_edge[k]
+            x_k   = torch.matmul(x_flat, A_eff).reshape(B, C, T, V)
+            out_k = self.gcn_convs[k](x_k)
+            y     = out_k if y is None else y + out_k
+        x = F.silu(self.gcn_bn(y / self.K) + gcn_res, inplace=True)
+
+        # Joint identity bias (novel — zero-init, no effect at epoch 0)
+        x = self.je(x)
+
+        # depth × TemporalSGLayer (B4-exact)
+        for tcn in self.tcns:
+            x = tcn(x)
+
+        # S+T attention (B4-exact, residual inside)
+        x = self.att(x)
+
+        # Body-part gating (novel, last block only in X)
+        if self.part_att is not None:
+            x = self.part_att(x)
+
+        # Global temporal attention (last block only, gated residual)
+        if self.tla is not None:
+            x = self.tla(x)
+
+        return x
+
+
+# ---------------------------------------------------------------------------
+# ShiftFuseZeroB4  (EfficientGCN-B4-exact + BRASP + SGPShift)
+# ---------------------------------------------------------------------------
+class ShiftFuseZeroB4(nn.Module):
+    """EfficientGCN-B4-exact architecture + BRASP + SGPShift (0-param only).
+
+    Exact B4 block_args after compound scaling (α=1.2^4, β=1.35^4):
+        [[96, stride=1, depth=2], [48, stride=1, depth=2],
+         [128, stride=2, depth=3], [272, stride=2, depth=3]]
+
+    Per-stream (joint / velocity / bone — separate weights):
+        Stem: BN(3) → B4StemGCN(3→64) → BasicTCN(64, k=5)
+        Block-0: B4Block(64→96,  depth=2, stride=1)
+        Block-1: B4Block(96→48,  depth=2, stride=1)
+    Fusion: concat(3×48 = 144)
+    Shared:
+        Block-2: B4Block(144→128, depth=3, stride=2)
+        Block-3: B4Block(128→272, depth=3, stride=2)
+    Classifier: GAP → Dropout(0.25) → Linear(272→num_classes)
+
+    GCN:  spatial K=3 (D^{-1}A normalized), multiplicative A_edge (init=1).
+    TCN:  Temporal_SG_Layer (DW→PW↓→PW↑→DW, reduct_ratio=2, k=5).
+    Att:  ST_Joint_Att (S+T only, reduct_ratio=2, no channel SE).
+    Act:  SiLU/Swish throughout.
+    Novel: BRASP + SGPShift (0-param) in each B4Block before GCN.
+    DROP_PATH=0.0, DROPOUT=0.25  — B4-exact.
+    """
+
+    STREAM_NAMES  = ['joint', 'velocity', 'bone']
+    STREAM_STEM   = 64
+    # (c_in, c_out, depth=n_TCN_layers, stride_on_first_TCN)
+    STREAM_BLOCKS = [(64, 96, 2, 1), (96, 48, 2, 1)]
+    SHARED_BLOCKS = [(144, 128, 3, 2), (128, 272, 3, 2)]
+    DROPOUT       = 0.25
+
+    def __init__(
+        self,
+        num_classes:  int   = 60,
+        graph_layout: str   = 'ntu-rgb+d',
+        num_joints:   int   = 25,
+        in_channels:  int   = 3,
+        dropout:      float = None,
+    ):
+        super().__init__()
+        _dropout = dropout if dropout is not None else self.DROPOUT
+
+        # ── Semantic body-part graph — BRASP + SGPShift ───────────────────────
+        sgp_graph = Graph(layout=graph_layout, strategy='semantic_bodypart',
+                          max_hop=2, raw_partitions=True)
+        sgp_raw   = sgp_graph.A
+        A_sym     = normalize_symdigraph_full(sgp_raw)
+        A_intra   = torch.tensor(A_sym[0], dtype=torch.float32)
+        A_inter   = torch.tensor(A_sym[1], dtype=torch.float32)
+        A_flat    = torch.tensor((sgp_raw.sum(0) > 0).astype('float32'))
+        self.register_buffer('A_intra', A_intra)
+        self.register_buffer('A_inter', A_inter)
+        self.register_buffer('A_flat',  A_flat)
+
+        # ── Spatial K=3 graph pre-normalized D^{-1}A — GCN ───────────────────
+        # Normalize per-partition with normalize_digraph (same as EfficientGCN).
+        # A_edge (init=1) is applied multiplicatively on top at forward time.
+        import numpy as np
+        spatial_graph = Graph(layout=graph_layout, strategy='spatial',
+                              max_hop=1, raw_partitions=True)
+        A_gcn_parts   = [
+            torch.tensor(normalize_digraph(spatial_graph.A[k]), dtype=torch.float32)
+            for k in range(spatial_graph.A.shape[0])
+        ]
+
+        def _blk(c_in, c_out, depth, stride):
+            return B4Block(c_in, c_out, depth, stride,
+                           A_flat=A_flat, A_intra=A_intra, A_inter=A_inter,
+                           A_gcn_partitions=A_gcn_parts, num_joints=num_joints)
+
+        # ── Per-stream stems (B4-exact: BN → GCN(3→64) → BasicTCN(64)) ──────
+        def _stem():
+            stem_gcn = B4StemGCN(in_channels, self.STREAM_STEM, A_gcn_parts, num_joints)
+            stem_tcn = _B4BasicTCN(self.STREAM_STEM)
+            return _B4Stem(in_channels, stem_gcn, stem_tcn)
+
+        self.stream_stems  = nn.ModuleList([_stem() for _ in range(3)])
+
+        # ── Per-stream B4Blocks (separate weights per stream) ─────────────────
+        self.stream_blocks = nn.ModuleList([
+            nn.ModuleList([_blk(c_in, c_out, depth, stride)
+                           for (c_in, c_out, depth, stride) in self.STREAM_BLOCKS])
+            for _ in range(3)
+        ])
+
+        # ── Shared B4Blocks ───────────────────────────────────────────────────
+        n_shared = len(self.SHARED_BLOCKS)
+        self.shared_blocks = nn.ModuleList([
+            B4Block(c_in, c_out, depth, stride,
+                    A_flat=A_flat, A_intra=A_intra, A_inter=A_inter,
+                    A_gcn_partitions=A_gcn_parts, num_joints=num_joints,
+                    use_tla=(i == n_shared - 1))   # TLA on last shared block only
+            for i, (c_in, c_out, depth, stride) in enumerate(self.SHARED_BLOCKS)
+        ])
+
+        # ── Classifier: GAP → Dropout → Linear (B4-exact) ────────────────────
+        self.classifier = nn.Sequential(
+            nn.Dropout(p=_dropout),
+            nn.Linear(self.SHARED_BLOCKS[-1][1], num_classes),
+        )
+
+    def forward(self, stream_dict: dict) -> torch.Tensor:
+        raw        = [stream_dict[n] for n in self.STREAM_NAMES]
+        B          = raw[0].shape[0]
+        multi_body = raw[0].dim() == 5
+        if multi_body:
+            raw = [torch.cat([s[..., 0], s[..., 1]], dim=0) for s in raw]
+
+        feats = []
+        for s, stem, blocks in zip(raw, self.stream_stems, self.stream_blocks):
+            x = stem(s)
+            for blk in blocks:
+                x = blk(x)
+            feats.append(x)
+
+        x = torch.cat(feats, dim=1)
+        for blk in self.shared_blocks:
+            x = blk(x)
+
+        x   = x.mean(dim=2).mean(dim=-1)   # GAP: T then V
+        out = self.classifier(x)
+        if multi_body:
+            out = (out[:B] + out[B:]) / 2
+        return out
+
+
+# ---------------------------------------------------------------------------
+# ShiftFuseZeroX  (B4-style scaled up to ~2M — 3-stream mid-fusion)
+# ---------------------------------------------------------------------------
+class ShiftFuseZeroX(nn.Module):
+    """B4-style 3-stream mid-fusion scaled to ~2M params.
+
+    Same structural pattern as ShiftFuseZeroB4 (per-stream backbones →
+    mid-fusion concat → shared backbone), but with wider channels and
+    deeper shared blocks. Novel additions over large (B4): Part_Att on
+    last per-stream block and last shared block.
+
+    Per-stream (×3: joint / velocity / bone):
+        Stem:        BN(3) → B4StemGCN(3→96) → B4BasicTCN(96, k=5)
+        stream_blk0: B4Block(96→128, depth=3, stride=1)   BRASP+SGPShift+JE+STJointAtt
+        stream_blk1: B4Block(128→64, depth=3, stride=1)   BRASP+SGPShift+JE+STJointAtt+Part_Att
+
+    Mid-fusion: concat 3×64 = 192
+
+    Shared:
+        shared_blk0: B4Block(192→256, depth=4, stride=2)  BRASP+SGPShift+JE+STJointAtt
+        shared_blk1: B4Block(256→384, depth=4, stride=2)  BRASP+SGPShift+JE+STJointAtt+Part_Att+TLA
+
+    Head: GAP → Dropout(0.20) → Linear(384, num_classes)
+
+    Param estimate: ~2.0M
+    Target: 93–94% NTU-60 xsub.
+    """
+
+    STREAM_NAMES    = ['joint', 'velocity', 'bone']
+    STREAM_STEM     = 64   # same as large (B4-exact per-stream)
+    # (c_in, c_out, depth, stride) — same as large per-stream, but last block gets Part_Att
+    STREAM_BLOCKS   = [(64, 96, 2, 1), (96, 48, 2, 1)]
+    # Wider shared backbone to reach ~2M total (vs large's [(144,128,3,2),(128,272,3,2)])
+    SHARED_BLOCKS   = [(144, 192, 4, 2), (192, 320, 4, 2)]
+    DROPOUT         = 0.20
+    TLA_K           = 14
+    TLA_REDUCE      = 8
+    PART_ATT_REDUCE = 8   # inner = c_out//8 for Part_Att in X
+
+    def __init__(
+        self,
+        num_classes:  int   = 60,
+        graph_layout: str   = 'ntu-rgb+d',
+        num_joints:   int   = 25,
+        in_channels:  int   = 3,
+        dropout:      float = None,
+    ):
+        super().__init__()
+        _dropout = dropout if dropout is not None else self.DROPOUT
+
+        # ── Semantic body-part graph — BRASP + SGPShift ───────────────────────
+        sgp_graph = Graph(layout=graph_layout, strategy='semantic_bodypart',
+                          max_hop=2, raw_partitions=True)
+        sgp_raw   = sgp_graph.A
+        A_sym     = normalize_symdigraph_full(sgp_raw)
+        A_intra   = torch.tensor(A_sym[0], dtype=torch.float32)
+        A_inter   = torch.tensor(A_sym[1], dtype=torch.float32)
+        A_flat    = torch.tensor((sgp_raw.sum(0) > 0).astype('float32'))
+        self.register_buffer('A_intra', A_intra)
+        self.register_buffer('A_inter', A_inter)
+        self.register_buffer('A_flat',  A_flat)
+
+        # ── Spatial K=3 graph pre-normalized D^{-1}A — GCN ───────────────────
+        import numpy as np
+        spatial_graph = Graph(layout=graph_layout, strategy='spatial',
+                              max_hop=1, raw_partitions=True)
+        A_gcn_parts   = [
+            torch.tensor(normalize_digraph(spatial_graph.A[k]), dtype=torch.float32)
+            for k in range(spatial_graph.A.shape[0])
+        ]
+
+        def _blk(c_in, c_out, depth, stride, use_tla=False, use_part_att=False):
+            return B4Block(c_in, c_out, depth, stride,
+                           A_flat=A_flat, A_intra=A_intra, A_inter=A_inter,
+                           A_gcn_partitions=A_gcn_parts, num_joints=num_joints,
+                           use_tla=use_tla,
+                           tla_landmarks=self.TLA_K,
+                           tla_reduce_ratio=self.TLA_REDUCE,
+                           use_part_att=use_part_att,
+                           part_att_reduce=self.PART_ATT_REDUCE)
+
+        # ── Per-stream stems ──────────────────────────────────────────────────
+        def _stem():
+            stem_gcn = B4StemGCN(in_channels, self.STREAM_STEM, A_gcn_parts, num_joints)
+            stem_tcn = _B4BasicTCN(self.STREAM_STEM)
+            return _B4Stem(in_channels, stem_gcn, stem_tcn)
+
+        self.stream_stems = nn.ModuleList([_stem() for _ in range(3)])
+
+        # ── Per-stream blocks (last block per stream gets Part_Att) ──────────
+        n_stream_blks = len(self.STREAM_BLOCKS)
+        self.stream_blocks = nn.ModuleList([
+            nn.ModuleList([
+                _blk(c_in, c_out, depth, stride,
+                     use_part_att=(bi == n_stream_blks - 1))
+                for bi, (c_in, c_out, depth, stride) in enumerate(self.STREAM_BLOCKS)
+            ])
+            for _ in range(3)
+        ])
+
+        # ── Shared blocks (last shared block gets TLA + Part_Att) ────────────
+        n_shared = len(self.SHARED_BLOCKS)
+        self.shared_blocks = nn.ModuleList([
+            _blk(c_in, c_out, depth, stride,
+                 use_tla=(i == n_shared - 1),
+                 use_part_att=(i == n_shared - 1))
+            for i, (c_in, c_out, depth, stride) in enumerate(self.SHARED_BLOCKS)
+        ])
+
+        # ── Classifier ────────────────────────────────────────────────────────
+        self.classifier = nn.Sequential(
+            nn.Dropout(p=_dropout),
+            nn.Linear(self.SHARED_BLOCKS[-1][1], num_classes),
+        )
+
+    def forward(self, stream_dict: dict) -> torch.Tensor:
+        raw        = [stream_dict[n] for n in self.STREAM_NAMES]
+        B          = raw[0].shape[0]
+        multi_body = raw[0].dim() == 5
+        if multi_body:
+            raw = [torch.cat([s[..., 0], s[..., 1]], dim=0) for s in raw]
+
+        feats = []
+        for s, stem, blocks in zip(raw, self.stream_stems, self.stream_blocks):
+            x = stem(s)
+            for blk in blocks:
+                x = blk(x)
+            feats.append(x)
+
+        x = torch.cat(feats, dim=1)
+        for blk in self.shared_blocks:
+            x = blk(x)
+
+        x   = x.mean(dim=2).mean(dim=-1)   # GAP: T then V
+        out = self.classifier(x)
+        if multi_body:
+            out = (out[:B] + out[B:]) / 2
+        return out
+
+
+# Minimal stem helpers (used only by ShiftFuseZeroB4)
+class _B4BasicTCN(nn.Module):
+    """B4-exact stem temporal conv: full Conv(C,C,k=5) + BN + Identity residual + SiLU."""
+    def __init__(self, channels: int):
+        super().__init__()
+        self.conv = nn.Conv2d(channels, channels, (5, 1), 1, (2, 0), bias=True)
+        self.bn   = nn.BatchNorm2d(channels)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return F.silu(self.bn(self.conv(x)) + x, inplace=True)
+
+
+class _B4Stem(nn.Module):
+    """Wrapper: BN(input) → B4StemGCN → _B4BasicTCN."""
+    def __init__(self, in_channels: int, gcn: nn.Module, tcn: nn.Module):
+        super().__init__()
+        self.bn  = nn.BatchNorm2d(in_channels)
+        self.gcn = gcn
+        self.tcn = tcn
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.tcn(self.gcn(self.bn(x)))
+
+
+def build_shiftfuse_zero_b4(num_classes: int = 60, **kwargs) -> ShiftFuseZeroB4:
+    """Build large_b4_efficient (B4-exact + BRASP + SGPShift, target ~1.1M)."""
+    return ShiftFuseZeroB4(num_classes=num_classes, **kwargs)
+
+
+def build_shiftfuse_zero_x(num_classes: int = 60, **kwargs) -> ShiftFuseZeroX:
+    """Build x_b4_efficient (B4-style scaled to ~2M + Part_Att, target 93-94%)."""
+    return ShiftFuseZeroX(num_classes=num_classes, **kwargs)
