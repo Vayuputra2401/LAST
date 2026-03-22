@@ -38,6 +38,13 @@ class STCAttention(nn.Module):
         reduce_ratio:    Channel reduction ratio for SE part (default 4).
         use_channel_se:  Include channel SE branch (default True).
                          Set False for nano/small to save params with minimal accuracy loss.
+        use_spatial:     Include spatial attention branch (default True).
+                         Set False when PartAttention is active on the same block — both
+                         operate on the joint axis (V) around the same GCN and produce
+                         competing spatial-importance signals. Disabling the spatial branch
+                         leaves the temporal gate intact (18 params) so the block still
+                         weights frames before GCN aggregation, while PartAttention handles
+                         the spatial role after GCN.
     """
 
     def __init__(
@@ -46,12 +53,15 @@ class STCAttention(nn.Module):
         num_joints:     int  = 25,
         reduce_ratio:   int  = 4,
         use_channel_se: bool = True,
+        use_spatial:    bool = True,
     ):
         super().__init__()
         self.use_channel_se = use_channel_se
+        self.use_spatial    = use_spatial
 
         # Spatial: avg(C, T) → (B, V) → Linear(V, V) → softmax → (B, 1, 1, V)
-        self.spatial_fc = nn.Linear(num_joints, num_joints, bias=False)
+        if use_spatial:
+            self.spatial_fc = nn.Linear(num_joints, num_joints, bias=False)
 
         # Temporal (Frame_Att style): avg(C,V) + max(C,V) → cat(2,T) →
         # Conv1d(2→1, k=9, pad=4) → sigmoid → (B, 1, T, 1)
@@ -80,11 +90,6 @@ class STCAttention(nn.Module):
         """
         B, C, T, V = x.shape
 
-        # Spatial attention — scale by V so mean weight = 1.0 (not 1/V).
-        x_s = x.mean(dim=(1, 2))                              # (B, V)
-        A_s = torch.softmax(self.spatial_fc(x_s), dim=-1) * V # (B, V), mean=1.0
-        A_s = A_s.view(B, 1, 1, V)
-
         # Temporal attention (Frame_Att style: avg + max over C and V)
         x_avg = x.mean(dim=(1, 3))                            # (B, T)
         x_max = x.amax(dim=(1, 3))                            # (B, T)
@@ -92,15 +97,22 @@ class STCAttention(nn.Module):
         A_t   = torch.sigmoid(self.temporal_conv(x_t))        # (B, 1, T)
         A_t   = A_t.view(B, 1, T, 1)
 
+        if self.use_spatial:
+            # Spatial attention — scale by V so mean weight = 1.0 (not 1/V).
+            x_s = x.mean(dim=(1, 2))                              # (B, V)
+            A_s = torch.softmax(self.spatial_fc(x_s), dim=-1) * V # (B, V), mean=1.0
+            A_s = A_s.view(B, 1, 1, V)
+            attn = A_s * A_t
+        else:
+            attn = A_t
+
         if self.use_channel_se:
             # Channel attention (SE-style)
             x_c = x.mean(dim=(2, 3))                          # (B, C)
             A_c = F.relu(self.channel_fc1(x_c), inplace=True) # (B, C_r)
             A_c = torch.sigmoid(self.channel_fc2(A_c))        # (B, C)
             A_c = A_c.view(B, C, 1, 1)
-            attn = A_s * A_t * A_c
-        else:
-            attn = A_s * A_t
+            attn = attn * A_c
 
         # Residual gate: lerp from identity to full attention
         scale = torch.sigmoid(self.gate)                       # scalar in (0, 1)

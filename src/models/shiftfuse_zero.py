@@ -57,7 +57,7 @@ ZERO_VARIANTS = {
         'use_part_att':        [False, False, False],  # Part_Att per stage
     },
     # small_late_efficient_bb: per-backbone config for 2-backbone late fusion.
-    # Backbone A: joint+velocity. Backbone B: bone+velocity. (3 streams total)
+    # Backbone A: joint+velocity (position+dynamics). Backbone B: bone (structural pose).
     # Redesigned: remove channel SE (−10,252) + share A_learned stage1 (−3,750)
     # + tcn_depth=2 at stage1 (+23,552) + Part_Att last stage (+12,288)
     # → from 262,347 → ~284,185 (<290K ✓)
@@ -79,7 +79,7 @@ ZERO_VARIANTS = {
         'part_att_reduce_ratio': 16,  # inner=8 at C=128 → ~6K params per backbone
     },
     # medium_late_efficient_bb: NEW 2-backbone late fusion, ~594K params.
-    # Backbone A: joint+velocity. Backbone B: bone+velocity. (3 streams total)
+    # Backbone A: joint+velocity (position+dynamics). Backbone B: bone (structural pose).
     # channels=[40,80,160], blocks=[1,2,1], tcn_depth=[1,2,1], Part_Att last stage.
     # Target: 91.5–92.5% NTU-60 xsub (B2-level, ~560K).
     'medium_late_efficient_bb': {
@@ -201,8 +201,13 @@ class EfficientZeroBlock(nn.Module):
         self.gcn_act = nn.Hardswish(inplace=True)
 
         # ── STC-Attention on in_channels (after JE, before GCN) ─────────────
+        # Disable spatial branch when PartAttention is active: both operate on the
+        # joint axis (V) around the same GCN and would produce competing signals.
+        # Temporal gate (18 params) still runs to weight frames before aggregation.
         self.stc_attn = STCAttention(in_channels, num_joints,
-                                     stc_reduce_ratio, use_channel_se=stc_channel_se)
+                                     stc_reduce_ratio,
+                                     use_channel_se=stc_channel_se,
+                                     use_spatial=(not use_part_att))
 
         # ── Optional PartAttention after GCN (before TCN) ────────────────────
         self.part_att = PartAttention(out_channels, reduce_ratio=part_att_reduce, num_joints=num_joints) if use_part_att else None
@@ -519,11 +524,12 @@ class ShiftFuseZeroLate(nn.Module):
     """2-backbone late-fusion ShiftFuse-Zero with Shared TLA & Early Fusion.
 
     3-stream split (joint / velocity / bone — no bone_velocity):
-    Backbone A: joint + velocity  (2-stream — position + motion)
-    Backbone B: bone  + velocity  (2-stream — shape  + motion)
+    Backbone A: joint + velocity  (2-stream — position + temporal dynamics)
+    Backbone B: bone              (1-stream — structural pose only)
 
-    Sharing velocity across both backbones gives each backbone temporal
-    context aligned to its primary modality (joint positions vs bone vectors).
+    Orthogonal split: backbone A captures trajectory (position + its derivative),
+    backbone B captures skeleton shape (bone vectors). After CrossStreamFusion,
+    backbone B gains access to velocity context through backbone A's features.
 
     Architecture:
         Stage 1 → Stage 2 → [Early CrossStreamFusion] →
@@ -558,12 +564,12 @@ class ShiftFuseZeroLate(nn.Module):
             use_tla=False,
         )
 
-        # ── Backbone B: bone + velocity (2-stream — shape + motion) ──────
+        # ── Backbone B: bone (1-stream — structural pose only) ───────────
         self.backbone_b = ShiftFuseZero(
             num_classes=num_classes, variant=variant,
             in_channels=in_channels, graph_layout=graph_layout,
             num_joints=num_joints, dropout=dropout,
-            num_streams=2, stream_names=['bone', 'velocity'],
+            num_streams=1, stream_names=['bone'],
             use_tla=False,
         )
 
