@@ -31,7 +31,21 @@
       "Bash(ls src/models/last_e_v3.py configs/model/last_e_v3_*.yaml configs/training/cosine_v3.yaml Docs/LAST_E_v3_Plan.md Docs/last_e_v3_hyperparams.md)",
       "Bash(C:/Users/pathi/envs/ai_research/Scripts/python.exe -c \":*)",
       "Bash(C:/Users/pathi/envs/ai_research/Scripts/python.exe -m pytest tests/test_shiftfuse.py -q)",
-      "Bash(C:/Users/pathi/envs/ai_research/Scripts/python.exe -m pytest tests/test_shiftfuse.py -q --tb=short)"
+      "Bash(C:/Users/pathi/envs/ai_research/Scripts/python.exe -m pytest tests/test_shiftfuse.py -q --tb=short)",
+      "Bash(grep -n \"101\\\\\\\\,K\\\\|233\\\\\\\\,K\\\\|262\\\\\\\\,K\\\\|1\\\\.67\\\\\\\\,M\\\\|87\\\\.6\\\\|876\\\\b\\\\|68.*times\\\\|101\\\\\\\\,KB\\\\|380\\\\\\\\,KB\\\\|220\\\\\\\\,KB\" \"c:/Users/pathi/OneDrive/Desktop/LAST/Paper/main.tex\")",
+      "Bash(grep -n \"101\\\\\\\\,K\\\\|233\\\\\\\\,K\\\\|262\\\\\\\\,K\\\\|1\\\\.67\\\\\\\\,M\\\\|0\\\\.10M\\\\|0\\\\.26M\\\\|SFZ-Nano.*876\\\\|68.*times\\\\|380\\\\\\\\,KB\\\\|220\\\\\\\\,KB\\\\|0\\\\.71\\\\\\\\,G\" \"c:/Users/pathi/OneDrive/Desktop/LAST/Paper/main.tex\")",
+      "Bash(pdflatex -interaction=nonstopmode -halt-on-error main.tex)",
+      "Bash(PDFLATEX=\"/c/Users/pathi/AppData/Local/Programs/MiKTeX/miktex/bin/x64/pdflatex.exe\" BIBTEX=\"/c/Users/pathi/AppData/Local/Programs/MiKTeX/miktex/bin/x64/bibtex.exe\" cd \"c:/Users/pathi/OneDrive/Desktop/LAST/Paper\" __NEW_LINE_9ddabe1d97e16a38__ echo \"=== Pass 1 ===\" \"$PDFLATEX\" -interaction=nonstopmode -halt-on-error main.tex)",
+      "Bash(PDFLATEX=\"/c/Users/pathi/AppData/Local/Programs/MiKTeX/miktex/bin/x64/pdflatex.exe\" BIBTEX=\"/c/Users/pathi/AppData/Local/Programs/MiKTeX/miktex/bin/x64/bibtex.exe\" cd \"c:/Users/pathi/OneDrive/Desktop/LAST/Paper\" __NEW_LINE_866f81e4c98b16ea__ echo \"=== Pass 1 ===\")",
+      "Bash(\"$PDFLATEX\" -interaction=nonstopmode -halt-on-error main.tex)",
+      "Bash(PDFLATEX=\"/c/Users/pathi/AppData/Local/Programs/MiKTeX/miktex/bin/x64/pdflatex.exe\" BIBTEX=\"/c/Users/pathi/AppData/Local/Programs/MiKTeX/miktex/bin/x64/bibtex.exe\" cd \"c:/Users/pathi/OneDrive/Desktop/LAST/Paper\" __NEW_LINE_7bb92b749c7ae99d__ echo \"=== BibTeX ===\")",
+      "Bash(\"$BIBTEX\" main:*)",
+      "Read(//c/Users/pathi/OneDrive/Desktop/LAST/Paper/**)",
+      "Bash(\"$PDFLATEX\" -interaction=nonstopmode main.tex)",
+      "Bash(PDFLATEX=\"/c/Users/pathi/AppData/Local/Programs/MiKTeX/miktex/bin/x64/pdflatex.exe\" BIBTEX=\"/c/Users/pathi/AppData/Local/Programs/MiKTeX/miktex/bin/x64/bibtex.exe\" cd \"c:/Users/pathi/OneDrive/Desktop/LAST/Paper\" __NEW_LINE_39c1c64716c05820__ \"$PDFLATEX\" -interaction=nonstopmode -halt-on-error main.tex)",
+      "Bash(PDFLATEX=\"/c/Users/pathi/AppData/Local/Programs/MiKTeX/miktex/bin/x64/pdflatex.exe\" cd \"c:/Users/pathi/OneDrive/Desktop/LAST/Paper\" \"$PDFLATEX\" -interaction=nonstopmode -halt-on-error main.tex)",
+      "Bash(PDFLATEX=\"/c/Users/pathi/AppData/Local/Programs/MiKTeX/miktex/bin/x64/pdflatex.exe\" BIBTEX=\"/c/Users/pathi/AppData/Local/Programs/MiKTeX/miktex/bin/x64/bibtex.exe\" cd \"c:/Users/pathi/OneDrive/Desktop/LAST/Paper\" \"$PDFLATEX\" -interaction=nonstopmode -halt-on-error main.tex)",
+      "Bash(PDFLATEX=\"/c/Users/pathi/AppData/Local/Programs/MiKTeX/miktex/bin/x64/pdflatex.exe\" BIBTEX=\"/c/Users/pathi/AppData/Local/Programs/MiKTeX/miktex/bin/x64/bibtex.exe\" cd \"c:/Users/pathi/OneDrive/Desktop/LAST/Paper\" \"$BIBTEX\" main)"
     ],
     "deny": [],
     "ask": []
