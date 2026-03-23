@@ -89,7 +89,6 @@
 \newlabel{eq:kd}{{7}{4}{Training Protocol}{equation.7}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.7}Deployability Analysis}{4}{subsection.3.7}\protected@file@percent }
 \newlabel{sec:deploy}{{3.7}{4}{Deployability Analysis}{subsection.3.7}{}}
-\@writefile{toc}{\contentsline {paragraph}{Operator simplicity.}{4}{section*.24}\protected@file@percent }
 \citation{ntu60}
 \citation{ntu120}
 \citation{stgcn}
@@ -107,47 +106,44 @@
 \newlabel{fig:family}{{5}{5}{ShiftFuse-Zero model family. (a)~Nano: single backbone, 4-stream early fusion, TLA ($K{=}8$). (b)~Small: two-backbone late fusion with Cross-Stream Fusion and TLA ($K{=}8$). (c)~Large: three-backbone mid-network fusion (B4-style) — per-stream S1--S2, FusionConv ($288{\to }192$), shared S3 + TLA ($K{=}14$)}{figure.caption.18}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Deployment profile. Mem = model weights (float32/int8). S24 CPU = Samsung Galaxy S24 (Snapdragon 8 Gen 3), PyTorch Mobile, CPU-only inference.}}{5}{table.caption.23}\protected@file@percent }
 \newlabel{tab:deploy}{{2}{5}{Deployment profile. Mem = model weights (float32/int8). S24 CPU = Samsung Galaxy S24 (Snapdragon 8 Gen 3), PyTorch Mobile, CPU-only inference}{table.caption.23}{}}
+\@writefile{toc}{\contentsline {paragraph}{Operator simplicity.}{5}{section*.24}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Quantisation readiness.}{5}{section*.25}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {4}Experiments}{5}{section.4}\protected@file@percent }
 \newlabel{sec:exp}{{4}{5}{Experiments}{section.4}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Datasets}{5}{subsection.4.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Main Results}{5}{subsection.4.2}\protected@file@percent }
 \@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Comparison with state-of-the-art on NTU-60 and NTU-120. KD = distilled from SFZ-Large. $\dagger $ = single stream.}}{5}{table.caption.26}\protected@file@percent }
 \newlabel{tab:main}{{3}{5}{Comparison with state-of-the-art on NTU-60 and NTU-120. KD = distilled from SFZ-Large. $\dagger $ = single stream}{table.caption.26}{}}
-\citation{stgcn}
-\citation{agcn}
-\citation{infogcn}
-\citation{hdgcn}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Main Results}{5}{subsection.4.2}\protected@file@percent }
 \citation{efficientgcn}
 \citation{efficientgcn}
-\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces GFLOPs, CPU latency and throughput (batch\nonbreakingspace 1, desktop: i7-10700K; mobile: Samsung Galaxy S24, Snapdragon\nonbreakingspace 8\nonbreakingspace Gen\nonbreakingspace 3 CPU).}}{6}{table.caption.27}\protected@file@percent }
-\newlabel{tab:gflops}{{4}{6}{GFLOPs, CPU latency and throughput (batch~1, desktop: i7-10700K; mobile: Samsung Galaxy S24, Snapdragon~8~Gen~3 CPU)}{table.caption.27}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Accuracy per million parameters (Acc/M) on NTU-60 X-Sub. Higher = more parameter-efficient. SFZ-Nano achieves \textbf  {927} Acc/M without distillation; SFZ-Nano+KD achieves \textbf  {952}, \textbf  {74$\times $} higher than AGCN.}}{6}{table.caption.28}\protected@file@percent }
-\newlabel{tab:accm}{{5}{6}{Accuracy per million parameters (Acc/M) on NTU-60 X-Sub. Higher = more parameter-efficient. SFZ-Nano achieves \textbf {927} Acc/M without distillation; SFZ-Nano+KD achieves \textbf {952}, \textbf {74$\times $} higher than AGCN}{table.caption.28}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces GFLOPs, CPU latency and throughput (batch\nonbreakingspace 1, desktop: i7-10700K; mobile: Samsung Galaxy S24, Snapdragon\nonbreakingspace 8\nonbreakingspace Gen\nonbreakingspace 3 CPU). EfficientGCN S24 latency not measured: per-sample dynamic adjacency ($O(V^2\!C)$ per layer) is incompatible with PyTorch Mobile static export.}}{6}{table.caption.27}\protected@file@percent }
+\newlabel{tab:gflops}{{4}{6}{GFLOPs, CPU latency and throughput (batch~1, desktop: i7-10700K; mobile: Samsung Galaxy S24, Snapdragon~8~Gen~3 CPU). EfficientGCN S24 latency not measured: per-sample dynamic adjacency ($O(V^2\!C)$ per layer) is incompatible with PyTorch Mobile static export}{table.caption.27}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Accuracy per GFLOP (Acc/GFLOP) on NTU-60 X-Sub. Higher = more compute-efficient. Limited to models with reported FLOPs.}}{6}{table.caption.28}\protected@file@percent }
+\newlabel{tab:accm}{{5}{6}{Accuracy per GFLOP (Acc/GFLOP) on NTU-60 X-Sub. Higher = more compute-efficient. Limited to models with reported FLOPs}{table.caption.28}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Efficiency and Deployment}{6}{subsection.4.3}\protected@file@percent }
 \newlabel{sec:efficiency}{{4.3}{6}{Efficiency and Deployment}{subsection.4.3}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Accuracy--Efficiency Frontier}{6}{subsection.4.4}\protected@file@percent }
 \newlabel{sec:frontier}{{4.4}{6}{Accuracy--Efficiency Frontier}{subsection.4.4}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Ablation Studies}{6}{subsection.4.5}\protected@file@percent }
-\newlabel{sec:ablation}{{4.5}{6}{Ablation Studies}{subsection.4.5}{}}
-\@writefile{toc}{\contentsline {paragraph}{Per-component ablation.}{6}{section*.30}\protected@file@percent }
 \@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Accuracy--GFLOPs Pareto frontier on NTU-60 X-Sub. Dashed line = Pareto-optimal set. SFZ dominates at all compute budgets: Nano uses $21{\times }$ fewer FLOPs than EfficientGCN-B0 while remaining Pareto-optimal; Large advances the frontier at 2.67\,G.}}{6}{figure.caption.29}\protected@file@percent }
 \newlabel{fig:pareto}{{6}{6}{Accuracy--GFLOPs Pareto frontier on NTU-60 X-Sub. Dashed line = Pareto-optimal set. SFZ dominates at all compute budgets: Nano uses $21{\times }$ fewer FLOPs than EfficientGCN-B0 while remaining Pareto-optimal; Large advances the frontier at 2.67\,G}{figure.caption.29}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Cumulative component ablation (Nano, NTU-60 X-Sub). $\Delta $ vs.\ baseline. Mean\,±\,std over 3 seeds.}}{6}{table.caption.31}\protected@file@percent }
 \newlabel{tab:ablation}{{6}{6}{Cumulative component ablation (Nano, NTU-60 X-Sub). $\Delta $ vs.\ baseline. Mean\,±\,std over 3 seeds}{table.caption.31}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces GCN partition count ablation (Nano, NTU-60 X-Sub). $K$=number of adjacency subsets in Eq.\nonbreakingspace \ref {eq:gcn}; $\mathbf  {A}_\ell $=learned residual adjacency.}}{6}{table.caption.33}\protected@file@percent }
 \newlabel{tab:gcn_k}{{7}{6}{GCN partition count ablation (Nano, NTU-60 X-Sub). $K$=number of adjacency subsets in Eq.~\ref {eq:gcn}; $\mathbf {A}_\ell $=learned residual adjacency}{table.caption.33}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Ablation Studies}{6}{subsection.4.5}\protected@file@percent }
+\newlabel{sec:ablation}{{4.5}{6}{Ablation Studies}{subsection.4.5}{}}
+\@writefile{toc}{\contentsline {paragraph}{Per-component ablation.}{6}{section*.30}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{GCN partition count.}{6}{section*.32}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Block component analysis.}{6}{section*.34}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{DropPath rate sensitivity.}{6}{section*.36}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{TLA landmark sensitivity.}{6}{section*.38}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Fusion strategy.}{6}{section*.39}\protected@file@percent }
 \@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces Block component ablation (Nano, NTU-60 X-Sub). Each row removes or replaces one component from the full block.}}{7}{table.caption.35}\protected@file@percent }
 \newlabel{tab:block_comp}{{8}{7}{Block component ablation (Nano, NTU-60 X-Sub). Each row removes or replaces one component from the full block}{table.caption.35}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces DropPath rate $p_d$ sensitivity (NTU-60 X-Sub). Nano excludes TLA; Small excludes PartAttention; reported full-model results are higher.}}{7}{table.caption.37}\protected@file@percent }
-\newlabel{tab:droppath}{{9}{7}{DropPath rate $p_d$ sensitivity (NTU-60 X-Sub). Nano excludes TLA; Small excludes PartAttention; reported full-model results are higher}{table.caption.37}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces DropPath rate $p_d$ sensitivity (NTU-60 X-Sub). Nano excludes TLA (full model with TLA at $p_d{=}0.10$: 86.24\%); Small excludes PartAttention.}}{7}{table.caption.37}\protected@file@percent }
+\newlabel{tab:droppath}{{9}{7}{DropPath rate $p_d$ sensitivity (NTU-60 X-Sub). Nano excludes TLA (full model with TLA at $p_d{=}0.10$: 86.24\%); Small excludes PartAttention}{table.caption.37}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces Fusion strategy ablation for the Large model, NTU-60 X-Sub.}}{7}{table.caption.40}\protected@file@percent }
 \newlabel{tab:fusion}{{10}{7}{Fusion strategy ablation for the Large model, NTU-60 X-Sub}{table.caption.40}{}}
-\@writefile{toc}{\contentsline {paragraph}{TLA landmark sensitivity.}{7}{section*.38}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Fusion strategy.}{7}{section*.39}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Cross-stream fusion (Small).}{7}{section*.41}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.6}Training Curves}{7}{subsection.4.6}\protected@file@percent }
 \newlabel{sec:curves}{{4.6}{7}{Training Curves}{subsection.4.6}{}}
@@ -159,6 +155,7 @@
 \@writefile{toc}{\contentsline {paragraph}{Mid-network vs.\ late fusion.}{7}{section*.44}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{KD efficiency.}{7}{section*.45}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{NTU-120 relative performance.}{7}{section*.46}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Edge deployability.}{7}{section*.47}\protected@file@percent }
 \citation{dstanet}
 \bibstyle{ACM-Reference-Format}
 \bibdata{references}
@@ -188,7 +185,6 @@
 \newlabel{tocindent3}{0pt}
 \newlabel{tocindent4}{0pt}
 \newlabel{tocindent5}{0pt}
-\@writefile{toc}{\contentsline {paragraph}{Edge deployability.}{8}{section*.47}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Broader impact.}{8}{section*.48}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Limitations.}{8}{section*.49}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {6}Conclusion}{8}{section.6}\protected@file@percent }
