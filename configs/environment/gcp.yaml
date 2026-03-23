@@ -16,12 +16,12 @@ paths:
 
 hardware:
   device: "cuda"
-  num_workers: 8  # n1-standard-8 has 8 vCPUs
+  num_workers: 12  # n1-standard-16 has 16 vCPUs
   pin_memory: true
 
-# GCP P100 specs
+# GCP T4 specs
 gcp:
-  gpu: "nvidia-tesla-p100"  # 16GB HBM2
+  gpu: "nvidia-tesla-t4"  # 16GB GDDR6
   gpu_memory_gb: 16
-  cpus: 8
-  memory_gb: 30
+  cpus: 16
+  memory_gb: 60
