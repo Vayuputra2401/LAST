@@ -64,7 +64,7 @@ through two complementary zero-parameter modules:
 joint features through anatomically meaningful channels via pure tensor
 indexing, and \emph{Semantic Graph-Partitioned Shift} (\textsc{SGPShift}),
 which aggregates intra- and inter-part neighbours through pre-defined group
-indices at zero FLOPs overhead.
+indices at zero learnable parameter overhead.
 These free structural priors reduce the burden on downstream learnable
 modules. By intelligently placing Joint Embedding and spatial attention
 \emph{before} the graph convolution, the \emph{EfficientZero Block}
@@ -72,8 +72,9 @@ operates on an already anatomically-refined manifold.
 Three models cover the edge-to-server spectrum: \textbf{Nano} (93\,K) and
 \textbf{Small} (280\,K) are hyper-efficient, quantisation-friendly solutions
 with ultra-low FLOPs, while \textbf{Large} (1.12\,M) targets maximum capacity.
-On NTU\,RGB+D\,60 cross-subject the primary results (no distillation) are
-86.24\,\%/88.0\,\%/92.5\,\%; knowledge distillation is an orthogonal plugin
+On NTU\,RGB+D\,60 cross-subject, primary results without distillation are
+86.24\,\% (Nano), 88.0\,\% (Small), and 92.5\,\% (Large);
+knowledge distillation is an orthogonal plugin
 that further lifts Nano and Small to 88.5\,\%/89.8\,\%, respectively.
 Strikingly, Nano+KD outperforms the 6.9\,M-parameter AGCN within 93\,K parameters
 and $<$400\,KB of model weight storage, delivering up to $10{\times}$ parameter reduction
@@ -147,11 +148,10 @@ This work asks: \textbf{how much spatial knowledge can be injected into a skelet
 GCN without spending a single learnable parameter --- and how far can
 that free knowledge push the accuracy--efficiency frontier?}
 
-Our answer is \textbf{ShiftFuse-Zero}, a family of three models that
-achieves a new Pareto-optimal trade-off across the accuracy--parameter
-spectrum.
-While the core contribution remains the zero-parameter priors of BRASP and SGPShift,
-these modules catalyse hyper-efficient downstream architectures.
+Our answer is \textbf{ShiftFuse-Zero}, a family of three models achieving a
+new Pareto-optimal frontier across the accuracy--efficiency spectrum.
+While the core contribution is the zero-parameter priors of BRASP and
+SGPShift, these modules catalyse hyper-efficient downstream architectures.
 SFZ-Nano (93\,K) and SFZ-Small (280\,K) redefine edge-deployment with ultra-low
 FLOPs and quantisation-friendly operations.
 On NTU-60 X-Sub, SFZ-Nano reaches \textbf{86.24\%} without any distillation
@@ -182,11 +182,9 @@ under-exploited.
 \item \textbf{ShiftFuse-Zero model family}: three architectures --- Nano
   (93\,K), Small (280\,K), Large (1.12\,M) --- with Temporal Landmark
   Attention, cross-stream gating, and mid-network fusion, covering the
-  edge-to-server deployment spectrum (Section~\ref{sec:family}).
-\item \textbf{Knowledge distillation} across model scales, transferring
-  the Large teacher's relational knowledge to Nano and Small students
-  with up to +2.3\,pp gain at zero parameter cost
-  (Section~\ref{sec:training}).
+  edge-to-server deployment spectrum. Vanilla Hinton KD~\cite{kd} serves
+  as an orthogonal plugin, yielding up to +2.3\,pp at zero structural cost
+  (Section~\ref{sec:family}).
 \item \textbf{Comprehensive evaluation}: main results on NTU-60 and
   NTU-120 (four protocols), efficiency analysis (GFLOPs, CPU latency,
   memory footprint), and extensive ablation studies quantifying every
@@ -300,9 +298,8 @@ A gated global pooling head produces class logits.
 A skeleton sequence is $\mathbf{X}\!\in\!\mathbb{R}^{3\times T\times V}$
 with $T{=}64$ frames and $V{=}25$ joints.
 This work constructs four complementary streams:
-joint coordinates $\mathbf{X}^{(j)}$, first-order temporal differences
-(velocity) $\mathbf{X}^{(v)}{=}\mathbf{p}_{t+1}{-}\mathbf{p}_t$, bone
-vectors $\mathbf{X}^{(b)}_{v}{=}\mathbf{p}^{(v)}{-}\mathbf{p}^{(\text{par}(v))}$,
+joint positions $\mathbf{X}^{(j)}$, velocity $\mathbf{X}^{(v)}{=}\mathbf{p}_{t+1}{-}\mathbf{p}_t$,
+bone vectors $\mathbf{X}^{(b)}_{v}{=}\mathbf{p}^{(v)}{-}\mathbf{p}^{(\text{par}(v))}$,
 and bone velocity $\mathbf{X}^{(bv)}{=}\Delta\mathbf{X}^{(b)}$.
 \emph{StreamFusionConcat}~\cite{efficientgcn} applies a per-stream BN,
 concatenates ($4{\times}3{=}12$ channels), and projects to $C_\text{stem}$
@@ -335,7 +332,7 @@ joint absorbs its anatomical sibling's context.
 Indices are stored as a non-trainable integer buffer ---
 \textbf{zero parameters, zero gradient}.
 
-\smallskip\noindent\textbf{Proposition~1} \emph{(BRASP intra-part compression).}
+\smallskip\noindent\textbf{Remark~1} \emph{(BRASP intra-part compression).}
 Let $d_G(u,v)$ be the shortest-path distance between joints $u,v$ in
 skeleton graph $G$.
 After one BRASP shift $\sigma$, the GCN at position $v$ receives features
@@ -411,9 +408,8 @@ Figure~\ref{fig:block} shows the full block pipeline with per-layer costs.
   $\mathbf{A}_\ell\!\in\!\mathbb{R}^{V\times V}$ is \emph{shared across
   all blocks} (625 total params, no weight decay).
 \item \textbf{DS-TCN}: depthwise-separable temporal convolutions at
-  dilations~1 and~2 (kernel~9), Batch Norm~,
-  Hardswish~.
-\item \textbf{DropPath}~: stochastic depth; 0 parameters.
+  dilations~1 and~2 (kernel~9), Batch Norm, Hardswish activation.
+\item \textbf{DropPath}: stochastic depth; 0 parameters.
 \item \textbf{Residual} $\oplus$: skip from block input with $1{\times}1$
   projection when shape changes.
 \end{enumerate}
@@ -507,8 +503,8 @@ After stage~2 the three 96-channel maps are concatenated
 ($288$ channels) and projected by
 $\mathrm{FusionConv}{=}\mathrm{Conv}_{1\times1}(288{\to}192){+}\mathrm{BN}{+}\mathrm{HS}$.
 A shared stage~3 (4 blocks, $C{=}192$) with TLA ($K{=}14$) follows.
-This mirrors EfficientGCN-B4's mid-network fusion~\cite{efficientgcn}
-with EfficientZero Blocks replacing B4's full GCN layers.
+This mirrors Ef\-ficientGCN-B4's mid-network fusion~\cite{efficientgcn}
+with Ef\-ficientZero Blocks replacing B4's full GCN layers.
 
 \subsection{Training Protocol}\label{sec:training}
 
@@ -516,8 +512,9 @@ with EfficientZero Blocks replacing B4's full GCN layers.
 10-epoch linear warmup.
 Nano/Small: lr 0.1, wd $4{\times}10^{-4}$, 300/350 epochs.
 Large: lr 0.1, wd $10^{-4}$ (B4~\cite{efficientgcn}), 150 epochs.
-Wall-clock training times on a single NVIDIA Tesla T4: Nano 5.7\,h,
-Small 8.5\,h, Large 3.8\,h.
+Wall-clock training times on a single NVIDIA Tesla T4: Nano 5.7\,h
+(300\,ep), Small 8.5\,h (350\,ep), Large est.\ 38\,h (150\,ep,
+batch\,16 --- three parallel backbones).
 
 \textbf{Augmentation:}
 Nano/Small use Mixup ($\alpha{=}0.1$) to compensate for limited capacity;
@@ -530,7 +527,7 @@ sufficient regularisation at 1.12\,M params.
 TLA anchor logits $\alpha_k$, gate scalars $\beta$, pool gate.
 
 \textbf{Knowledge distillation.}
-Large is distilled into Nano and Small~\cite{kd}:
+Large is distilled into Nano and Small \cite{kd}:
 \begin{equation}
   \mathcal{L}
   = (1{-}\lambda)\mathcal{L}_\text{CE}
@@ -638,18 +635,15 @@ SGN$^\dagger$~\cite{sgn}            & 0.69M & 89.0 & 94.5 & 79.2 & 81.5 \\
 \end{tabular}
 \vspace{-3mm}\end{table}
 
-SFZ-Large achieves 92.5\% on NTU-60 X-Sub, outperforming EfficientGCN-B4
-by 0.4\,pp at a comparable parameter scale, and matches SkateFormer
-(2.4M) with $2.1{\times}$ fewer parameters.
+SFZ-Large achieves 92.5\% on NTU-60 X-Sub, outperforming Ef\-ficientGCN-B4
+by 0.4\,pp and matching SkateFormer (2.4M) with $2.1{\times}$ fewer parameters.
 SFZ-Nano achieves 86.24\% at only 93\,K parameters (no distillation).
-At the 280\,K scale, EfficientGCN-B0 (290\,K, 90.2\%) outperforms SFZ-Small
-(88.0\%) in accuracy; however, SFZ-Small uses $7{\times}$ fewer FLOPs
-(0.39\,G vs.\ 2.73\,G), as B0 processes four streams through independent
-backbones whereas SFZ-Small applies early fusion.
-SFZ-Small+KD (89.8\%) narrows but does not fully close the gap to B0
-(90.2\%) in accuracy; it achieves this within identical parameter count
-and at $7{\times}$ lower compute, making it the preferred choice in
-FLOPs-constrained deployment.
+At the 280\,K scale, EfficientGCN-B0 (290\,K) outperforms SFZ-Small
+(90.2\% vs.\ 88.0\%); however, SFZ-Small uses $7{\times}$ fewer FLOPs
+(0.39\,G vs.\ 2.73\,G) because B0 processes four streams through independent
+backbones.
+SFZ-Small+KD (89.8\%) narrows but does not fully close this gap, while
+retaining the $7{\times}$ FLOPs advantage.
 
 \subsection{Efficiency and Deployment}\label{sec:efficiency}
 
@@ -659,7 +653,8 @@ FLOPs-constrained deployment.
 \caption{GFLOPs, CPU latency and throughput (batch~1, desktop: i7-10700K;
   mobile: Samsung Galaxy S24, Snapdragon~8~Gen~3 CPU).}
 \label{tab:gflops}
-\setlength{\tabcolsep}{3pt}
+\setlength{\tabcolsep}{2.2pt}
+\renewcommand{\arraystretch}{1.02}
 \begin{tabular}{lrrrrrr}
 \toprule
 Model & Params & GFLOPs & Desktop & Tput & S24 & X-Sub \\
@@ -678,9 +673,8 @@ SFZ-Large       & 1.12M & 2.67 & 89\,ms & 11/s & 515\,ms & \best{92.5} \\
 
 \subsection{Accuracy--Efficiency Frontier}\label{sec:frontier}
 
-To quantify the accuracy--efficiency trade-off, this work defines the
-\emph{accuracy-per-million-parameters} metric
-$\text{Acc/M} = \text{Top-1 (\%)} \,/\, \text{Params (M)}$.
+To quantify the accuracy--efficiency trade-off, this work defines
+\emph{Acc/M} = Top-1\,(\%) / Params\,(M).
 Higher is better; a model with 90\% accuracy at 0.1\,M params scores
 900 Acc/M, whereas 90\% at 10\,M scores only 9.
 Table~\ref{tab:accm} shows that ShiftFuse-Zero dominates the frontier.
@@ -719,17 +713,20 @@ SFZ-Nano+KD reaches \textbf{952\,Acc/M} --- $74{\times}$ higher than AGCN
 In FLOPs-normalised terms, Nano attains \textbf{663\,Acc/GFLOPs}
 vs.\ EfficientGCN-B0's 33.0 --- a $20{\times}$ advantage on the
 computation axis.
-Figure~\ref{fig:pareto} plots the full accuracy--parameter Pareto
-frontier; SFZ-Nano and SFZ-Large occupy new Pareto-optimal points.
+Figure~\ref{fig:pareto} plots the accuracy--GFLOPs Pareto frontier;
+SFZ-Nano (0.13\,G), SFZ-Small (0.39\,G), and SFZ-Large (2.67\,G)
+all occupy Pareto-optimal points --- demonstrating that the FLOPs
+advantage is the primary differentiator from parameter-matched baselines.
 
 %%─── Figure 11: Pareto frontier ─────────────────────────────────────────────
 \begin{figure}[htpb]\vspace{-2mm}
 \centering
 \resizebox{\columnwidth}{!}{\input{images/fig11_pareto}}
-\caption{Accuracy--parameter Pareto frontier on NTU-60 X-Sub.
+\caption{Accuracy--GFLOPs Pareto frontier on NTU-60 X-Sub.
   Dashed line = Pareto-optimal set.
-  SFZ-Nano establishes the only model below 0.1\,M parameters;
-  SFZ-Large advances the frontier at the 1\,M scale.}
+  SFZ dominates at all compute budgets: Nano uses $21{\times}$ fewer
+  FLOPs than EfficientGCN-B0 while remaining Pareto-optimal;
+  Large advances the frontier at 2.67\,G.}
 \label{fig:pareto}
 \vspace{-3mm}\end{figure}
 
@@ -795,9 +792,9 @@ $K$ & $\mathbf{A}_\ell$ & Params & Acc\,(\%) & $\Delta$ \\
 \paragraph{Block component analysis.}
 Table~\ref{tab:block_comp} isolates the contribution of each learnable
 component within the EfficientZero Block.
-Removing STC-Attention incurs $-0.6$\,pp; replacing DS-TCN with a
-standard temporal convolution costs $-0.8$\,pp and increases parameters
-by 12\%.
+Removing STC-Attention incurs $-1.1$\,pp; replacing DS-TCN with a
+standard temporal convolution costs $-1.3$\,pp and increases parameters
+by 9\%.
 Joint Embedding contributes $+0.5$\,pp at only $C{\times}V$ parameters
 per block.
 
@@ -931,11 +928,30 @@ teacher share the same zero-parameter priors (BRASP, SGPShift),
 ensuring that the spatial feature representations are structurally
 aligned.
 
+\paragraph{NTU-120 relative performance.}
+On NTU-120, SFZ-Large achieves 88.5\% X-Sub, compared with
+Ef\-ficientGCN-B4's 88.3\% --- a marginal +0.2\,pp gap that is
+considerably smaller than the +0.4\,pp advantage on NTU-60.
+Two factors contribute.
+First, NTU-120's 120 classes contain many fine-grained inter-class
+confusions (\eg, subtle hand-object interactions) where the
+additional labeled data of B4's MIB training compensates for its higher
+parameter count.
+Second, BRASP and SGPShift encode intra-part topology based on
+NTU's 25-joint skeleton; the 120-class split includes body-part-ambiguous
+actions (e.g.\ ``arm swing'' vs.\ ``arm shake'') where the fixed
+anatomical prior may be less discriminative than the data-driven
+topology learned by CTR-GCN or InfoGCN.
+For Nano (93\,K), the NTU-120 X-Sub/X-Set results of 82.2\%/83.8\%
+(without KD) represent strong sub-100\,K results on a 120-class benchmark,
+rising to 84.1\%/85.6\% with KD, matching or exceeding EfficientGCN-B0
+at 3$\times$ fewer parameters.
+
 \paragraph{Edge deployability.}
-SFZ-Nano's memory footprint is 360\,KB (float32) or 93\,KB (int8),
-fitting within the 512\,KB SRAM of ARM Cortex-M55 without quantisation
-of the zero-parameter modules (BRASP/SGPShift use only integer indexing,
-unaffected by int8 casting).
+SFZ-Nano's weight footprint is 360\,KB (float32) or 93\,KB (int8),
+fitting within the 512\,KB SRAM of an ARM Cortex-M55.
+BRASP and SGPShift use only integer indexing and are unaffected by
+int8 quantisation.
 On mobile CPU (Samsung Galaxy S24, Snapdragon 8 Gen 3),
 SFZ-Nano runs at ${\approx}$50\,ms per sample (Table~\ref{tab:deploy}),
 enabling practical wearable deployment without on-device GPU or NPU.
@@ -974,7 +990,8 @@ accuracy--parameter--deployability spectrum.
 On NTU RGB+D\,60 X-Sub, SFZ-Nano achieves \textbf{86.24\%} at only
 93\,K parameters without distillation, and \textbf{88.5\%} with
 knowledge distillation --- outperforming 6.9\,M-parameter AGCN with only 360\,KB of model weight storage.
-SFZ-Large achieves \textbf{92.5\%}, surpassing EfficientGCN-B4.
+SFZ-Large achieves \textbf{92.5\%} on NTU-60 X-Sub, surpassing
+Ef\-ficientGCN-B4 (92.1\%).
 SFZ-Nano+KD achieves an Acc/M ratio of \textbf{952}, $74{\times}$ higher
 than AGCN.
 
