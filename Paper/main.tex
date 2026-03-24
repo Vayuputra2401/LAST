@@ -13,6 +13,12 @@
 \usepackage{xcolor}
 \usepackage{enumitem}
 \usepackage{microtype}
+%% ── tighten float spacing to reclaim vertical space ──────────────────────────
+\setlength{\textfloatsep}{6pt plus 2pt minus 2pt}
+\setlength{\floatsep}{5pt plus 1pt minus 1pt}
+\setlength{\intextsep}{5pt plus 1pt minus 1pt}
+\setlength{\abovecaptionskip}{3pt}
+\setlength{\belowcaptionskip}{1pt}
 \usepackage{standalone}  % compile TikZ figures inline
 \usepackage{tikz}
 \usepackage{pgfplots}
@@ -802,7 +808,7 @@ all three SFZ variants occupy Pareto-optimal positions among the evaluated
 EfficientGCN family.
 
 %%─── Figure 11: Pareto frontier ─────────────────────────────────────────────
-\begin{figure}[htpb]\vspace{-2mm}
+\begin{figure}[t]
 \centering
 \resizebox{\columnwidth}{!}{\input{images/fig11_pareto}}
 \caption{Accuracy--GFLOPs Pareto frontier on NTU-60 X-Sub.
@@ -973,7 +979,7 @@ Nano+KD consistently outpaces the no-KD baseline from epoch\,30,
 confirming persistent benefit from the teacher's relational knowledge.
 
 %%─── Figure 10: Training curves ─────────────────────────────────────────────
-\begin{figure}[t]\vspace{-2mm}
+\begin{figure}[b]
 \centering
 \resizebox{\columnwidth}{!}{\input{images/fig10_curves}}
 \caption{Validation curves on NTU-60 X-Sub.
@@ -1003,26 +1009,13 @@ separate $7{\times}$ FLOPs advantage over EfficientGCN-B0 is an independent
 architectural effect (fewer backbones, DS-TCN): removing the priors at identical
 FLOPs reduces Small from 88.8\% to 85.2\%.
 
-\paragraph{Mid-network vs.\ late fusion.}
-In late fusion each backbone must independently learn high-level semantics
-from potentially noisy streams (bone-velocity is a second temporal
-derivative with high variance).
-Mid-network fusion assigns each backbone only low-to-mid-level feature
-extraction; the shared post-fusion stage learns unified high-level
-semantics from the merged multi-stream representation.
-The 0.6\,pp gain over late fusion at 0.81\,M fewer parameters
-(Table~\ref{tab:fusion}) validates this hierarchical division of labour.
-
-\paragraph{KD efficiency.}
-The Large teacher's soft labels encode fine-grained inter-class
-similarities --- \eg, ``drinking water'' vs.\ ``eating meal'' share
-similar arm trajectories --- that are invisible to hard one-hot targets.
-This explains the disproportionate +2.3\,pp Nano gain from a teacher
-only $17{\times}$ larger.
-The knowledge transfer is especially effective because the student and
-teacher share the same zero-parameter priors (BRASP, SGPShift),
-ensuring that the spatial feature representations are structurally
-aligned.
+\paragraph{Mid-network fusion and KD.}
+Mid-network fusion (Table~\ref{tab:fusion}) outperforms late fusion by 0.6\,pp at
+0.81\,M fewer parameters because per-stream backbones focus on low-level features
+while the shared stage learns unified high-level semantics.
+KD transfers +2.3\,pp to Nano from a teacher only $17{\times}$ larger: student and
+teacher share the same BRASP/SGPShift priors, aligning their spatial representations
+and making soft-label transfer especially effective.
 
 \paragraph{NTU-120 relative performance.}
 SFZ-Large leads Ef\-ficientGCN-B4 by only +0.2\,pp on NTU-120 X-Sub
@@ -1048,22 +1041,12 @@ FLOPs because TLA's bilinear interpolation and the three-stream backbone
 introduce memory-bandwidth pressure not captured by FLOP counts.
 
 \paragraph{Scalability across model tiers.}
-A key design question is whether zero-parameter priors retain their
-benefit as model capacity increases.
-The data suggest a monotonically decreasing marginal return: BRASP and
-SGPShift contribute +1.8\,pp to Nano, +1.4\,pp to Small (Table~\ref{tab:ablation}
-caption), and +1.1\,pp to Large (measured by removing both modules from
-the trained Large model and retraining; 92.5\%\,$\to$\,91.4\%).
-This is expected --- a larger model can eventually learn intra-part
-structure from data alone, reducing the \emph{necessity} of the prior.
-However, even for Large the free prior reduces the number of
-gradient-based optimisation steps needed to discover anatomical
-clustering, effectively acting as a warm-start for spatial
-representation learning.
-In practice, the priors are always beneficial and never harmful because
-they are applied before any learnable layer: the downstream GCN is free
-to undo or refine the anatomical structure if it conflicts with the data
-distribution.
+Zero-parameter priors show monotonically decreasing marginal return:
++1.8\,pp (Nano), +1.4\,pp (Small), +1.1\,pp (Large; measured by retraining
+without both: 92.5\%\,$\to$\,91.4\%).
+Larger models can learn intra-part structure from data alone, but the priors
+remain beneficial at all scales by acting as a warm-start that reduces
+optimisation steps needed to discover anatomical clustering.
 
 \paragraph{Limitations and future work.}
 The EfficientZero Block exposes three tunable knobs: (1)~BRASP/SGPShift can be
