@@ -13,12 +13,6 @@
 \usepackage{xcolor}
 \usepackage{enumitem}
 \usepackage{microtype}
-%% ── tighten float spacing to reclaim vertical space ──────────────────────────
-\setlength{\textfloatsep}{6pt plus 2pt minus 2pt}
-\setlength{\floatsep}{5pt plus 1pt minus 1pt}
-\setlength{\intextsep}{5pt plus 1pt minus 1pt}
-\setlength{\abovecaptionskip}{3pt}
-\setlength{\belowcaptionskip}{1pt}
 \usepackage{standalone}  % compile TikZ figures inline
 \usepackage{tikz}
 \usepackage{pgfplots}
@@ -992,61 +986,31 @@ confirming persistent benefit from the teacher's relational knowledge.
 \section{Discussion}\label{sec:discuss}
 
 \paragraph{Why zero-parameter priors help.}
-Human motion obeys strict anatomical constraints: the kinematic chain
-of each limb restricts the degrees of freedom available to any joint,
-and bilateral symmetry ensures that left--right motion patterns share
-a common structure.
-BRASP and SGPShift encode these constraints \emph{before} any learnable
-layer, effectively decoupling within-part aggregation (handled for free)
-from cross-part dependency modelling (delegated to the compact $K{=}3$
-GCN).
-The 1.8\,pp gain at zero parameter cost (Table~\ref{tab:ablation}) confirms that
-anatomy is a highly informative prior.
-The gain is proportionally \emph{larger} for smaller models (+1.8\,pp Nano vs.\ +1.1\,pp
-Large), as larger models can eventually learn intra-part structure from data alone.
-Crucially, BRASP/SGPShift contribute these gains \emph{at identical FLOPs}; the
-separate $7{\times}$ FLOPs advantage over EfficientGCN-B0 is an independent
-architectural effect (fewer backbones, DS-TCN): removing the priors at identical
-FLOPs reduces Small from 88.8\% to 85.2\%.
+BRASP and SGPShift encode anatomical constraints \emph{before} any learnable layer,
+decoupling within-part aggregation (handled for free) from cross-part dependency
+modelling (delegated to the compact $K{=}3$ GCN).
+The +1.8\,pp gain at zero parameter cost (Table~\ref{tab:ablation}) is proportionally
+\emph{larger} for smaller models (+1.8\,pp Nano vs.\ +1.1\,pp Large), as larger
+models can learn intra-part structure from data alone.
+Notably, BRASP/SGPShift contribute these gains at identical FLOPs; the $7{\times}$
+FLOPs advantage over EfficientGCN-B0 is a separate architectural effect.
 
-\paragraph{Mid-network fusion and KD.}
-Mid-network fusion (Table~\ref{tab:fusion}) outperforms late fusion by 0.6\,pp at
-0.81\,M fewer parameters because per-stream backbones focus on low-level features
-while the shared stage learns unified high-level semantics.
-KD transfers +2.3\,pp to Nano from a teacher only $17{\times}$ larger: student and
-teacher share the same BRASP/SGPShift priors, aligning their spatial representations
-and making soft-label transfer especially effective.
+\paragraph{Fusion, KD, and scalability.}
+Mid-network fusion outperforms late fusion by 0.6\,pp at 0.81\,M fewer parameters
+(Table~\ref{tab:fusion}): per-stream backbones handle low-level features while the
+shared stage integrates high-level semantics.
+KD transfers +2.3\,pp to Nano from a teacher $17{\times}$ larger; student and teacher
+share the same spatial priors, aligning their representations for effective soft-label transfer.
+Zero-parameter priors show monotonically decreasing marginal return (+1.8/+1.4/+1.1\,pp
+across Nano/Small/Large) but remain beneficial at all scales.
 
-\paragraph{NTU-120 relative performance.}
-SFZ-Large leads Ef\-ficientGCN-B4 by only +0.2\,pp on NTU-120 X-Sub
-(vs.\ +0.4\,pp on NTU-60), a narrowing explained by two factors:
-(i)~NTU-120's fine-grained inter-class confusions (\eg, hand-object
-interactions) where B4's MIB training is advantageous, and
-(ii)~fixed anatomical priors are less discriminative for
-body-part-ambiguous actions in the 120-class split.
-Nano (93\,K) reaches 82.2\%/83.8\% (84.1\%/85.6\% with KD); it falls 1.6\,pp
-below EfficientGCN-B0 (83.8\%) on NTU-120 X-Sub, attributable to the capacity
-gap (93\,K vs.\ 290\,K) on fine-grained 120-class interactions.
-Nano+KD (84.1\%) closes to within 0.3\,pp of B0.
-SFZ-Small achieves 84.3\%/85.9\%, confirming consistent multi-benchmark gains.
-
-\paragraph{Edge deployability.}
-SFZ-Nano's weight footprint is 360\,KB (float32) or 93\,KB (int8),
-fitting within the 512\,KB SRAM of an ARM Cortex-M55; BRASP and SGPShift
-carry no weights, so they are unaffected by quantisation.
-On mobile CPU (Samsung Galaxy S24, Snapdragon 8 Gen 3),
-SFZ-Nano runs at ${\approx}$50\,ms, enabling wearable deployment without GPU or NPU.
-SFZ-Large's desktop latency (89\,ms) matches B4 (87\,ms) despite $4.3{\times}$ fewer
-FLOPs because TLA's bilinear interpolation and the three-stream backbone
-introduce memory-bandwidth pressure not captured by FLOP counts.
-
-\paragraph{Scalability across model tiers.}
-Zero-parameter priors show monotonically decreasing marginal return:
-+1.8\,pp (Nano), +1.4\,pp (Small), +1.1\,pp (Large; measured by retraining
-without both: 92.5\%\,$\to$\,91.4\%).
-Larger models can learn intra-part structure from data alone, but the priors
-remain beneficial at all scales by acting as a warm-start that reduces
-optimisation steps needed to discover anatomical clustering.
+\paragraph{NTU-120 and deployment.}
+SFZ-Large leads EfficientGCN-B4 by +0.2\,pp on NTU-120 X-Sub (vs.\ +0.4\,pp on NTU-60):
+fine-grained body-part-ambiguous actions in the 120-class split reduce the advantage
+of fixed anatomical priors.
+Nano+KD (84.1\%) closes to within 0.3\,pp of B0 (83.8\%) despite a $3{\times}$ parameter gap.
+SFZ-Nano's 360\,KB footprint (93\,KB at int8) fits within ARM Cortex-M55 SRAM;
+its 50\,ms mobile latency enables wearable deployment without GPU or NPU.
 
 \paragraph{Limitations and future work.}
 The EfficientZero Block exposes three tunable knobs: (1)~BRASP/SGPShift can be
