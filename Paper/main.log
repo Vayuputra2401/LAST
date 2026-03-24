@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.3.21)  24 MAR 2026 18:31
+This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.3.21)  24 MAR 2026 18:47
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1665,10 +1665,10 @@ Class acmart Warning: \vspace should only be used to provide space above/below
 surrounding objects on input line 147.
 
 
-Underfull \vbox (badness 10000) has occurred while \output is active []
+Underfull \vbox (badness 2653) has occurred while \output is active []
 
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 6.0pt on input line 173.
+(Font)              scaled to size 6.0pt on input line 175.
  [1.1{C:/Users/pathi/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map}{C:/Users
 /pathi/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/libertine/lbtn_76gpa5.enc}
 {C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/libertine/lbtn_25
@@ -1682,7 +1682,7 @@ enc/dvips/libertine/lbtn_oexx6f.enc}{C:/Users/pathi/AppData/Local/Programs/MiKT
 eX/fonts/enc/dvips/libertine/lbtn_naooyc.enc}]
 
 Class acmart Warning: \vspace should only be used to provide space above/below 
-surrounding objects on input line 174.
+surrounding objects on input line 176.
 
 LaTeX Font Info:    Font shape `T1/LinuxBiolinumT-TLF/m/n' will be
 (Font)              scaled to size 9.0pt on input line 297.
@@ -1719,31 +1719,31 @@ LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/b/n' will be
 (Font)              scaled to size 6.0pt on input line 67.
 )
 
-Class acmart Warning: A possible image without description on input line 316.
+Class acmart Warning: A possible image without description on input line 318.
 
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 6.6pt on input line 324.
+(Font)              scaled to size 6.6pt on input line 326.
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/n' will be
-(Font)              scaled to size 5.5pt on input line 324.
+(Font)              scaled to size 5.5pt on input line 326.
 (images/fig2_brasp.tex
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/b/n' will be
 (Font)              scaled to size 5.0pt on input line 26.
 )
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/b/n' will be
-(Font)              scaled to size 6.6pt on input line 339.
+(Font)              scaled to size 6.6pt on input line 341.
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/b/n' will be
-(Font)              scaled to size 5.5pt on input line 339.
+(Font)              scaled to size 5.5pt on input line 341.
 
 
-Class acmart Warning: A possible image without description on input line 341.
-
-
-Class acmart Warning: \vspace should only be used to provide space above/below 
-surrounding objects on input line 357.
+Class acmart Warning: A possible image without description on input line 343.
 
 
 Class acmart Warning: \vspace should only be used to provide space above/below 
-surrounding objects on input line 366.
+surrounding objects on input line 359.
+
+
+Class acmart Warning: \vspace should only be used to provide space above/below 
+surrounding objects on input line 374.
 
 (images/fig3_sgpshift.tex
 LaTeX Font Info:    Font shape `OT1/LinuxLibertineT-TLF/m/n' will be
@@ -1796,16 +1796,7 @@ LaTeX Font Info:    Font shape `LMX/ntxexx/b/n' will be
 (Font)              scaled to size 6.0pt on input line 47.
 )
 
-Class acmart Warning: A possible image without description on input line 376.
-
-(images/fig4_block.tex)
-Underfull \hbox (badness 2512) in paragraph at lines 404--404
-[]\T1/LinuxLibertineT-TLF/b/n/9 (+20) Figure 4: |Ef-fi-cientZero Block. Green =
- zero-parameter
- []
-
-
-Class acmart Warning: A possible image without description on input line 406.
+Class acmart Warning: A possible image without description on input line 384.
 
 
 Package fancyhdr Warning: \headheight is too small (13.0pt): 
@@ -1815,36 +1806,46 @@ Package fancyhdr Warning: \headheight is too small (13.0pt):
 (fancyhdr)                \addtolength{\topmargin}{-2.45749pt}.
 
 [3.3{C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/libertine/lbt
-n_fygcup.enc}] (images/fig5_family.tex)
+n_fygcup.enc}] (images/fig4_block.tex)
+Underfull \hbox (badness 2512) in paragraph at lines 416--416
+[]\T1/LinuxLibertineT-TLF/b/n/9 (+20) Figure 4: |Ef-fi-cientZero Block. Green =
+ zero-parameter
+ []
 
-Class acmart Warning: A possible image without description on input line 480.
+
+Class acmart Warning: A possible image without description on input line 418.
 
 
-Overfull \hbox (3.24405pt too wide) in paragraph at lines 511--515
+Package natbib Warning: Citation `deformabledetr' on page 4 undefined on input 
+line 465.
+
+(images/fig5_family.tex)
+
+Class acmart Warning: A possible image without description on input line 496.
+
+
+Overfull \hbox (3.24405pt too wide) in paragraph at lines 527--531
  []\T1/LinuxLibertineT-TLF/m/it/9 (-20) Small (280K)..[] \T1/LinuxLibertineT-TL
 F/m/n/9 (-20) Two in-de-pen-dent back-bones pro-cess joint+velocity
  []
 
 [4.4]
-Underfull \hbox (badness 5771) in paragraph at lines 581--581
+Underfull \hbox (badness 5771) in paragraph at lines 597--597
 []\T1/LinuxLibertineT-TLF/b/n/9 (+20) Table 2: |De-ploy-ment pro-file. Mem = mo
 del weights
  []
 
-LaTeX Font Info:    Trying to load font information for T1+zi4 on input line 59
-7.
+LaTeX Font Info:    Trying to load font information for T1+zi4 on input line 61
+3.
 (C:\Users\pathi\AppData\Local\Programs\MiKTeX\tex/latex/inconsolata\t1zi4.fd
 File: t1zi4.fd 2018/01/14 T1/zi4 (Inconsolata)
 )
 LaTeX Font Info:    Font shape `T1/zi4/m/n' will be
-(Font)              scaled to size 9.0pt on input line 597.
+(Font)              scaled to size 9.0pt on input line 613.
 Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `zi4' (encoding: T1).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
-
-Underfull \vbox (badness 1092) has occurred while \output is active []
-
 
 
 Package fancyhdr Warning: \headheight is too small (13.0pt): 
@@ -1855,13 +1856,9 @@ Package fancyhdr Warning: \headheight is too small (13.0pt):
 
 [5.5{C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/inconsolata/i
 4-t1-4.enc}]
-Overfull \hbox (3.0036pt too wide) in paragraph at lines 716--730
+Overfull \hbox (3.0036pt too wide) in paragraph at lines 733--747
  [][] 
  []
-
-
-Underfull \vbox (badness 1783) has occurred while \output is active []
-
 
 (images/fig11_pareto.tex
 Package pgfplots info on input line 21: Using 'lua backend=false' for axis: xmo
@@ -1872,12 +1869,12 @@ Missing character: There is no ; in font nullfont!
 Missing character: There is no ; in font nullfont!
 )
 
-Class acmart Warning: A possible image without description on input line 775.
+Class acmart Warning: A possible image without description on input line 792.
 
 LaTeX Font Info:    Font shape `TS1/LinuxLibertineT-TLF/b/n' will be
-(Font)              scaled to size 9.0pt on input line 794.
+(Font)              scaled to size 9.0pt on input line 811.
 
-Overfull \hbox (2.3676pt too wide) in paragraph at lines 839--846
+Overfull \hbox (2.3676pt too wide) in paragraph at lines 856--863
 \T1/LinuxLibertineT-TLF/m/n/9 (-20) ($\OML/nxlmi/m/it/9 V[]V$\T1/LinuxLibertine
 T-TLF/m/n/9 (-20) , 625 params) costs only $\LMS/ntxsy/m/n/9 ^^@\OT1/LinuxLiber
 tineT-TLF/m/n/9 (-20) 0\OML/nxlmi/m/it/9 :\OT1/LinuxLibertineT-TLF/m/n/9 (-20) 
@@ -1886,7 +1883,7 @@ tineT-TLF/m/n/9 (-20) 0\OML/nxlmi/m/it/9 :\OT1/LinuxLibertineT-TLF/m/n/9 (-20)
 
 [6.6] (images/fig10_curves.tex)
 
-Class acmart Warning: A possible image without description on input line 941.
+Class acmart Warning: A possible image without description on input line 958.
 
 
 Package fancyhdr Warning: \headheight is too small (13.0pt): 
@@ -1897,12 +1894,15 @@ Package fancyhdr Warning: \headheight is too small (13.0pt):
 
 [7.7{C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/libertine/lbt
 n_7f4ce4.enc}]
-Overfull \hbox (3.47638pt too wide) in paragraph at lines 1003--1010
+Overfull \hbox (3.47638pt too wide) in paragraph at lines 1020--1027
  []\T1/LinuxLibertineT-TLF/m/it/9 (-20) Edge de-ploy-a-bil-ity.[] \T1/LinuxLibe
 rtineT-TLF/m/n/9 (-20) SFZ-Nano's weight foot-print is 360KB (float32)
  []
 
 [8.8] Excluding 'acks' comment. (main.bbl)
+
+Package natbib Warning: There were undefined citations.
+
 
 Class acmart Warning: Some images may lack descriptions.
 (acmart)              ACM is committed to complying with the upcoming US ADA ht
@@ -1941,15 +1941,19 @@ File: se-utf8.def 2019/11/29 v1.12 stringenc: UTF-8
 LaTeX2e <2025-11-01>
 L3 programming layer <2025-12-24>
  ***********
+
+
+LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
+
 Package rerunfilecheck Info: File `main.out' has not changed.
 (rerunfilecheck)             Checksum: 1A555A529B369A9A97F80C44AE695579;3276.
  ) 
 Here is how much of TeX's memory you used:
- 46074 strings out of 467871
- 1014612 string characters out of 5418376
- 1573182 words of memory out of 5000000
+ 46071 strings out of 467871
+ 1014543 string characters out of 5418376
+ 1572474 words of memory out of 5000000
  73014 multiletter control sequences out of 15000+600000
- 897217 words of font info for 681 fonts, out of 8000000 for 9000
+ 897140 words of font info for 679 fonts, out of 8000000 for 9000
  1302 hyphenation exceptions out of 8191
  95i,21n,131p,1003b,2350s stack positions out of 10000i,1000n,20000p,200000b,200000s
 <C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/inconsolata/
@@ -1970,9 +1974,9 @@ C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/newtx/txexs.pfb
 pfb><C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/newtx/txsy
 m.pfb><C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/newtx/tx
 sys.pfb>
-Output written on main.pdf (9 pages, 702139 bytes).
+Output written on main.pdf (9 pages, 704596 bytes).
 PDF statistics:
- 444 PDF objects out of 1000 (max. 8388607)
+ 446 PDF objects out of 1000 (max. 8388607)
  125 named destinations out of 1000 (max. 500000)
  152269 words of extra memory for PDF output out of 154059 (max. 10000000)
 

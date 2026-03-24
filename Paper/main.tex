@@ -74,7 +74,7 @@ Three models cover the edge-to-server spectrum: \textbf{Nano} (93\,K) and
 with ultra-low FLOPs, while \textbf{Large} (1.12\,M) targets maximum capacity.
 On NTU\,RGB+D\,60 cross-subject, primary results without distillation are
 86.24\,\% (Nano), 88.8\,\% (Small), and 92.5\,\% (Large);
-Knowledge distillation is an orthogonal plugin
+Knowledge distillation is an optional plugin requiring a pre-trained Large teacher
 that further lifts Nano and Small to 88.5\,\%/90.4\,\%, respectively;
 notably, Small+KD \textbf{surpasses EfficientGCN-B0 (90.2\%)} at $7{\times}$ fewer FLOPs.
 Strikingly, Nano achieves \textbf{663\,Acc/GFLOP} --- $20{\times}$ higher than
@@ -145,8 +145,10 @@ They can therefore be encoded as deterministic tensor operations at
 inference-time cost}.
 
 \smallskip\noindent
-This paper presents the first systematic study of zero-parameter
-anatomical inductive bias for skeleton GCNs.
+This paper presents the first systematic study of
+\emph{anatomically-guided} zero-parameter inductive bias for skeleton
+GCNs --- distinct from graph-distance-guided shifts~\cite{shiftgcn},
+which assign shift patterns by hop count rather than body-part identity.
 This work asks: \textbf{how much spatial knowledge can be injected into a skeleton
 GCN without spending a single learnable parameter --- and how far can
 that free knowledge push the accuracy--efficiency frontier?}
@@ -160,7 +162,7 @@ SFZ-Nano (93\,K) and SFZ-Small (280\,K) redefine edge-deployment with ultra-low
 FLOPs and quantisation-friendly operations.
 On NTU-60 X-Sub, SFZ-Nano reaches \textbf{86.24\%} without any distillation
 and \textbf{88.5\%} with knowledge distillation, \emph{matching} 6.9\,M-parameter
-AGCN within 360\,KB (an orthogonal plugin;
+AGCN within 360\,KB (an optional plugin requiring SFZ-Large as teacher;
 all primary results are reported without KD).
 SFZ-Small achieves \textbf{88.8\%} at comparable parameter count (280\,K
 vs.\ 290\,K) with $7{\times}$ fewer FLOPs than EfficientGCN-B0;
@@ -189,7 +191,7 @@ under-exploited.
   (93\,K), Small (280\,K), Large (1.12\,M) --- with Temporal Landmark
   Attention, cross-stream gating, and mid-network fusion, covering the
   edge-to-server deployment spectrum. Vanilla Hinton KD~\cite{kd} serves
-  as an orthogonal plugin, yielding up to +2.3\,pp at zero structural cost
+  as an optional plugin (requiring SFZ-Large as teacher), yielding up to +2.3\,pp at zero structural cost
   (Section~\ref{sec:family}).
 \item \textbf{Comprehensive evaluation}: main results on NTU-60 and
   NTU-120 (four protocols), efficiency analysis (GFLOPs, CPU latency,
@@ -354,16 +356,22 @@ joint absorbs its anatomical sibling's context.
 Indices are stored as a non-trainable integer buffer ---
 \textbf{zero parameters, zero gradient}.
 
-\smallskip\noindent\textbf{Remark~1} \emph{(BRASP intra-part compression).}
+\smallskip\noindent\textbf{Remark~1} \emph{(BRASP captures cross-body symmetry unreachable by K=3 GCN).}
 Let $d_G(u,v)$ be the shortest-path distance between joints $u,v$ in
 skeleton graph $G$.
-After one BRASP shift $\sigma$, the GCN at position $v$ receives features
-originating from $\sigma(v)\!\in\!P_k$ --- a joint in the same anatomical
-part.
-This reduces the \emph{representational separation} between intra-part
-pairs from $d_G(u,v)\!\geq\!2$ graph hops to a single feature-retrieval
-step, compressing the spatial receptive field required of the downstream
-GCN at zero parameter cost.\smallskip
+The K=3 GCN aggregates 1-hop and 2-hop graph neighbours in a single
+layer --- yet bilaterally symmetric joint pairs (\eg, left-wrist and
+right-wrist) are separated by $d_G{=}10$+ hops in the NTU-25 physical
+graph and are therefore invisible to each other without many stacked layers.
+BRASP's cyclic shift within the arm group directly places right-wrist
+features at left-wrist before \emph{any} graph convolution, enabling
+immediate bilateral context exchange that $K{=}3$ graph distance cannot
+provide.
+More generally, after one BRASP shift $\sigma$, joint $v$ receives
+features from $\sigma(v)\!\in\!P_k$ --- an anatomical sibling that may
+be graph-far but biomechanically coupled --- reducing representational
+separation from $d_G(u,v)\!\geq\!2$ graph hops to a single feature-retrieval
+step at zero parameter cost.\smallskip
 
 %%─── Figure 3: SGPShift ──────────────────────────────────────────────────────
 \begin{figure}[htpb]\vspace{-2mm}
@@ -380,18 +388,22 @@ Figure~\ref{fig:sgpshift} illustrates the intra/inter aggregation.
 For joint $v$ in semantic group $g(v)$:
 \begin{equation}
   \hat{\mathbf{F}}_{:,t,v}
-  = \frac{1}{|\mathcal{N}_\text{intra}(v)|}
-    \!\sum_{u\in\mathcal{N}_\text{intra}(v)}\!\!\mathbf{F}_{:,t,u}
-  \;+\; \frac{1}{|\mathcal{N}_\text{inter}(v)|}
-    \!\sum_{u\in\mathcal{N}_\text{inter}(v)}\!\!\mathbf{F}_{:,t,u},
+  = \frac{1}{2}\!\left(
+      \frac{1}{|\mathcal{N}_\text{intra}(v)|}
+        \!\sum_{u\in\mathcal{N}_\text{intra}(v)}\!\!\mathbf{F}_{:,t,u}
+      \;+\; \frac{1}{|\mathcal{N}_\text{inter}(v)|}
+        \!\sum_{u\in\mathcal{N}_\text{inter}(v)}\!\!\mathbf{F}_{:,t,u}
+    \right),
   \label{eq:sgp}
 \end{equation}
 where $\mathcal{N}_\text{intra}$ is the joint's same-part neighbours
 and $\mathcal{N}_\text{inter}$ is its boundary neighbours in adjacent
 parts.
+The $\tfrac{1}{2}$ factor ensures the output has the same expected norm
+as the input; the downstream BN in the GCN absorbs any residual scale.
 All sets are precomputed integer buffers.
-At runtime SGPShift reduces to two sparse average operations —
-\textbf{zero learnable parameters}.
+At runtime SGPShift reduces to two sparse average operations followed
+by a scalar multiply --- \textbf{zero learnable parameters}.
 
 \subsection{EfficientZero Block}\label{sec:block}
 
@@ -449,7 +461,11 @@ message passing is essential.
 \paragraph{Complementary Temporal Module: TLA.}
 While BRASP and SGPShift address the spatial axis, a complementary
 Temporal Landmark Attention (TLA) module distils temporal structure
-through $K$ learnable anchor frames without full $O(T^2)$ self-attention:
+through $K$ learnable anchor frames without full $O(T^2)$ self-attention.
+TLA applies the deformable-attention principle~\cite{deformabledetr}
+to the temporal axis: anchor positions are continuous and
+gradient-trainable via bilinear interpolation, reducing attention
+complexity from $O(T^2)$ to $O(T{\cdot}K)$:
 \begin{align}
   \tau_k &= T\cdot\sigma(\alpha_k),\quad k=1,\ldots,K,
   \label{eq:tla_anchors}\\
@@ -639,6 +655,7 @@ but replaces Mixup with DropPath ($p_d{=}0.20$) and label smoothing
 All four streams (joint, velocity, bone, bone-velocity) are derived
 offline from the raw joint positions.
 Models are trained from scratch with no pre-training or external data.
+No test-time augmentation (TTA) is used; all results are single-model, single-pass inference.
 The best checkpoint by validation accuracy is reported in all tables.
 
 \subsection{Main Results}
@@ -1012,7 +1029,9 @@ enabling practical wearable deployment without on-device GPU or NPU.
 A key design question is whether zero-parameter priors retain their
 benefit as model capacity increases.
 The data suggest a monotonically decreasing marginal return: BRASP and
-SGPShift contribute +1.8\,pp to Nano and +1.1\,pp to Large.
+SGPShift contribute +1.8\,pp to Nano, +1.4\,pp to Small (Table~\ref{tab:ablation}
+caption), and +1.1\,pp to Large (measured by removing both modules from
+the trained Large model and retraining; 92.5\%\,$\to$\,91.4\%).
 This is expected --- a larger model can eventually learn intra-part
 structure from data alone, reducing the \emph{necessity} of the prior.
 However, even for Large the free prior reduces the number of
