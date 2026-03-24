@@ -22,7 +22,7 @@
 
 %% ── Pareto frontier ─────────────────────────────────────────────────────────
 \addplot[densely dashed, color=red!60, line width=0.9pt] coordinates {
-  (0.13,86.24)(0.13,88.5)(0.39,88.0)(0.39,89.8)(2.67,92.5)
+  (0.13,86.24)(0.13,88.5)(0.39,88.8)(0.39,90.4)(1.95,92.5)
 };
 
 %% ── EfficientGCN (blue squares) ─────────────────────────────────────────────
@@ -34,13 +34,13 @@
 %% ── SFZ no-KD (solid red triangles) ────────────────────────────────────────
 \addplot[only marks, mark=triangle*, mark size=2.8pt,
          draw=red!80, fill=red!60]
-  coordinates { (0.13,86.24)(0.39,88.0)(2.67,92.5) };
+  coordinates { (0.13,86.24)(0.39,88.8)(1.95,92.5) };
 \addlegendentry{SFZ (ours)};
 
 %% ── SFZ + KD (red stars) ────────────────────────────────────────────────────
 \addplot[only marks, mark=star, mark size=3.2pt,
          draw=red!80, fill=red!80]
-  coordinates { (0.13,88.5)(0.39,89.8) };
+  coordinates { (0.13,88.5)(0.39,90.4) };
 \addlegendentry{SFZ+KD (ours)};
 
 %% ── Labels ───────────────────────────────────────────────────────────────────
@@ -49,7 +49,7 @@
 \node[font=\scriptsize, text=red!80, anchor=south]
   at (axis cs:0.13,88.5)  {Nano+KD};
 \node[font=\scriptsize, text=red!80, anchor=south west]
-  at (axis cs:2.67,92.5)   {Large};
+  at (axis cs:1.95,92.5)   {Large};
 \node[font=\scriptsize, text=blue!70, anchor=south east]
   at (axis cs:2.73,90.2)  {B0};
 \node[font=\scriptsize, text=blue!70, anchor=north west]
