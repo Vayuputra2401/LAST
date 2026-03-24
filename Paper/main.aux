@@ -13,6 +13,7 @@
 \citation{hdgcn}
 \citation{efficientgcn,sgn}
 \citation{shiftgcn}
+\citation{stgcn}
 \providecommand \oddpage@label [2]{}
 \@writefile{toc}{\contentsline {section}{Abstract}{1}{section*.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{section.1}\protected@file@percent }
@@ -34,8 +35,6 @@
 \citation{shiftgcn}
 \citation{tsm}
 \citation{shiftgcn}
-\citation{kd}
-\citation{efficientgcn}
 \@writefile{toc}{\contentsline {section}{\numberline {2}Related Work}{2}{section.2}\protected@file@percent }
 \newlabel{sec:related}{{2}{2}{Related Work}{section.2}{}}
 \@writefile{toc}{\contentsline {paragraph}{GCN-based skeleton recognition.}{2}{section*.5}\protected@file@percent }
@@ -43,8 +42,10 @@
 \@writefile{toc}{\contentsline {paragraph}{Efficient skeleton networks.}{2}{section*.7}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Temporal modelling in skeleton networks.}{2}{section*.8}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Shift operations and zero-parameter spatial mixing.}{2}{section*.9}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Knowledge distillation.}{2}{section*.10}\protected@file@percent }
+\citation{kd}
 \citation{efficientgcn}
+\citation{efficientgcn}
+\@writefile{toc}{\contentsline {paragraph}{Knowledge distillation.}{3}{section*.10}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {3}Methodology}{3}{section.3}\protected@file@percent }
 \newlabel{sec:method}{{3}{3}{Methodology}{section.3}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Overview}{3}{subsection.3.1}\protected@file@percent }
@@ -62,19 +63,19 @@
 \newlabel{fig:brasp}{{2}{3}{BRASP anatomical partitioning into five groups $\{G_\text {la}, G_\text {ra}, G_\text {ll}, G_\text {rl}, G_\text {tr}\}$. The fixed permutation $\sigma $ (Eq.~\ref {eq:brasp}) is derived from these groups; no gradient flows through it}{figure.caption.12}{}}
 \@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces SGPShift aggregation. Blue solid arrows: intra-part neighbours. Red dashed arrows: inter-part boundary neighbours. All sets are precomputed integer buffers — zero learnable parameters.}}{3}{figure.caption.14}\protected@file@percent }
 \newlabel{fig:sgpshift}{{3}{3}{SGPShift aggregation. Blue solid arrows: intra-part neighbours. Red dashed arrows: inter-part boundary neighbours. All sets are precomputed integer buffers — zero learnable parameters}{figure.caption.14}{}}
-\@writefile{toc}{\contentsline {paragraph}{SGPShift.}{3}{section*.15}\protected@file@percent }
-\newlabel{eq:sgp}{{2}{3}{SGPShift}{equation.2}{}}
 \citation{sgn}
 \citation{stgcn}
 \citation{deformabledetr}
 \citation{efficientgcn}
+\@writefile{toc}{\contentsline {paragraph}{SGPShift.}{4}{section*.15}\protected@file@percent }
+\newlabel{eq:sgp}{{2}{4}{SGPShift}{equation.2}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.4}EfficientZero Block}{4}{subsection.3.4}\protected@file@percent }
 \newlabel{sec:block}{{3.4}{4}{EfficientZero Block}{subsection.3.4}{}}
 \@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces EfficientZero Block. Green = zero-parameter (BRASP, SGPShift, DropPath). Per-layer parameter counts shown on the right. TLA is only active at the last block of the final stage.}}{4}{figure.caption.16}\protected@file@percent }
 \newlabel{fig:block}{{4}{4}{EfficientZero Block. Green = zero-parameter (BRASP, SGPShift, DropPath). Per-layer parameter counts shown on the right. TLA is only active at the last block of the final stage}{figure.caption.16}{}}
-\newlabel{eq:gcn}{{3}{4}{EfficientZero Block}{equation.3}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces ShiftFuse-Zero variant configurations. $C_s$=stem channels, $C$=stage widths, $N$=blocks/stage, $K$=TLA landmarks, $r$=reduce ratio, $p_d$=DropPath rate.}}{4}{table.caption.20}\protected@file@percent }
 \newlabel{tab:variants}{{1}{4}{ShiftFuse-Zero variant configurations. $C_s$=stem channels, $C$=stage widths, $N$=blocks/stage, $K$=TLA landmarks, $r$=reduce ratio, $p_d$=DropPath rate}{table.caption.20}{}}
+\newlabel{eq:gcn}{{3}{4}{EfficientZero Block}{equation.3}{}}
 \@writefile{toc}{\contentsline {paragraph}{Intelligent Block Ordering.}{4}{section*.17}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Complementary Temporal Module: TLA.}{4}{section*.18}\protected@file@percent }
 \newlabel{eq:tla_anchors}{{4}{4}{Complementary Temporal Module: TLA}{equation.4}{}}
@@ -82,29 +83,27 @@
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Model Family}{4}{subsection.3.5}\protected@file@percent }
 \newlabel{sec:family}{{3.5}{4}{Model Family}{subsection.3.5}{}}
 \@writefile{toc}{\contentsline {paragraph}{Nano (93\,K).}{4}{section*.21}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Small (280\,K).}{4}{section*.22}\protected@file@percent }
-\newlabel{eq:csf}{{6}{4}{Small (280\,K)}{equation.6}{}}
+\citation{efficientgcn}
 \citation{efficientgcn}
 \citation{kd}
 \citation{agcn,ctrgcn}
-\citation{ntu60}
-\citation{ntu120}
+\citation{agcn,ctrgcn}
 \@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces ShiftFuse-Zero model family. (a)\nonbreakingspace Nano: single backbone, 4-stream early fusion, TLA ($K{=}8$). (b)\nonbreakingspace Small: two-backbone late fusion with Cross-Stream Fusion and TLA ($K{=}8$). (c)\nonbreakingspace Large: three-backbone mid-network fusion (B4-style) — per-stream S1--S2, FusionConv ($288{\to }192$), shared S3 + TLA ($K{=}14$).}}{5}{figure.caption.19}\protected@file@percent }
 \newlabel{fig:family}{{5}{5}{ShiftFuse-Zero model family. (a)~Nano: single backbone, 4-stream early fusion, TLA ($K{=}8$). (b)~Small: two-backbone late fusion with Cross-Stream Fusion and TLA ($K{=}8$). (c)~Large: three-backbone mid-network fusion (B4-style) — per-stream S1--S2, FusionConv ($288{\to }192$), shared S3 + TLA ($K{=}14$)}{figure.caption.19}{}}
+\@writefile{toc}{\contentsline {paragraph}{Small (280\,K).}{5}{section*.22}\protected@file@percent }
+\newlabel{eq:csf}{{6}{5}{Small (280\,K)}{equation.6}{}}
 \@writefile{toc}{\contentsline {paragraph}{Large (1.12\,M).}{5}{section*.23}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Training Protocol}{5}{subsection.3.6}\protected@file@percent }
 \newlabel{sec:training}{{3.6}{5}{Training Protocol}{subsection.3.6}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Deployment profile. Mem = model weights (float32/int8). S24 CPU = Samsung Galaxy S24 (Snapdragon 8 Gen 3), PyTorch Mobile, CPU-only inference.}}{5}{table.caption.24}\protected@file@percent }
+\newlabel{tab:deploy}{{2}{5}{Deployment profile. Mem = model weights (float32/int8). S24 CPU = Samsung Galaxy S24 (Snapdragon 8 Gen 3), PyTorch Mobile, CPU-only inference}{table.caption.24}{}}
 \newlabel{eq:kd}{{7}{5}{Training Protocol}{equation.7}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.7}Deployability Analysis}{5}{subsection.3.7}\protected@file@percent }
 \newlabel{sec:deploy}{{3.7}{5}{Deployability Analysis}{subsection.3.7}{}}
 \@writefile{toc}{\contentsline {paragraph}{Operator simplicity.}{5}{section*.25}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Deployment profile. Mem = model weights (float32/int8). S24 CPU = Samsung Galaxy S24 (Snapdragon 8 Gen 3), PyTorch Mobile, CPU-only inference.}}{5}{table.caption.24}\protected@file@percent }
-\newlabel{tab:deploy}{{2}{5}{Deployment profile. Mem = model weights (float32/int8). S24 CPU = Samsung Galaxy S24 (Snapdragon 8 Gen 3), PyTorch Mobile, CPU-only inference}{table.caption.24}{}}
 \@writefile{toc}{\contentsline {paragraph}{Quantisation readiness.}{5}{section*.26}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {4}Experiments}{5}{section.4}\protected@file@percent }
-\newlabel{sec:exp}{{4}{5}{Experiments}{section.4}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Datasets}{5}{subsection.4.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Implementation Details}{5}{subsection.4.2}\protected@file@percent }
+\citation{ntu60}
+\citation{ntu120}
 \citation{stgcn}
 \citation{agcn}
 \citation{msg3d}
@@ -115,58 +114,60 @@
 \citation{blockgcn}
 \citation{efficientgcn}
 \citation{efficientgcn}
+\citation{shiftgcn}
 \citation{sgn}
 \citation{efficientgcn}
 \citation{efficientgcn}
-\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Comparison with state-of-the-art on NTU-60 and NTU-120. KD = distilled from SFZ-Large. $\dagger $ = single stream.}}{6}{table.caption.27}\protected@file@percent }
-\newlabel{tab:main}{{3}{6}{Comparison with state-of-the-art on NTU-60 and NTU-120. KD = distilled from SFZ-Large. $\dagger $ = single stream}{table.caption.27}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Experiments}{6}{section.4}\protected@file@percent }
+\newlabel{sec:exp}{{4}{6}{Experiments}{section.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Datasets}{6}{subsection.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Implementation Details}{6}{subsection.4.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Main Results}{6}{subsection.4.3}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Cross-view protocol.}{6}{section*.28}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces GFLOPs, CPU latency and throughput (batch\nonbreakingspace 1, desktop: i7-10700K; mobile: Samsung Galaxy S24, Snapdragon\nonbreakingspace 8\nonbreakingspace Gen\nonbreakingspace 3 CPU). EfficientGCN S24 latency not measured: per-sample dynamic adjacency ($O(V^2\!C)$ per layer) is incompatible with PyTorch Mobile static export.}}{6}{table.caption.29}\protected@file@percent }
-\newlabel{tab:gflops}{{4}{6}{GFLOPs, CPU latency and throughput (batch~1, desktop: i7-10700K; mobile: Samsung Galaxy S24, Snapdragon~8~Gen~3 CPU). EfficientGCN S24 latency not measured: per-sample dynamic adjacency ($O(V^2\!C)$ per layer) is incompatible with PyTorch Mobile static export}{table.caption.29}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Accuracy per GFLOP (Acc/GFLOP) on NTU-60 X-Sub. Higher = more compute-efficient. Limited to models with reported FLOPs.}}{6}{table.caption.30}\protected@file@percent }
-\newlabel{tab:accm}{{5}{6}{Accuracy per GFLOP (Acc/GFLOP) on NTU-60 X-Sub. Higher = more compute-efficient. Limited to models with reported FLOPs}{table.caption.30}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Comparison with state-of-the-art on NTU-60 and NTU-120. KD = distilled from SFZ-Large. $\dagger $ = single stream. SFZ main results are single-run best-checkpoint; 3-seed variance is reported for all Nano ablations in Table\nonbreakingspace \ref {tab:ablation} (${\pm }0.11$--$0.20$).}}{6}{table.caption.27}\protected@file@percent }
+\newlabel{tab:main}{{3}{6}{Comparison with state-of-the-art on NTU-60 and NTU-120. KD = distilled from SFZ-Large. $\dagger $ = single stream. SFZ main results are single-run best-checkpoint; 3-seed variance is reported for all Nano ablations in Table~\ref {tab:ablation} (${\pm }0.11$--$0.20$)}{table.caption.27}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces GFLOPs, CPU latency and throughput (batch\nonbreakingspace 1, desktop: i7-10700K; mobile: Samsung Galaxy S24, Snapdragon\nonbreakingspace 8\nonbreakingspace Gen\nonbreakingspace 3 CPU). EfficientGCN S24 latency not measured: per-sample dynamic adjacency ($O(V^2\!C)$ per layer) requires per-sample matrix operations that prevent straightforward TorchScript static tracing; porting requires non-trivial graph surgery beyond our scope.}}{6}{table.caption.29}\protected@file@percent }
+\newlabel{tab:gflops}{{4}{6}{GFLOPs, CPU latency and throughput (batch~1, desktop: i7-10700K; mobile: Samsung Galaxy S24, Snapdragon~8~Gen~3 CPU). EfficientGCN S24 latency not measured: per-sample dynamic adjacency ($O(V^2\!C)$ per layer) requires per-sample matrix operations that prevent straightforward TorchScript static tracing; porting requires non-trivial graph surgery beyond our scope}{table.caption.29}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Efficiency and Deployment}{6}{subsection.4.4}\protected@file@percent }
 \newlabel{sec:efficiency}{{4.4}{6}{Efficiency and Deployment}{subsection.4.4}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Accuracy--Efficiency Frontier}{6}{subsection.4.5}\protected@file@percent }
 \newlabel{sec:frontier}{{4.5}{6}{Accuracy--Efficiency Frontier}{subsection.4.5}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.6}Ablation Studies}{6}{subsection.4.6}\protected@file@percent }
-\newlabel{sec:ablation}{{4.6}{6}{Ablation Studies}{subsection.4.6}{}}
-\@writefile{toc}{\contentsline {paragraph}{Per-component ablation.}{6}{section*.32}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{GCN partition count.}{6}{section*.34}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Accuracy per GFLOP (Acc/GFLOP) on NTU-60 X-Sub. Higher = more compute-efficient. Limited to models with reported FLOPs.}}{7}{table.caption.30}\protected@file@percent }
+\newlabel{tab:accm}{{5}{7}{Accuracy per GFLOP (Acc/GFLOP) on NTU-60 X-Sub. Higher = more compute-efficient. Limited to models with reported FLOPs}{table.caption.30}{}}
 \@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Accuracy--GFLOPs Pareto frontier on NTU-60 X-Sub. Dashed line = Pareto-optimal set. SFZ dominates at all compute budgets: Nano uses $21{\times }$ fewer FLOPs than EfficientGCN-B0 while remaining Pareto-optimal; Large advances the frontier at 1.95\,G.}}{7}{figure.caption.31}\protected@file@percent }
 \newlabel{fig:pareto}{{6}{7}{Accuracy--GFLOPs Pareto frontier on NTU-60 X-Sub. Dashed line = Pareto-optimal set. SFZ dominates at all compute budgets: Nano uses $21{\times }$ fewer FLOPs than EfficientGCN-B0 while remaining Pareto-optimal; Large advances the frontier at 1.95\,G}{figure.caption.31}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.6}Ablation Studies}{7}{subsection.4.6}\protected@file@percent }
+\newlabel{sec:ablation}{{4.6}{7}{Ablation Studies}{subsection.4.6}{}}
+\@writefile{toc}{\contentsline {paragraph}{Per-component ablation.}{7}{section*.32}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{GCN partition count.}{7}{section*.34}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Block component analysis.}{7}{section*.36}\protected@file@percent }
 \@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Cumulative component ablation (Nano, NTU-60 X-Sub). $\Delta $ vs.\ baseline. Mean\,±\,std over 3 seeds. For Small: BRASP+SGPShift contribute $+1.4$\,pp (baseline 85.2\%\,$\to $\,86.6\%), confirming consistent gains at larger scale.}}{7}{table.caption.33}\protected@file@percent }
 \newlabel{tab:ablation}{{6}{7}{Cumulative component ablation (Nano, NTU-60 X-Sub). $\Delta $ vs.\ baseline. Mean\,±\,std over 3 seeds. For Small: BRASP+SGPShift contribute $+1.4$\,pp (baseline 85.2\%\,$\to $\,86.6\%), confirming consistent gains at larger scale}{table.caption.33}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces GCN partition count ablation (Nano, NTU-60 X-Sub). $K$=number of adjacency subsets in Eq.\nonbreakingspace \ref {eq:gcn}; $\mathbf  {A}_\ell $=learned residual adjacency.}}{7}{table.caption.35}\protected@file@percent }
 \newlabel{tab:gcn_k}{{7}{7}{GCN partition count ablation (Nano, NTU-60 X-Sub). $K$=number of adjacency subsets in Eq.~\ref {eq:gcn}; $\mathbf {A}_\ell $=learned residual adjacency}{table.caption.35}{}}
-\@writefile{toc}{\contentsline {paragraph}{Block component analysis.}{7}{section*.36}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{DropPath rate sensitivity.}{7}{section*.38}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{TLA landmark sensitivity.}{7}{section*.40}\protected@file@percent }
 \@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces Block component ablation (Nano, NTU-60 X-Sub). Each row removes or replaces one component from the full block. $\dagger $\,mean\,±\,std over 3 seeds.}}{7}{table.caption.37}\protected@file@percent }
 \newlabel{tab:block_comp}{{8}{7}{Block component ablation (Nano, NTU-60 X-Sub). Each row removes or replaces one component from the full block. $\dagger $\,mean\,±\,std over 3 seeds}{table.caption.37}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces DropPath rate $p_d$ sensitivity (NTU-60 X-Sub). TLA held off for the Nano sweep; full Nano with TLA at $p_d{=}0.10$ scores 86.24\%. PartAttention held off for the Small sweep; full Small with PartAttention at $p_d{=}0.10$ scores 88.8\% (the +1.2\,pp gap is PartAttention's contribution).}}{7}{table.caption.39}\protected@file@percent }
-\newlabel{tab:droppath}{{9}{7}{DropPath rate $p_d$ sensitivity (NTU-60 X-Sub). TLA held off for the Nano sweep; full Nano with TLA at $p_d{=}0.10$ scores 86.24\%. PartAttention held off for the Small sweep; full Small with PartAttention at $p_d{=}0.10$ scores 88.8\% (the +1.2\,pp gap is PartAttention's contribution)}{table.caption.39}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces Fusion strategy ablation for the Large model, NTU-60 X-Sub.}}{7}{table.caption.42}\protected@file@percent }
-\newlabel{tab:fusion}{{10}{7}{Fusion strategy ablation for the Large model, NTU-60 X-Sub}{table.caption.42}{}}
+\@writefile{toc}{\contentsline {paragraph}{DropPath rate sensitivity.}{7}{section*.38}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{TLA landmark sensitivity.}{7}{section*.40}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Fusion strategy.}{7}{section*.41}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Cross-stream fusion (Small).}{7}{section*.43}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.7}Training Curves}{7}{subsection.4.7}\protected@file@percent }
-\newlabel{sec:curves}{{4.7}{7}{Training Curves}{subsection.4.7}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {5}Discussion}{7}{section.5}\protected@file@percent }
-\newlabel{sec:discuss}{{5}{7}{Discussion}{section.5}{}}
-\@writefile{toc}{\contentsline {paragraph}{Why zero-parameter priors help.}{7}{section*.45}\protected@file@percent }
-\citation{posec3d}
+\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces DropPath rate $p_d$ sensitivity (NTU-60 X-Sub). TLA held off for the Nano sweep; full Nano with TLA at $p_d{=}0.10$ scores 86.24\%. PartAttention held off for the Small sweep; full Small with PartAttention at $p_d{=}0.10$ scores 88.8\% (the +1.2\,pp gap is PartAttention's contribution).}}{8}{table.caption.39}\protected@file@percent }
+\newlabel{tab:droppath}{{9}{8}{DropPath rate $p_d$ sensitivity (NTU-60 X-Sub). TLA held off for the Nano sweep; full Nano with TLA at $p_d{=}0.10$ scores 86.24\%. PartAttention held off for the Small sweep; full Small with PartAttention at $p_d{=}0.10$ scores 88.8\% (the +1.2\,pp gap is PartAttention's contribution)}{table.caption.39}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces Fusion strategy ablation for the Large model, NTU-60 X-Sub.}}{8}{table.caption.42}\protected@file@percent }
+\newlabel{tab:fusion}{{10}{8}{Fusion strategy ablation for the Large model, NTU-60 X-Sub}{table.caption.42}{}}
 \@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Validation curves on NTU-60 X-Sub. KD boosts Nano by +2.3\,pp (bracket at right). Mixup slows early convergence but improves final generalisation.}}{8}{figure.caption.44}\protected@file@percent }
 \newlabel{fig:curves}{{7}{8}{Validation curves on NTU-60 X-Sub. KD boosts Nano by +2.3\,pp (bracket at right). Mixup slows early convergence but improves final generalisation}{figure.caption.44}{}}
+\@writefile{toc}{\contentsline {paragraph}{Cross-stream fusion (Small).}{8}{section*.43}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.7}Training Curves}{8}{subsection.4.7}\protected@file@percent }
+\newlabel{sec:curves}{{4.7}{8}{Training Curves}{subsection.4.7}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Discussion}{8}{section.5}\protected@file@percent }
+\newlabel{sec:discuss}{{5}{8}{Discussion}{section.5}{}}
+\@writefile{toc}{\contentsline {paragraph}{Why zero-parameter priors help.}{8}{section*.45}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Mid-network vs.\ late fusion.}{8}{section*.46}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{KD efficiency.}{8}{section*.47}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{NTU-120 relative performance.}{8}{section*.48}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Edge deployability.}{8}{section*.49}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Scalability across model tiers.}{8}{section*.50}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Design recipe for practitioners.}{8}{section*.51}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Broader impact.}{8}{section*.52}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Limitations and future work.}{8}{section*.53}\protected@file@percent }
+\citation{posec3d}
 \bibstyle{ACM-Reference-Format}
 \bibdata{references}
 \bibcite{ctrgcn}{{1}{2021}{{Chen et~al\mbox  {.}}}{{}}}
@@ -195,8 +196,9 @@
 \newlabel{tocindent3}{0pt}
 \newlabel{tocindent4}{0pt}
 \newlabel{tocindent5}{0pt}
+\@writefile{toc}{\contentsline {paragraph}{Limitations and future work.}{9}{section*.51}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {6}Conclusion}{9}{section.6}\protected@file@percent }
 \newlabel{sec:conc}{{6}{9}{Conclusion}{section.6}{}}
-\@writefile{toc}{\contentsline {section}{References}{9}{section*.57}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{References}{9}{section*.55}\protected@file@percent }
 \newlabel{TotPages}{{9}{9}{}{page.9}{}}
 \gdef \@abspage@last{9}
