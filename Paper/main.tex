@@ -262,8 +262,9 @@ spatial priors can further reduce the parameter budget by $3{-}10{\times}$
 without sacrificing competitive accuracy.
 
 \paragraph{Temporal modelling in skeleton networks.}
-Temporal reasoning has evolved from LSTM encoders~\cite{stgcn} to
-dedicated temporal convolution modules.
+Temporal reasoning has evolved from early LSTM-based encoders to
+the dedicated temporal convolution modules introduced by
+ST-GCN~\cite{stgcn} and its successors.
 EfficientGCN's Sandglass-TCN (SG-layer) bottleneck
 compresses channels by $2\times$ before depthwise convolution,
 balancing temporal receptive field against parameter count.
@@ -604,9 +605,9 @@ profile of each model variant.
 
 \begin{table}[t]
 \centering
-\caption{Deployment profile. Mem = model weights (float32/int8).
-  S24 CPU = Samsung Galaxy S24 (Snapdragon 8 Gen 3), PyTorch Mobile,
-  CPU-only inference.}
+\caption{Deployment profile. Mem = model state (weights + BN buffers,
+  float32/int8). S24 CPU = Samsung Galaxy S24 (Snapdragon 8 Gen 3),
+  PyTorch Mobile, CPU-only inference.}
 \label{tab:deploy}
 \setlength{\tabcolsep}{3pt}
 \renewcommand{\arraystretch}{1.05}
