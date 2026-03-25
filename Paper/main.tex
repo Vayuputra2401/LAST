@@ -72,14 +72,15 @@ Three models cover the edge-to-server spectrum: \textbf{Nano} (94\,K),
 \textbf{Small} (281\,K), and \textbf{Large} (1.18\,M).
 On NTU\,RGB+D\,60 X-Sub, results without distillation are 86.2\,\% (Nano),
 88.8\,\% (Small), and 92.5\,\% (Large); on NTU-120 X-Sub, SFZ-Large reaches
-\textbf{88.5\%} surpassing EfficientGCN-B4 (88.3\%) at $4.3{\times}$ fewer FLOPs.
+\textbf{88.5\%}, matching EfficientGCN-B4 (88.3\%) at $4.3{\times}$ fewer FLOPs.
 Knowledge distillation (Large teacher) further lifts Nano/Small to 88.5\,\%/90.4\,\%;
-Small+KD \textbf{matches or marginally surpasses EfficientGCN-B0 (90.2\%)}
+Small+KD matches or marginally surpasses EfficientGCN-B0 (90.2\%)
 within a two-stream design at $7{\times}$ fewer FLOPs.
-Nano achieves \textbf{663\,Acc/GFLOP} in the edge-deployment regime, runs in
-\textbf{11\,ms} on desktop CPU and \textbf{50\,ms} on mobile (Snapdragon\,8\,Gen\,3),
-fits in \textbf{370\,KB}; Nano+KD matches AGCN (6.9\,M) accuracy at $74{\times}$
-fewer parameters.
+SFZ-Nano dominates the accuracy--efficiency frontier among sub-100\,K parameter
+skeleton models, runs in \textbf{11\,ms} on desktop CPU and \textbf{50\,ms}
+on mobile (Snapdragon\,8\,Gen\,3), and fits in \textbf{370\,KB};
+with knowledge distillation, Nano matches AGCN (6.9\,M parameters) at
+$74{\times}$ higher parameter efficiency.
 \end{abstract}
 
 \begin{CCSXML}
@@ -1046,9 +1047,10 @@ knowledge distillation --- matching the 6.9\,M-parameter AGCN within
 370\,KB of model storage.
 SFZ-Large achieves \textbf{92.5\%}, surpassing Ef\-ficientGCN-B4 (92.1\%)
 at 4.3${\times}$ fewer FLOPs (1.95\,G vs.\ 8.36\,G).
-SFZ-Nano attains \textbf{663\,Acc/GFLOP} --- $20{\times}$ higher than
-Ef\-ficientGCN-B0 --- confirming that FLOPs, not parameters, are the
-primary axis on which ShiftFuse-Zero dominates.
+SFZ-Nano dominates the accuracy--efficiency Pareto frontier among
+sub-100\,K skeleton models, with $21{\times}$ fewer FLOPs than
+Ef\-ficientGCN-B0 --- confirming that compute cost, not parameter count,
+is the primary axis on which ShiftFuse-Zero leads.
 
 \paragraph*{Scientific message.}
 Ablations confirm each zero-parameter module contributes measurably;
