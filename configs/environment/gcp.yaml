@@ -1,5 +1,5 @@
 # GCP Compute Engine Environment Configuration
-# Instance: research-sfz (g2-standard-16, NVIDIA L4, us-central1-c)
+# Instance: research-sfz (g2-standard-16, NVIDIA L4, asia-east1)
 # Image: c0-deeplearning-common-cu124-v20250325-debian-11-py310-conda
 
 environment:
@@ -23,7 +23,7 @@ hardware:
 # GCP L4 specs
 gcp:
   instance: "research-sfz"
-  zone: "us-central1-c"
+  zone: "asia-east1"
   project: "research-454007"
   gpu: "nvidia-l4"        # 24GB GDDR6, ~121 TFLOPS FP16
   gpu_memory_gb: 24
