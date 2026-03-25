@@ -3,6 +3,8 @@
 /Paper
 /Teacher-LAST
 /Docs
-research-last.pem
+*.pem
+*.key
+activate_ai.bat
 .claude
 __pycache__
