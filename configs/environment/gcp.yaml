@@ -1,12 +1,13 @@
 # GCP Compute Engine Environment Configuration
-# For P100 GPU instance (research-last-v2-base-run1)
+# Instance: research-sfz (g2-standard-16, NVIDIA L4, us-central1-c)
+# Image: c0-deeplearning-common-cu124-v20250325-debian-11-py310-conda
 
 environment:
   name: "gcp"
   type: "gcp"
 
 paths:
-  # GCS bucket data will be synced to local SSD for training
+  # GCS bucket data will be synced to local disk for training
   data_base: "/home/g21cs2026/data"
 
   # Output paths (local instance storage, sync to GCS after training)
@@ -16,12 +17,17 @@ paths:
 
 hardware:
   device: "cuda"
-  num_workers: 12  # n1-standard-16 has 16 vCPUs
+  num_workers: 12  # g2-standard-16 has 16 vCPUs
   pin_memory: true
 
-# GCP T4 specs
+# GCP L4 specs
 gcp:
-  gpu: "nvidia-tesla-t4"  # 16GB GDDR6
-  gpu_memory_gb: 16
+  instance: "research-sfz"
+  zone: "us-central1-c"
+  project: "research-454007"
+  gpu: "nvidia-l4"        # 24GB GDDR6, ~121 TFLOPS FP16
+  gpu_memory_gb: 24
   cpus: 16
-  memory_gb: 60
+  memory_gb: 64
+  cuda: "12.4"
+  python: "3.10"          # conda env on deep learning image

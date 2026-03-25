@@ -8,18 +8,18 @@ training:
 
   # Scheduler
   scheduler: cosine_warmup
-  warmup_epochs: 5
+  warmup_epochs: 15
   warmup_start_lr: 0.005
-  min_lr: 0.00001
+  min_lr: 0.000001
 
-  epochs: 100
-  batch_size: 16
-  gradient_accumulation_steps: 1
+  epochs: 250
+  batch_size: 32          # L4 24GB can handle 32 (was 16 on T4)
+  gradient_accumulation_steps: 2  # effective batch = 64
 
-  label_smoothing: 0.0
+  label_smoothing: 0.1
   gradient_clip: 1.0
 
-  mixup_alpha: 0.0
+  mixup_alpha: 0.1
   cutmix_prob: 0.0
   cutmix_alpha: 1.0
 
