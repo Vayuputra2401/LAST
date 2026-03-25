@@ -50,8 +50,16 @@ Three models cover the edge-to-server spectrum: **Nano** (94 K), **Small** (281 
 | **SFZ-Small + KD** | **0.281 M** | **0.39** | **25 ms** | **40/s** | **145 ms** | **1.10 MB** | **281 KB** |
 | **SFZ-Large** | **1.18 M** | **1.95** | **89 ms** | **11/s** | **515 ms** | **4.70 MB** | **1.18 MB** |
 
+![Accuracy–GFLOPs Pareto frontier](assets/fig6_pareto.png)
+
 SFZ-Small uses **7× fewer FLOPs** than EfficientGCN-B0 (0.39 G vs. 2.73 G) while matching its accuracy with KD.
 SFZ-Large uses **4.3× fewer FLOPs** than EfficientGCN-B4 (1.95 G vs. 8.36 G) while surpassing it by 0.4 pp.
+
+---
+
+## Architecture Overview
+
+![ShiftFuse-Zero end-to-end pipeline](assets/fig1_pipeline.png)
 
 ---
 
@@ -60,6 +68,8 @@ SFZ-Large uses **4.3× fewer FLOPs** than EfficientGCN-B4 (1.95 G vs. 8.36 G) wh
 ### Zero-Parameter Spatial Modules
 
 #### BRASP — Body-Region Anatomical Shift Priors
+
+![BRASP anatomical partitioning](assets/fig2_brasp.png)
 
 BRASP assigns per-channel fixed gather permutations σ_c : V → V over five physical joint regions combined into four channel groups (arm, leg, torso, cross-body):
 
@@ -73,6 +83,8 @@ Arm channels (25%) cycle within the combined {left ∪ right arm} set (12 joints
 
 #### SGPShift — Semantic Graph-Partitioned Shift
 
+![SGPShift aggregation](assets/fig3_sgpshift.png)
+
 SGPShift routes each channel to a ranked neighbour from a precomputed graph partition:
 
 ```
@@ -82,6 +94,8 @@ F̂(c,t,v) = F(c,t, π_c(v))
 Channels split into three equal groups (C/3 each): intra-part (shift to top-ranked same-part neighbour via A_intra), inter-part (shift to top-ranked cross-part boundary neighbour via A_inter), and identity (pass through). All routing indices are precomputed integer buffers — **zero learnable parameters**, unlike HD-GCN and SkateFormer which use learnable per-group parameters.
 
 ### EfficientZero Block (Nano / Small)
+
+![EfficientZero Block](assets/fig4_block.png)
 
 ```
 BRASP → SGPShift → JE → STC-Attention → GCN (K=3, A_ℓ) → DS-TCN → DropPath → Residual ⊕
@@ -123,6 +137,8 @@ Anchor positions are continuous and gradient-trainable via bilinear interpolatio
 Fusion ablation on Large: early fusion 89.8%, late fusion 91.9%, **mid-network 92.5%**.
 
 ### Model Configurations
+
+![ShiftFuse-Zero model family](assets/fig5_model_family.png)
 
 | Model | Stem | Channels | Blocks | TLA K | Drop-path | FLOPs | Params |
 |-------|------|----------|--------|-------|-----------|-------|--------|
@@ -225,6 +241,8 @@ python scripts/train.py \
 | Dropout | 0.10 | 0.10 | 0.25 |
 
 KD loss: `(1 − α)·CrossEntropy + α·T²·KL(student ‖ teacher)`, α = 0.5, T = 4.0.
+
+![Validation curves on NTU-60 X-Sub](assets/fig7_training_curves.png)
 
 ---
 
