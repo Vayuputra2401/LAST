@@ -32,7 +32,7 @@
 \citation{sgn}
 \citation{posec3d}
 \citation{stgcn}
-\citation{shiftgcn}
+\citation{shiftcnn}
 \citation{tsm}
 \citation{shiftgcn}
 \@writefile{toc}{\contentsline {section}{\numberline {2}Related Work}{2}{section.2}\protected@file@percent }
@@ -139,28 +139,27 @@
 \newlabel{fig:pareto}{{6}{7}{Accuracy--GFLOPs Pareto frontier on NTU-60 X-Sub (GFLOPs axis only; see Table~\ref {tab:variants} for parameter counts). Dashed line = Pareto-optimal set. SFZ dominates at all compute budgets: Nano uses $21{\times }$ fewer FLOPs than EfficientGCN-B0 while remaining Pareto-optimal; Large advances the frontier at 1.95\,G}{figure.caption.32}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Cumulative component ablation (Nano, NTU-60 X-Sub). $\Delta $ vs.\ baseline. Mean\,±\,std over 3 seeds. For Small: BRASP+SGPShift contribute $+1.4$\,pp (baseline 85.2\%\,$\to $\,86.6\%), confirming consistent gains at larger scale.}}{7}{table.caption.34}\protected@file@percent }
 \newlabel{tab:ablation}{{6}{7}{Cumulative component ablation (Nano, NTU-60 X-Sub). $\Delta $ vs.\ baseline. Mean\,±\,std over 3 seeds. For Small: BRASP+SGPShift contribute $+1.4$\,pp (baseline 85.2\%\,$\to $\,86.6\%), confirming consistent gains at larger scale}{table.caption.34}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces GCN partition count ablation (Nano, NTU-60 X-Sub). $K$=number of adjacency subsets in Eq.\nonbreakingspace \ref {eq:gcn}; $\mathbf  {A}_\ell $=learned residual adjacency.}}{7}{table.caption.36}\protected@file@percent }
-\newlabel{tab:gcn_k}{{7}{7}{GCN partition count ablation (Nano, NTU-60 X-Sub). $K$=number of adjacency subsets in Eq.~\ref {eq:gcn}; $\mathbf {A}_\ell $=learned residual adjacency}{table.caption.36}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces GCN partition count ablation (Nano, NTU-60 X-Sub). $K$=number of adjacency subsets in Eq.\nonbreakingspace \ref {eq:gcn}; $\mathbf  {A}_\ell $=learned residual adjacency; TLA=Temporal Landmark Attention (enabled only in last row).}}{7}{table.caption.36}\protected@file@percent }
+\newlabel{tab:gcn_k}{{7}{7}{GCN partition count ablation (Nano, NTU-60 X-Sub). $K$=number of adjacency subsets in Eq.~\ref {eq:gcn}; $\mathbf {A}_\ell $=learned residual adjacency; TLA=Temporal Landmark Attention (enabled only in last row)}{table.caption.36}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.6}Ablation Studies}{7}{subsection.4.6}\protected@file@percent }
 \newlabel{sec:ablation}{{4.6}{7}{Ablation Studies}{subsection.4.6}{}}
 \@writefile{toc}{\contentsline {paragraph}{Per-component ablation.}{7}{section*.33}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{GCN partition count.}{7}{section*.35}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Block component analysis.}{7}{section*.37}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{DropPath rate sensitivity.}{7}{section*.39}\protected@file@percent }
-\citation{posec3d}
 \@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces Block component ablation (Nano, NTU-60 X-Sub). Each row removes or replaces one component from the full block. $\dagger $\,mean\,±\,std over 3 seeds.}}{8}{table.caption.38}\protected@file@percent }
 \newlabel{tab:block_comp}{{8}{8}{Block component ablation (Nano, NTU-60 X-Sub). Each row removes or replaces one component from the full block. $\dagger $\,mean\,±\,std over 3 seeds}{table.caption.38}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces DropPath rate $p_d$ sensitivity (NTU-60 X-Sub). TLA held off for the Nano sweep to isolate DropPath; full Nano with TLA enabled at the selected $p_d{=}0.10$ scores 86.24\%, confirming TLA does not shift the optimal rate. PartAttention held off for the Small sweep; full Small at $p_d{=}0.10$ scores 88.8\%.}}{8}{table.caption.40}\protected@file@percent }
 \newlabel{tab:droppath}{{9}{8}{DropPath rate $p_d$ sensitivity (NTU-60 X-Sub). TLA held off for the Nano sweep to isolate DropPath; full Nano with TLA enabled at the selected $p_d{=}0.10$ scores 86.24\%, confirming TLA does not shift the optimal rate. PartAttention held off for the Small sweep; full Small at $p_d{=}0.10$ scores 88.8\%}{table.caption.40}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces Fusion strategy ablation for the Large model, NTU-60 X-Sub.}}{8}{table.caption.43}\protected@file@percent }
 \newlabel{tab:fusion}{{10}{8}{Fusion strategy ablation for the Large model, NTU-60 X-Sub}{table.caption.43}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces Cross-stream fusion ablation (Small, NTU-60 X-Sub).}}{8}{table.caption.45}\protected@file@percent }
-\newlabel{tab:csf}{{11}{8}{Cross-stream fusion ablation (Small, NTU-60 X-Sub)}{table.caption.45}{}}
 \@writefile{toc}{\contentsline {paragraph}{TLA landmark sensitivity.}{8}{section*.41}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Fusion strategy.}{8}{section*.42}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Cross-stream fusion (Small).}{8}{section*.44}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.7}Training Curves}{8}{subsection.4.7}\protected@file@percent }
 \newlabel{sec:curves}{{4.7}{8}{Training Curves}{subsection.4.7}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces Cross-stream fusion ablation (Small, NTU-60 X-Sub).}}{8}{table.caption.45}\protected@file@percent }
+\newlabel{tab:csf}{{11}{8}{Cross-stream fusion ablation (Small, NTU-60 X-Sub)}{table.caption.45}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {5}Discussion}{8}{section.5}\protected@file@percent }
 \newlabel{sec:discuss}{{5}{8}{Discussion}{section.5}{}}
 \@writefile{toc}{\contentsline {paragraph}{Why zero-parameter priors help.}{8}{section*.47}\protected@file@percent }
@@ -168,6 +167,7 @@
 \@writefile{toc}{\contentsline {paragraph}{NTU-120 and deployment.}{8}{section*.49}\protected@file@percent }
 \@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Validation curves on NTU-60 X-Sub. KD boosts Nano by +2.3\,pp (bracket at right). Mixup slows early convergence but improves final generalisation.}}{8}{figure.caption.46}\protected@file@percent }
 \newlabel{fig:curves}{{7}{8}{Validation curves on NTU-60 X-Sub. KD boosts Nano by +2.3\,pp (bracket at right). Mixup slows early convergence but improves final generalisation}{figure.caption.46}{}}
+\citation{posec3d}
 \bibstyle{ACM-Reference-Format}
 \bibdata{references}
 \bibcite{ctrgcn}{{1}{2021}{{Chen et~al\mbox  {.}}}{{}}}
@@ -186,9 +186,11 @@
 \bibcite{agcn}{{14}{2019}{{Shi et~al\mbox  {.}}}{{}}}
 \bibcite{dstanet}{{15}{2020}{{Shi et~al\mbox  {.}}}{{}}}
 \bibcite{efficientgcn}{{16}{2022}{{Song et~al\mbox  {.}}}{{}}}
-\bibcite{stgcn}{{17}{2018}{{Yan et~al\mbox  {.}}}{{}}}
-\bibcite{sgn}{{18}{2020}{{Zhang et~al\mbox  {.}}}{{}}}
-\bibcite{blockgcn}{{19}{2024}{{Zhou et~al\mbox  {.}}}{{}}}
+\bibcite{shiftcnn}{{17}{2018}{{Wu et~al\mbox  {.}}}{{}}}
+\bibcite{stgcn}{{18}{2018}{{Yan et~al\mbox  {.}}}{{}}}
+\bibcite{sgn}{{19}{2020}{{Zhang et~al\mbox  {.}}}{{}}}
+\bibcite{blockgcn}{{20}{2024}{{Zhou et~al\mbox  {.}}}{{}}}
+\bibcite{deformabledetr}{{21}{2021}{{Zhu et~al\mbox  {.}}}{{}}}
 \newlabel{tocindent-1}{0pt}
 \newlabel{tocindent0}{0pt}
 \newlabel{tocindent1}{4.185pt}

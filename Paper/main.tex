@@ -76,9 +76,9 @@ On NTU\,RGB+D\,60 X-Sub, results without distillation are 86.2\,\% (Nano),
 Knowledge distillation (Large teacher) further lifts Nano/Small to 88.5\,\%/90.4\,\%;
 Small+KD matches or marginally surpasses EfficientGCN-B0 (90.2\%)
 within a two-backbone design at $7{\times}$ fewer FLOPs.
-SFZ-Nano dominates the accuracy--efficiency frontier among sub-100\,K parameter
-skeleton models (to our knowledge), runs in \textbf{11\,ms} on desktop CPU and \textbf{50\,ms}
-on mobile (Snapdragon\,8\,Gen\,3), and fits in \textbf{370\,KB};
+To our knowledge, SFZ-Nano dominates the accuracy--efficiency frontier
+among sub-100\,K parameter skeleton models, runs in \textbf{11\,ms} on desktop CPU
+and \textbf{50\,ms} on mobile (Snapdragon\,8\,Gen\,3), and fits in \textbf{370\,KB};
 with knowledge distillation, Nano matches AGCN (6.9\,M parameters) at
 $74{\times}$ higher parameter efficiency.
 \end{abstract}
@@ -162,7 +162,7 @@ EfficientGCN model family.
 The core contribution is BRASP and SGPShift, which contribute +1.8\,pp
 \emph{at zero FLOPs cost}; the additional $7{\times}$ FLOPs advantage over
 EfficientGCN-B0 is an independent architectural effect arising from the
-two-backbone design and DS-TCN (see Table~\ref{tab:gflops}).
+two-backbone design and reduced per-backbone channel width (see Table~\ref{tab:gflops} and Section~\ref{sec:frontier}).
 SFZ-Nano (94\,K) and SFZ-Small (281\,K) redefine edge-deployment with ultra-low
 FLOPs and quantisation-friendly operations.
 On NTU-60 X-Sub, SFZ-Nano reaches \textbf{86.2\%} without any distillation
@@ -278,7 +278,7 @@ SG-layer is more efficient when TCN depth is three or more
 (as in the Large model's shared backbone).
 
 \paragraph{Shift operations and zero-parameter spatial mixing.}
-The shift operation~\cite{shiftgcn} was introduced in image CNNs to inject
+The shift operation~\cite{shiftcnn} was introduced in image CNNs to inject
 spatial structure by physically displacing channels along spatial
 dimensions --- no multiply-accumulate, no learnable parameters.
 TSM~\cite{tsm} extended this idea to temporal modelling in video, shifting
@@ -310,7 +310,7 @@ A raw skeleton sequence is expanded into four complementary streams
 (joint, velocity, bone, bone-velocity); all four are pre-computed offline
 and each model selects its subset (Nano: three streams; Small/Large: all four).
 Selected streams are fused by a learned \emph{StreamFusionConcat} stem,
-processed by a stack of \emph{EfficientZero Blocks},
+processed by a stack of \emph{EfficientZero Blocks} (Nano/Small) or \emph{B4Blocks} (Large),
 and a global pooling head (gated for Nano/Small, plain GAP for Large) produces class logits.
 
 %%─── Figure 1: Overview pipeline ────────────────────────────────────────────
@@ -518,7 +518,7 @@ Model  & $C_s$ & $C$           & $N$     & $K$ & $r$ & $p_d$ & FLOPs & Params \\
 \midrule
 Nano   & 24 & [32,64,128]   & [1,1,1] & 12 & 8  & 0.10 & 0.13\,G & 94\,K \\
 Small  & 24 & [32,64,128]   & [1,2,1] & 8  & 8  & 0.10 & 0.39\,G & 281\,K \\
-Large$^\dagger$ & 64 & see $^\dagger$ & --- & 14 & 8  & 0.25 & 1.95\,G & 1.18\,M \\
+Large$^\dagger$ & 64 & see $^\dagger$ & --- & 14 & 8  & 0.20 & 1.95\,G & 1.18\,M \\
 \bottomrule
 \end{tabular}
 \smallskip
@@ -845,7 +845,7 @@ BRASP alone contributes +1.1\,pp; adding SGPShift yields +1.8\,pp
 cumulatively --- \textbf{at zero parameter cost}
 (SGPShift alone contributes +0.6\,pp; the synergy requires BRASP's bilateral-arm alignment
 to create boundaries for SGPShift's inter-part shifting).
-TLA adds +1.6\,pp (8.2\,K params), comparable in magnitude to the two
+TLA adds +1.64\,pp (8.2\,K params), comparable in magnitude to the two
 zero-parameter modules; this is expected since TLA addresses the \emph{temporal}
 axis while BRASP/SGPShift address the spatial axis exclusively.
 KD provides the largest single gain (+2.3\,pp), lifting Nano to 88.5\%.
@@ -876,13 +876,14 @@ Table~\ref{tab:gcn_k} evaluates the effect of the GCN partition count
 $K$ in the spatial graph convolution (Eq.~\ref{eq:gcn}).
 Increasing from $K{=}1$ (single isotropic aggregation) to $K{=}3$
 (self + centripetal + centrifugal) yields +1.2\,pp on Nano.
-The learned residual $|\mathbf{A}_\ell|$ and TLA jointly add a further +1.64\,pp (both are introduced simultaneously in the last row of Table~\ref{tab:gcn_k}).
+The learned residual $|\mathbf{A}_\ell|$ and TLA are introduced simultaneously in the last row of Table~\ref{tab:gcn_k}, jointly adding a further +1.64\,pp (see table footnote for the exact configuration).
 
 \begin{table}[t]
 \centering
 \caption{GCN partition count ablation (Nano, NTU-60 X-Sub).
   $K$=number of adjacency subsets in Eq.~\ref{eq:gcn};
-  $\mathbf{A}_\ell$=learned residual adjacency.}
+  $\mathbf{A}_\ell$=learned residual adjacency;
+  TLA=Temporal Landmark Attention (enabled only in last row).}
 \label{tab:gcn_k}
 \setlength{\tabcolsep}{5pt}
 \begin{tabular}{ccrrr}
@@ -896,7 +897,7 @@ $K$ & $\mathbf{A}_\ell$ & Params & Acc\,(\%) & $\Delta$ \\
 \bottomrule
 \end{tabular}
 \smallskip
-\footnotesize{*Full model (BRASP, SGPShift, JE, STC-Attn, TLA all enabled). K and $\mathbf{A}_\ell$ are the only variables in this table.}
+\footnotesize{*Full model: BRASP, SGPShift, JE, STC-Attn, $\mathbf{A}_\ell$, and TLA all enabled. Rows above have TLA disabled; the last row enables $\mathbf{A}_\ell$ and TLA simultaneously. All other components are held constant.}
 \vspace{-3mm}\end{table}
 
 \paragraph{Block component analysis.}
@@ -1054,9 +1055,10 @@ SFZ-Nano's 370\,KB footprint (94\,KB at int8) fits within ARM Cortex-M55 SRAM;
 its 50\,ms mobile latency enables wearable deployment without GPU or NPU.
 
 \paragraph{Limitations and future work.}
-The EfficientZero Block exposes three tunable knobs: (1)~BRASP/SGPShift can be
-disabled for non-NTU skeletons (${\approx}{-}1.8$\,pp); (2)~TLA $K$ scales with
-sequence length; (3)~DS-TCN depth trades FLOPs at 0.3\,pp/step.
+The EfficientZero Block exposes three tunable knobs: (1)~BRASP/SGPShift
+contribute ${\approx}{+}1.8$\,pp on NTU-25 skeletons and must be reconfigured
+for other topologies; (2)~TLA $K$ scales with sequence length;
+(3)~DS-TCN depth yields a marginal accuracy gain per additional depth step.
 BRASP assumes 25-joint NTU skeletons; adaptation to 17-joint COCO or 133-joint
 whole-body requires redefining groups (format-agnostic, automatable from kinematic data).
 KD requires a pre-trained Large teacher; self-distillation would remove this dependency.
@@ -1073,9 +1075,9 @@ Two novel modules --- BRASP (body-region routing) and SGPShift
 (semantic graph-partitioned aggregation) --- inject spatial knowledge
 at zero learnable parameters, zero gradient cost, and zero inference
 overhead.
-Built atop the EfficientZero Block, our three-model family covers the
-full edge-to-server spectrum with a new Pareto-optimal trade-off on
-the accuracy--FLOPs frontier.
+Built atop the EfficientZero Block (Nano/Small) and B4Block (Large),
+our three-model family covers the full edge-to-server spectrum with
+a new Pareto-optimal trade-off on the accuracy--FLOPs frontier.
 
 \paragraph*{Results summary.}
 On NTU RGB+D\,60 X-Sub, SFZ-Nano achieves \textbf{86.2\%} at only

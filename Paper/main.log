@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.3.21)  25 MAR 2026 06:24
+This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.3.21)  25 MAR 2026 07:06
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1665,7 +1665,7 @@ Class acmart Warning: \vspace should only be used to provide space above/below
 surrounding objects on input line 146.
 
 
-Underfull \vbox (badness 10000) has occurred while \output is active []
+Underfull \vbox (badness 2653) has occurred while \output is active []
 
 LaTeX Font Info:    Font shape `T1/LinuxLibertineT-TLF/m/n' will be
 (Font)              scaled to size 6.0pt on input line 180.
@@ -1815,10 +1815,6 @@ Underfull \hbox (badness 2512) in paragraph at lines 422--422
 
 Class acmart Warning: A possible image without description on input line 424.
 
-
-Package natbib Warning: Citation `deformabledetr' on page 4 undefined on input 
-line 470.
-
 (images/fig5_family.tex)
 
 Class acmart Warning: A possible image without description on input line 503.
@@ -1882,7 +1878,7 @@ and STC-Attention through-
 LaTeX Font Info:    Font shape `TS1/LinuxLibertineT-TLF/b/n' will be
 (Font)              scaled to size 9.0pt on input line 858.
 
-Overfull \hbox (2.3676pt too wide) in paragraph at lines 903--910
+Overfull \hbox (2.3676pt too wide) in paragraph at lines 904--911
 \T1/LinuxLibertineT-TLF/m/n/9 (-20) ($\OML/nxlmi/m/it/9 V[]V$\T1/LinuxLibertine
 T-TLF/m/n/9 (-20) , 625 params) costs only $\LMS/ntxsy/m/n/9 ^^@\OT1/LinuxLiber
 tineT-TLF/m/n/9 (-20) 0\OML/nxlmi/m/it/9 :\OT1/LinuxLibertineT-TLF/m/n/9 (-20) 
@@ -1899,19 +1895,16 @@ Package fancyhdr Warning: \headheight is too small (13.0pt):
 [7.7{C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/libertine/lbt
 n_7f4ce4.enc}] (images/fig10_curves.tex)
 
-Class acmart Warning: A possible image without description on input line 1021.
+Class acmart Warning: A possible image without description on input line 1022.
 
 
-Overfull \hbox (1.0682pt too wide) in paragraph at lines 1027--1036
+Overfull \hbox (1.0682pt too wide) in paragraph at lines 1028--1037
 \T1/LinuxLibertineT-TLF/m/n/9 (-20) anatom-i-cal con-straints \T1/LinuxLibertin
 eT-TLF/m/it/9 (-20) be-fore \T1/LinuxLibertineT-TLF/m/n/9 (-20) any learn-able 
 layer, de-cou-pling within-
  []
 
 [8.8] Excluding 'acks' comment. (main.bbl)
-
-Package natbib Warning: There were undefined citations.
-
 
 Class acmart Warning: Some images may lack descriptions.
 (acmart)              ACM is committed to complying with the upcoming US ADA ht
@@ -1954,11 +1947,11 @@ Package rerunfilecheck Info: File `main.out' has not changed.
 (rerunfilecheck)             Checksum: 069D6E98D21003EC374F6A356D66E84A;3276.
  ) 
 Here is how much of TeX's memory you used:
- 46092 strings out of 467871
- 1015070 string characters out of 5418376
- 1574962 words of memory out of 5000000
- 73018 multiletter control sequences out of 15000+600000
- 899433 words of font info for 694 fonts, out of 8000000 for 9000
+ 46106 strings out of 467871
+ 1015369 string characters out of 5418376
+ 1574834 words of memory out of 5000000
+ 73024 multiletter control sequences out of 15000+600000
+ 900085 words of font info for 698 fonts, out of 8000000 for 9000
  1302 hyphenation exceptions out of 8191
  95i,21n,131p,1003b,2350s stack positions out of 10000i,1000n,20000p,200000b,200000s
 <C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/inconsolata/
@@ -1980,9 +1973,9 @@ fb><C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/newtx/txexs
 iaX.pfb><C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/newtx/
 txsym.pfb><C:/Users/pathi/AppData/Local/Programs/MiKTeX/fonts/type1/public/newt
 x/txsys.pfb>
-Output written on main.pdf (9 pages, 709855 bytes).
+Output written on main.pdf (9 pages, 711350 bytes).
 PDF statistics:
- 461 PDF objects out of 1000 (max. 8388607)
- 121 named destinations out of 1000 (max. 500000)
+ 465 PDF objects out of 1000 (max. 8388607)
+ 123 named destinations out of 1000 (max. 500000)
  154317 words of extra memory for PDF output out of 184870 (max. 10000000)
 

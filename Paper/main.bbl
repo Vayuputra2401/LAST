@@ -2,7 +2,7 @@
 %%% Do NOT edit. File created by BibTeX with style
 %%% ACM-Reference-Format-Journals [18-Jan-2012].
 
-\begin{thebibliography}{19}
+\begin{thebibliography}{21}
 
 %%% ====================================================================
 %%% NOTE TO THE USER: you can override these defaults by providing
@@ -252,6 +252,22 @@
 \newblock
 
 
+\bibitem[Wu et~al\mbox{.}(2018)]%
+        {shiftcnn}
+\bibfield{author}{\bibinfo{person}{Bichen Wu}, \bibinfo{person}{Alvin Wan},
+  \bibinfo{person}{Xiangyu Yue}, \bibinfo{person}{Peter Jin},
+  \bibinfo{person}{Sicheng Zhao}, \bibinfo{person}{Noah Golmant},
+  \bibinfo{person}{Amir Gholaminejad}, \bibinfo{person}{Joseph Gonzalez}, {and}
+  \bibinfo{person}{Kurt Keutzer}.} \bibinfo{year}{2018}\natexlab{}.
+\newblock \showarticletitle{Shift: A Zero {FLOP}, Zero Parameter Alternative to
+  Spatial Convolutions}. In \bibinfo{booktitle}{\emph{Proceedings of the
+  IEEE/CVF Conference on Computer Vision and Pattern Recognition}} (Salt Lake
+  City, UT, USA) \emph{(\bibinfo{series}{CVPR '18})}. \bibinfo{publisher}{IEEE
+  Computer Society}, \bibinfo{address}{Washington, DC, USA},
+  \bibinfo{pages}{9127--9135}.
+\newblock
+
+
 \bibitem[Yan et~al\mbox{.}(2018)]%
         {stgcn}
 \bibfield{author}{\bibinfo{person}{Sijie Yan}, \bibinfo{person}{Yuanjun Xiong},
@@ -291,6 +307,19 @@
   (Seattle, WA, USA) \emph{(\bibinfo{series}{CVPR '24})}.
   \bibinfo{publisher}{IEEE Computer Society}, \bibinfo{address}{Washington, DC,
   USA}, \bibinfo{pages}{1412--1422}.
+\newblock
+
+
+\bibitem[Zhu et~al\mbox{.}(2021)]%
+        {deformabledetr}
+\bibfield{author}{\bibinfo{person}{Xizhou Zhu}, \bibinfo{person}{Weijie Su},
+  \bibinfo{person}{Lewei Lu}, \bibinfo{person}{Bin Li},
+  \bibinfo{person}{Xiaogang Wang}, {and} \bibinfo{person}{Jifeng Dai}.}
+  \bibinfo{year}{2021}\natexlab{}.
+\newblock \showarticletitle{Deformable {DETR}: Deformable Transformers for
+  End-to-End Object Detection}. In \bibinfo{booktitle}{\emph{Proceedings of the
+  9th International Conference on Learning Representations}}
+  \emph{(\bibinfo{series}{ICLR '21})}. \bibinfo{publisher}{OpenReview.net}.
 \newblock
 
 

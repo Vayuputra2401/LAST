@@ -24,7 +24,7 @@
 \node[free]  (brasp) at (0,0)      {BRASP\ \ (Eq.\,1)};
 \node[free, below=0.60cm of brasp] (sgp)   {SGPShift\ \ (Eq.\,2)};
 \node[learn, below=0.60cm of sgp]  (je)    {Joint Embedding $\mathbf{b}_v$};
-\node[learn, below=0.60cm of je]   (stca)  {STC-Attention ($V{\times}V$)};
+\node[learn, below=0.60cm of je]   (stca)  {STC-Attention (S\,+\,T gates)};
 \node[learn, below=0.60cm of stca] (gcn)   {Graph Conv $K{=}3 + \mathbf{A}_\ell$\ \ (Eq.\,3)};
 \node[learn, below=0.60cm of gcn]  (tcn)   {DS-TCN\ (dil.\,1\,+\,dil.\,2)};
 \node[free, below=0.60cm of tcn]   (dp)    {DropPath};
