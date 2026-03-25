@@ -75,7 +75,7 @@ On NTU\,RGB+D\,60 X-Sub, results without distillation are 86.2\,\% (Nano),
 \textbf{88.5\%}, matching EfficientGCN-B4 (88.3\%) at $4.3{\times}$ fewer FLOPs.
 Knowledge distillation (Large teacher) further lifts Nano/Small to 88.5\,\%/90.4\,\%;
 Small+KD matches or marginally surpasses EfficientGCN-B0 (90.2\%)
-within a two-stream design at $7{\times}$ fewer FLOPs.
+within a two-backbone design at $7{\times}$ fewer FLOPs.
 SFZ-Nano dominates the accuracy--efficiency frontier among sub-100\,K parameter
 skeleton models (to our knowledge), runs in \textbf{11\,ms} on desktop CPU and \textbf{50\,ms}
 on mobile (Snapdragon\,8\,Gen\,3), and fits in \textbf{370\,KB};
@@ -403,7 +403,7 @@ Like BRASP (Eq.~\ref{eq:brasp}), SGPShift is a per-channel gather permutation,
 \end{equation}
 where $\pi_c\!:\!V\!\to\!V$ routes each channel to a ranked neighbour
 from a precomputed graph partition.
-Channels split into three equal groups ($C/3$ each): \emph{intra-part} channels
+Channels split into three approximately equal groups ($C/3$ each, rounded to nearest integer): \emph{intra-part} channels
 shift to the top-ranked same-part neighbour (via precomputed $\mathbf{A}_\text{intra}$);
 \emph{inter-part} channels shift to the top-ranked cross-part boundary neighbour
 (via $\mathbf{A}_\text{inter}$); and \emph{identity} channels pass through unchanged.
@@ -722,7 +722,7 @@ SGN$^\dagger$~\cite{sgn}            & 0.69M & 89.0 & 94.5 & 79.2 & 81.5 \\
 \vspace{-3mm}\end{table}
 
 SFZ-Large achieves 92.5\% on NTU-60 X-Sub, outperforming Ef\-ficientGCN-B4
-by 0.4\,pp and matching SkateFormer (2.4M) with $2.1{\times}$ fewer parameters.
+by 0.4\,pp and matching SkateFormer (2.4M) with $2.0{\times}$ fewer parameters.
 SFZ-Nano achieves 86.2\% at only 94\,K parameters (no distillation).
 At the same parameter scale (SFZ-Small 281\,K vs.\ Ef\-ficientGCN-B0 290\,K),
 B0 outperforms SFZ-Small by 1.4\,pp (90.2\% vs.\ 88.8\%);
@@ -737,7 +737,7 @@ On NTU-60 X-View, all models show consistent improvement over X-Sub,
 reflecting the easier viewpoint variation relative to cross-subject
 generalisation.
 SFZ-Nano reaches 90.8\% (93.2\% with KD) and SFZ-Large achieves 96.4\%,
-matching SkateFormer (96.7\%, 2.4\,M) within $2.1{\times}$ fewer parameters.
+approaching SkateFormer (96.7\%, 2.4\,M) within 0.3\,pp at $2.0{\times}$ fewer parameters.
 Notably, the per-model X-View improvement over X-Sub
 (${\approx}$4.0--4.6\,pp across variants) is consistent,
 validating that BRASP and SGPShift generalise across viewpoints by
@@ -818,7 +818,7 @@ SFZ-Small uses two shorter backbones with early cross-stream fusion
 (2 backbone passes × 0.18\,G each + CSF overhead = 0.39\,G).
 The $7{\times}$ reduction thus comes from \emph{backbone-count halving} (4→2,
 ${\approx}2{\times}$) and \emph{per-backbone channel reduction} (B0 channels
-[64,128,256,256] vs.\ SFZ-Small [32,64,128], ${\approx}3.5{\times}$).
+[64,128,256] vs.\ SFZ-Small [32,64,128], ${\approx}3.5{\times}$).
 DS-TCN costs ${\approx}3{-}7$\% more FLOPs than SG-layer at the same
 channel width and is not the source of the advantage.
 BRASP and SGPShift contribute \textbf{zero} FLOPs (pure index lookups).
@@ -876,7 +876,7 @@ Table~\ref{tab:gcn_k} evaluates the effect of the GCN partition count
 $K$ in the spatial graph convolution (Eq.~\ref{eq:gcn}).
 Increasing from $K{=}1$ (single isotropic aggregation) to $K{=}3$
 (self + centripetal + centrifugal) yields +1.2\,pp on Nano.
-The learned residual $|\mathbf{A}_\ell|$ adds a further +1.25\,pp.
+The learned residual $|\mathbf{A}_\ell|$ and TLA jointly add a further +1.64\,pp (both are introduced simultaneously in the last row of Table~\ref{tab:gcn_k}).
 
 \begin{table}[t]
 \centering
@@ -1035,7 +1035,7 @@ Notably, BRASP/SGPShift contribute these gains at identical FLOPs; the $7{\times
 FLOPs advantage over EfficientGCN-B0 is a separate architectural effect.
 
 \paragraph{Fusion, KD, and scalability.}
-Mid-network fusion outperforms late fusion by 0.6\,pp while using 0.81\,M
+Mid-network fusion outperforms late fusion by 0.6\,pp while using 0.75\,M
 fewer parameters (Table~\ref{tab:fusion}); the comparison is not at equal
 parameter count but demonstrates that adding parameters in late-fusion
 independent backbones does not help over a shared stage.
