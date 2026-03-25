@@ -50,20 +50,16 @@ Three models cover the edge-to-server spectrum: **Nano** (94 K), **Small** (281 
 | **SFZ-Small + KD** | **0.281 M** | **0.39** | **25 ms** | **40/s** | **145 ms** | **1.10 MB** | **281 KB** |
 | **SFZ-Large** | **1.18 M** | **1.95** | **89 ms** | **11/s** | **515 ms** | **4.70 MB** | **1.18 MB** |
 
-![Accuracy–GFLOPs Pareto frontier](assets/fig6_pareto.png)
+![Accuracy–GFLOPs Pareto frontier](assets/fig11_pareto.png)
 
 SFZ-Small uses **7× fewer FLOPs** than EfficientGCN-B0 (0.39 G vs. 2.73 G) while matching its accuracy with KD.
 SFZ-Large uses **4.3× fewer FLOPs** than EfficientGCN-B4 (1.95 G vs. 8.36 G) while surpassing it by 0.4 pp.
 
 ---
 
-## Architecture Overview
-
-![ShiftFuse-Zero end-to-end pipeline](assets/fig1_pipeline.png)
-
----
-
 ## Method
+
+![ShiftFuse-Zero end-to-end pipeline](assets/fig1_overview.png)
 
 ### Zero-Parameter Spatial Modules
 
@@ -126,6 +122,8 @@ F_out = F + σ(β) · m,    β₀ = −4
 
 Anchor positions are continuous and gradient-trainable via bilinear interpolation.
 
+![TLA landmark sensitivity (K)](assets/fig9_tla.png)
+
 ### Fusion Strategies
 
 | Fusion | Model | Description |
@@ -138,7 +136,7 @@ Fusion ablation on Large: early fusion 89.8%, late fusion 91.9%, **mid-network 9
 
 ### Model Configurations
 
-![ShiftFuse-Zero model family](assets/fig5_model_family.png)
+![ShiftFuse-Zero model family](assets/fig5_family.png)
 
 | Model | Stem | Channels | Blocks | TLA K | Drop-path | FLOPs | Params |
 |-------|------|----------|--------|-------|-----------|-------|--------|
@@ -242,7 +240,7 @@ python scripts/train.py \
 
 KD loss: `(1 − α)·CrossEntropy + α·T²·KL(student ‖ teacher)`, α = 0.5, T = 4.0.
 
-![Validation curves on NTU-60 X-Sub](assets/fig7_training_curves.png)
+![Validation curves on NTU-60 X-Sub](assets/fig10_curves.png)
 
 ---
 
