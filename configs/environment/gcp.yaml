@@ -1,5 +1,5 @@
 # GCP Compute Engine Environment Configuration
-# Instance: research-sfz (g2-standard-16, NVIDIA L4, asia-east1)
+# Instance: research-sfz (g2-standard-12, NVIDIA L4, asia-east1)
 # Image: c0-deeplearning-common-cu124-v20250325-debian-11-py310-conda
 
 environment:
@@ -17,7 +17,7 @@ paths:
 
 hardware:
   device: "cuda"
-  num_workers: 12  # g2-standard-16 has 16 vCPUs
+  num_workers: 8   # g2-standard-12 has 12 vCPUs
   pin_memory: true
 
 # GCP L4 specs
@@ -27,7 +27,7 @@ gcp:
   project: "research-454007"
   gpu: "nvidia-l4"        # 24GB GDDR6, ~121 TFLOPS FP16
   gpu_memory_gb: 24
-  cpus: 16
-  memory_gb: 64
+  cpus: 12
+  memory_gb: 48
   cuda: "12.4"
   python: "3.10"          # conda env on deep learning image
