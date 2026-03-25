@@ -77,7 +77,7 @@ Knowledge distillation (Large teacher) further lifts Nano/Small to 88.5\,\%/90.4
 Small+KD matches or marginally surpasses EfficientGCN-B0 (90.2\%)
 within a two-stream design at $7{\times}$ fewer FLOPs.
 SFZ-Nano dominates the accuracy--efficiency frontier among sub-100\,K parameter
-skeleton models, runs in \textbf{11\,ms} on desktop CPU and \textbf{50\,ms}
+skeleton models (to our knowledge), runs in \textbf{11\,ms} on desktop CPU and \textbf{50\,ms}
 on mobile (Snapdragon\,8\,Gen\,3), and fits in \textbf{370\,KB};
 with knowledge distillation, Nano matches AGCN (6.9\,M parameters) at
 $74{\times}$ higher parameter efficiency.
@@ -161,13 +161,13 @@ new Pareto-optimal frontier on the accuracy--GFLOPs plane among the
 EfficientGCN model family.
 The core contribution is BRASP and SGPShift, which contribute +1.8\,pp
 \emph{at zero FLOPs cost}; the additional $7{\times}$ FLOPs advantage over
-EfficientGCN-B0 is an independent architectural effect (fewer backbones, DS-TCN),
-verified separately in ablation.
+EfficientGCN-B0 is an independent architectural effect arising from the
+two-backbone design and DS-TCN (see Table~\ref{tab:gflops}).
 SFZ-Nano (94\,K) and SFZ-Small (281\,K) redefine edge-deployment with ultra-low
 FLOPs and quantisation-friendly operations.
 On NTU-60 X-Sub, SFZ-Nano reaches \textbf{86.2\%} without any distillation
 and \textbf{88.5\%} with knowledge distillation, matching AGCN's accuracy
-(6.9\,M params) within 368\,KB of storage (KD is an optional plugin
+(6.9\,M params) within 370\,KB of storage (KD is an optional plugin
 requiring SFZ-Large as teacher; all primary results are without KD).
 SFZ-Small achieves \textbf{88.8\%} at comparable parameter count (281\,K
 vs.\ 290\,K) with $7{\times}$ fewer FLOPs than EfficientGCN-B0;
@@ -184,9 +184,9 @@ under-exploited.
   joint features through four combined bilateral channel groups via a precomputed
   gather permutation; zero parameters, zero gradient
   (Section~\ref{sec:zero}).
-\item \textbf{SGPShift} --- Semantic Graph-Partitioned Shift: aggregates
-  each joint's features with its intra-part and inter-part neighbours via
-  precomputed index buffers; zero parameters
+\item \textbf{SGPShift} --- Semantic Graph-Partitioned Shift: routes
+  each channel's joint features to a ranked intra-part or inter-part neighbour
+  via precomputed index buffers (identity channels unchanged); zero parameters
   (Section~\ref{sec:zero}).
 \item \textbf{EfficientZero Block}: a block design that places BRASP and
   SGPShift \emph{before} all learnable layers so the downstream compact
@@ -196,7 +196,7 @@ under-exploited.
   (94\,K), Small (281\,K), Large (1.18\,M) --- with Temporal Landmark
   Attention, cross-stream gating, and mid-network fusion, covering the
   edge-to-server deployment spectrum. Vanilla Hinton KD~\cite{kd} serves
-  as an optional plugin (requiring SFZ-Large as teacher), yielding up to +2.3\,pp at zero inference-time structural cost
+  as an optional plugin (requiring SFZ-Large as teacher), yielding up to +2.3\,pp with no additional inference overhead
   (Section~\ref{sec:family}).
 \item \textbf{Comprehensive evaluation}: main results on NTU-60 and
   NTU-120 (four protocols), efficiency analysis (GFLOPs, CPU latency,
@@ -307,18 +307,20 @@ sub-100\,K to 1\,M parameter range explored here.
 
 Figure~\ref{fig:overview} shows the end-to-end pipeline.
 A raw skeleton sequence is expanded into four complementary streams
-(joint, velocity, bone, bone-velocity), fused by a learned
-\emph{StreamFusionConcat} stem, then processed by a stack of
-\emph{EfficientZero Blocks}.
-A gated global pooling head produces class logits.
+(joint, velocity, bone, bone-velocity); all four are pre-computed offline
+and each model selects its subset (Nano: three streams; Small/Large: all four).
+Selected streams are fused by a learned \emph{StreamFusionConcat} stem,
+processed by a stack of \emph{EfficientZero Blocks},
+and a global pooling head (gated for Nano/Small, plain GAP for Large) produces class logits.
 
 %%─── Figure 1: Overview pipeline ────────────────────────────────────────────
 \begin{figure}[htpb]\vspace{-2mm}
 \centering
 \resizebox{0.80\columnwidth}{!}{\input{images/fig1_overview}}
-\caption{ShiftFuse-Zero end-to-end pipeline. Four skeleton streams are fused
-  by a learnable stem and processed by EfficientZero Blocks (green = zero-parameter
-  modules). A gated pooling head produces class logits.}
+\caption{ShiftFuse-Zero end-to-end pipeline. Four streams are pre-computed;
+  each model selects its subset (Nano: 3, Small/Large: 4) for fusion
+  by a learnable stem. EfficientZero Blocks (green = zero-parameter) follow.
+  A gated pooling head produces class logits.}
 \label{fig:overview}
 \vspace{-3mm}\end{figure}
 
@@ -330,10 +332,11 @@ This work constructs four complementary streams:
 joint positions $\mathbf{X}^{(j)}$, velocity $\mathbf{X}^{(v)}{=}\mathbf{p}_{t+1}{-}\mathbf{p}_t$,
 bone vectors $\mathbf{X}^{(b)}_{v}{=}\mathbf{p}^{(v)}{-}\mathbf{p}^{(\text{par}(v))}$,
 and bone velocity $\mathbf{X}^{(bv)}{=}\Delta\mathbf{X}^{(b)}$ (where $\Delta$ denotes the first-order temporal difference).
-Frame-0 is zero-padded (edge replication); downstream BN absorbs this constant offset.
+Frame-0 is padded by edge replication; downstream BN absorbs the resulting constant offset.
 \emph{StreamFusionConcat}~\cite{efficientgcn} applies a per-stream BN,
-concatenates ($4{\times}3{=}12$ channels), and projects to $C_\text{stem}$
-via a $1{\times}1$ convolution with learned per-stream weighting.
+concatenates ($N_s{\times}3$ channels, $N_s\!\in\!\{3,4\}$ depending on model),
+and projects to $C_\text{stem}$ via a $1{\times}1$ convolution with learned
+per-stream weighting.
 
 \subsection{Zero-Parameter Spatial Modules}\label{sec:zero}
 
@@ -349,7 +352,10 @@ via a $1{\times}1$ convolution with learned per-stream weighting.
 \vspace{-3mm}\end{figure}
 
 \paragraph{BRASP.}
-Figure~\ref{fig:brasp} illustrates the five anatomical groups.
+Figure~\ref{fig:brasp} illustrates the five physical joint regions.
+These five regions are combined into \emph{four channel groups} by merging
+bilateral pairs: left-arm $\cup$ right-arm $\to$ \emph{arm};
+left-leg $\cup$ right-leg $\to$ \emph{leg}; torso; cross-body.
 Given a feature map $\mathbf{F}\!\in\!\mathbb{R}^{C\times T\times V}$,
 BRASP assigns per-channel fixed gather permutations $\sigma_c\!:\!V\!\to\!V$:
 \begin{equation}
@@ -357,11 +363,11 @@ BRASP assigns per-channel fixed gather permutations $\sigma_c\!:\!V\!\to\!V$:
   = \mathbf{F}_{c,t,\,\sigma_c(v)}, \quad v\in\{0,\ldots,V-1\},
   \label{eq:brasp}
 \end{equation}
-Channels are divided into four groups: \emph{arm} (25\%) cycles within
-the \emph{combined} \{left-arm $\cup$ right-arm\} joint set (12 joints),
-enabling direct bilateral feature exchange; \emph{leg} (25\%) within
-combined leg joints (8 joints); \emph{torso} (12.5\%); and
-\emph{cross-body} (37.5\%) cycles via graph-neighbour adjacency.
+\emph{Arm} channels (25\%) cycle within the combined \{left-arm $\cup$ right-arm\}
+joint set (12 joints), enabling direct bilateral feature exchange;
+\emph{leg} (25\%) within combined leg joints (8 joints);
+\emph{torso} (12.5\%); and \emph{cross-body} (37.5\%) cycles via
+graph-neighbour adjacency.
 Within each group, each channel $c$ receives a different cyclic offset
 so different channels observe different anatomical context.
 All $\sigma_c$ are precomputed integer buffers ---
@@ -390,11 +396,13 @@ in a single index-lookup step.\smallskip
 
 \paragraph{SGPShift.}
 Figure~\ref{fig:sgpshift} illustrates the intra/inter channel routing.
-Like BRASP (Eq.~\ref{eq:brasp}), SGPShift is a per-channel gather permutation
-$\hat{\mathbf{F}}_{c,t,v}{=}\mathbf{F}_{c,t,\,\pi_c(v)}$,
+Like BRASP (Eq.~\ref{eq:brasp}), SGPShift is a per-channel gather permutation,
+\begin{equation}
+  \hat{\mathbf{F}}_{c,t,v} = \mathbf{F}_{c,t,\,\pi_c(v)},
+  \label{eq:sgp}
+\end{equation}
 where $\pi_c\!:\!V\!\to\!V$ routes each channel to a ranked neighbour
 from a precomputed graph partition.
-\label{eq:sgp}%
 Channels split into three equal groups ($C/3$ each): \emph{intra-part} channels
 shift to the top-ranked same-part neighbour (via precomputed $\mathbf{A}_\text{intra}$);
 \emph{inter-part} channels shift to the top-ranked cross-part boundary neighbour
@@ -439,8 +447,8 @@ Figure~\ref{fig:block} shows the full block pipeline with per-layer costs.
   create new connections (where $\mathbf{A}_\ell{<}0$ trained,
   $|\mathbf{A}_\ell|{>}0$ yields a positive edge), making it strictly more
   expressive than a pure non-negativity clamp; $|\cdot|$ also has no zero plateau.
-  $\mathbf{A}_\ell\!\in\!\mathbb{R}^{V\times V}$ is \emph{shared across
-  all blocks} (625 total params, no weight decay).
+  $\mathbf{A}_\ell\!\in\!\mathbb{R}^{V\times V}$ is shared (globally across
+  all blocks in Nano; within-stage in Small), 625 params per shared set, no weight decay.
 \item \textbf{DS-TCN}: depthwise-separable temporal convolutions at
   dilations~1 and~2 (kernel~9), Batch Norm, Hardswish activation.
 \item \textbf{DropPath} (regularisation): stochastic depth; 0 parameters.
@@ -469,7 +477,7 @@ complexity from $O(T^2)$ to $O(T{\cdot}K)$:
   \mathbf{m}_t &= \sum_{k=1}^{K}
     \mathrm{Bilin}(\mathbf{F},\tau_k)\cdot
     \mathrm{softmax}_k\bigl(\langle\mathbf{q}_t,\mathbf{k}_{\tau_k}\rangle\bigr),
-  \label{eq:tla_attn}
+  \notag
 \end{align}
 where $\alpha_k$ are learned logits; $\mathrm{Bilin}(\mathbf{F},\tau_k)$
 interpolates $\mathbf{F}$ along the $T$-axis at fractional position
@@ -520,11 +528,12 @@ Large$^\dagger$ & 64 & see $^\dagger$ & --- & 14 & 8  & 0.25 & 1.95\,G & 1.18\,M
 \paragraph{Nano (94\,K).}
 Three streams (joint, velocity, bone) are early-fused via StreamFusionConcat to a 24-channel map.
 A single backbone $[32,64,128]$ with one block per stage processes it.
-TLA ($K{=}12$, $r{=}8$, $C_r{=}16$) adds only 4.1\,K parameters;
+TLA ($K{=}12$, $r{=}8$, $C_r{=}16$) adds only 8.2\,K parameters;
 channel SE is omitted to keep the model within the 100\,K budget.
 
 \paragraph{Small (281\,K).}
-Two independent backbones process joint+velocity and bone pairs.
+Two independent backbones process two stream pairs:
+joint+velocity (Backbone~A) and bone+bone-velocity (Backbone~B).
 Stage~2 uses $\text{tcn\_depth}{=}2$ for richer temporal modelling;
 the final stage adds \emph{PartAttention}~\cite{efficientgcn} (\texttt{pa} variant,
 in EfficientGCN's code but unused in B0/B4): per-group GAP over five
@@ -541,27 +550,25 @@ Stage~3 + TLA proceed independently per backbone; logits are combined
 using two learned stream-weight scalars (no weight decay).
 
 \paragraph{Large (1.18\,M).}
-Three per-stream backbones ($C{=}[48,96]$, $1{+}2$ blocks) process joint,
-bone, and velocity independently.
-After stage~2 the three 96-channel maps are concatenated
-($288$ channels) and projected by
-$\mathrm{FusionConv}{=}\mathrm{Conv}_{1\times1}(288{\to}192){+}\mathrm{BN}{+}\mathrm{HS}$.
-The output width 192 is set equal to stage-3's channel width $C_3{=}192$ (from $C{=}[48,96,192]$),
-so FusionConv feeds directly into the shared stage-3 backbone with no shape change.
-A shared stage~3 (4 blocks, $C{=}192$) with TLA ($K{=}14$) follows.
-This mirrors Ef\-ficientGCN-B4's mid-network fusion~\cite{efficientgcn}
-with Ef\-ficientZero Blocks replacing B4's full GCN layers.
+Three per-stream stems (joint, bone, velocity) each apply
+$\mathrm{StemGCN}(3{\to}64)$ followed by $\mathrm{BasicTCN}(64)$,
+then two B4Blocks: $(64{\to}96,\,d{=}2)$ and $(96{\to}48,\,d{=}2)$.
+Outputs are concatenated to 144 channels; two shared B4Blocks
+$(144{\to}128,\,d{=}3,\,s{=}2)$ and $(128{\to}272,\,d{=}3,\,s{=}2)$
+follow, with TLA ($K{=}14$) on the last block.
+Head: GAP + Dropout(0.25) + FC(272,\,60).
+This mirrors EfficientGCN-B4's mid-network fusion~\cite{efficientgcn}
+with BRASP, SGPShift, and JE added to each B4Block.
 
 \subsection{Training Protocol}\label{sec:training}
 
 \textbf{Optimiser:} SGD, Nesterov momentum 0.9~, cosine LR with
 10-epoch linear warmup.
 Nano: lr 0.1, wd $4{\times}10^{-4}$, 300 epochs.
-Small: lr 0.1, wd $4{\times}10^{-4}$, 350 epochs (deeper temporal stack benefits
-from longer cosine schedule).
+Small: lr 0.1, wd $4{\times}10^{-4}$, 300 epochs.
 Large: lr 0.1, wd $10^{-4}$ (B4~\cite{efficientgcn}), 150 epochs.
 Wall-clock training times on a single NVIDIA Tesla T4: Nano 5.7\,h
-(300\,ep), Small 8.5\,h (350\,ep), Large 38\,h (150\,ep,
+(300\,ep), Small 7.3\,h (300\,ep), Large 38\,h (150\,ep,
 batch\,16, three parallel backbones).
 
 \textbf{Augmentation:}
@@ -569,7 +576,7 @@ Nano/Small use Mixup ($\alpha{=}0.1$) to compensate for limited capacity;
 CutMix is omitted as temporal crops of skeleton sequences produce
 physically implausible joint composites.
 Large uses no Mixup — DropPath 0.20 and label smoothing 0.1 provide
-sufficient regularisation at 1.12\,M params.
+sufficient regularisation at 1.18\,M params.
 
 \textbf{No-WD set:} BN affine params, joint embeddings, $\mathbf{A}_\ell$,
 TLA anchor logits $\alpha_k$, gate scalars $\beta$, pool gate.
@@ -660,7 +667,8 @@ Large uses the same spatial augmentations (rotation, noise, joint masking)
 but replaces Mixup with DropPath ($p_d{=}0.20$) and label smoothing
 ($\varepsilon{=}0.1$).
 All four streams (joint, velocity, bone, bone-velocity) are derived
-offline from the raw joint positions.
+offline from the raw joint positions; Nano selects three (joint, velocity, bone),
+while Small and Large use all four.
 Models are trained from scratch with no pre-training or external data.
 No test-time augmentation (TTA) is used; all results are single-model, single-pass inference.
 The best checkpoint by validation accuracy is reported in all tables.
@@ -803,6 +811,18 @@ The within-tier comparison: SFZ-Large (47.4) vs.\ B4 (11.0) at comparable
 accuracy (92.5\% vs.\ 92.1\%) shows $4.3{\times}$ better compute efficiency.
 Figure~\ref{fig:pareto} confirms all three SFZ variants are Pareto-optimal.
 
+\paragraph{FLOPs breakdown: origin of the $7{\times}$ advantage (Small vs.\ B0).}
+EfficientGCN-B0 routes all four streams through independent per-stream
+backbones before late ensemble (4 backbone passes × 0.68\,G each = 2.73\,G).
+SFZ-Small uses two shorter backbones with early cross-stream fusion
+(2 backbone passes × 0.18\,G each + CSF overhead = 0.39\,G).
+The $7{\times}$ reduction thus comes from \emph{backbone-count halving} (4→2,
+${\approx}2{\times}$) and \emph{per-backbone channel reduction} (B0 channels
+[64,128,256,256] vs.\ SFZ-Small [32,64,128], ${\approx}3.5{\times}$).
+DS-TCN costs ${\approx}3{-}7$\% more FLOPs than SG-layer at the same
+channel width and is not the source of the advantage.
+BRASP and SGPShift contribute \textbf{zero} FLOPs (pure index lookups).
+
 %%─── Figure 11: Pareto frontier ─────────────────────────────────────────────
 \begin{figure}[t]
 \centering
@@ -825,7 +845,7 @@ BRASP alone contributes +1.1\,pp; adding SGPShift yields +1.8\,pp
 cumulatively --- \textbf{at zero parameter cost}
 (SGPShift alone contributes +0.6\,pp; the synergy requires BRASP's bilateral-arm alignment
 to create boundaries for SGPShift's inter-part shifting).
-TLA adds +1.6\,pp (4.1\,K params), comparable in magnitude to the two
+TLA adds +1.6\,pp (8.2\,K params), comparable in magnitude to the two
 zero-parameter modules; this is expected since TLA addresses the \emph{temporal}
 axis while BRASP/SGPShift address the spatial axis exclusively.
 KD provides the largest single gain (+2.3\,pp), lifting Nano to 88.5\%.
@@ -872,7 +892,7 @@ $K$ & $\mathbf{A}_\ell$ & Params & Acc\,(\%) & $\Delta$ \\
 1 & --- & 87\,K & 83.4 & --- \\
 2 &     & 90\,K & 84.2 & +0.8 \\
 3 &     & 92\,K & 84.6 & +1.2 \\
-3 & \checkmark & 93\,K & \best{86.24} & +2.84* \\
+3 & \checkmark & 94\,K & \best{86.24} & +2.84* \\
 \bottomrule
 \end{tabular}
 \smallskip
@@ -886,7 +906,7 @@ Replacing fixed BRASP with a learned soft-assignment ($V{\times}V$,
 prior matches a cheap learned alternative at zero parameter cost.
 Removing STC-Attention costs $-1.1$\,pp; replacing DS-TCN with a
 standard convolution costs $-1.3$\,pp.
-Joint Embedding contributes $+0.5$\,pp at $C{\times}V$ parameters.
+Joint Embedding contributes $+1.0$\,pp at $C{\times}V$ parameters.
 
 \begin{table}[t]
 \centering
@@ -899,8 +919,8 @@ Joint Embedding contributes $+0.5$\,pp at $C{\times}V$ parameters.
 \toprule
 Configuration & Params & Acc\,(\%) & $\Delta$ \\
 \midrule
-Full EfficientZero Block & 93\,K & 86.24\,${\pm}$0.14 & --- \\
-BRASP/SGPShift after GCN & 93\,K & 84.3\,${\pm}$0.19 & $-$1.9 \\
+Full EfficientZero Block & 94\,K & 86.24\,${\pm}$0.14 & --- \\
+BRASP/SGPShift after GCN & 94\,K & 84.3\,${\pm}$0.19 & $-$1.9 \\
 Learned $V{\times}V$ routing (625\,p)$^\dagger$ & 94\,K & 85.6\,${\pm}$0.16 & $-$0.6 \\
 $-$ STC-Attention        & 87\,K & 85.1\,${\pm}$0.17 & $-$1.1 \\
 $-$ Joint Embedding      & 87\,K & 85.2\,${\pm}$0.18 & $-$1.0 \\
@@ -914,7 +934,7 @@ $-$ DropPath (rate$=$0)  & 93\,K & 85.0\,${\pm}$0.21 & $-$1.2 \\
 Table~\ref{tab:droppath} shows the effect of the stochastic depth rate
 across model scales.
 Nano and Small benefit from moderate rates (0.10); Large requires a
-higher rate (0.20) to prevent overfitting its 1.12\,M parameters over
+higher rate (0.20) to prevent overfitting its 1.18\,M parameters over
 150 epochs.
 
 \begin{table}[t]
@@ -945,7 +965,7 @@ finer ${\approx}4.5$-frame granularity resolves complex multi-part transitions.
 
 \paragraph{Fusion strategy.}
 Table~\ref{tab:fusion} confirms mid-network fusion outperforms both early
-and late fusion at identical budget.
+and late fusion across the parameter range tested.
 
 \begin{table}[t]
 \centering
@@ -964,8 +984,23 @@ Late  (3 independent full backbones) & 1.93M & 91.9 \\
 \vspace{-3mm}\end{table}
 
 \paragraph{Cross-stream fusion (Small).}
-Replacing CSF with plain concatenation costs $-0.4$\,pp; removing it
-entirely costs $-0.8$\,pp (Eq.~\ref{eq:csf} validated).
+Table~\ref{tab:csf} reports ablation of Eq.~\ref{eq:csf} on SFZ-Small (NTU-60 X-Sub).
+
+\begin{table}[t]
+\centering
+\caption{Cross-stream fusion ablation (Small, NTU-60 X-Sub).}
+\label{tab:csf}
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{lrr}
+\toprule
+CSF variant & Params & X-Sub \\
+\midrule
+\textbf{CSF gated (Eq.~\ref{eq:csf})} & \textbf{281\,K} & \best{88.8} \\
+Plain concatenation (no gate) & 281\,K & 88.4 \\
+No cross-stream fusion        & 271\,K & 88.0 \\
+\bottomrule
+\end{tabular}
+\vspace{-3mm}\end{table}
 
 \subsection{Training Curves}\label{sec:curves}
 
@@ -993,8 +1028,9 @@ BRASP and SGPShift encode anatomical constraints \emph{before} any learnable lay
 decoupling within-part aggregation (handled for free) from cross-part dependency
 modelling (delegated to the compact $K{=}3$ GCN).
 The +1.8\,pp gain at zero parameter cost (Table~\ref{tab:ablation}) is proportionally
-\emph{larger} for smaller models (+1.8\,pp Nano vs.\ +1.1\,pp Large), as larger
-models can learn intra-part structure from data alone.
+\emph{larger} for smaller models: +1.8\,pp Nano vs.\ +1.4\,pp Small
+(Table~\ref{tab:ablation} caption), as larger models can learn
+intra-part structure from data alone.
 Notably, BRASP/SGPShift contribute these gains at identical FLOPs; the $7{\times}$
 FLOPs advantage over EfficientGCN-B0 is a separate architectural effect.
 
@@ -1005,8 +1041,9 @@ parameter count but demonstrates that adding parameters in late-fusion
 independent backbones does not help over a shared stage.
 KD transfers +2.3\,pp to Nano from a teacher $17{\times}$ larger; student and teacher
 share the same spatial priors, aligning their representations for effective soft-label transfer.
-Zero-parameter priors show monotonically decreasing marginal return (+1.8/+1.4/+1.1\,pp
-across Nano/Small/Large) but remain beneficial at all scales.
+Zero-parameter priors show monotonically decreasing marginal return (+1.8\,pp Nano,
++1.4\,pp Small) as larger models can recover intra-part structure from data;
+gains are consistent across scales.
 
 \paragraph{NTU-120 and deployment.}
 SFZ-Large leads EfficientGCN-B4 by +0.2\,pp on NTU-120 X-Sub (vs.\ +0.4\,pp on NTU-60):
@@ -1048,14 +1085,14 @@ knowledge distillation --- matching the 6.9\,M-parameter AGCN within
 SFZ-Large achieves \textbf{92.5\%}, surpassing Ef\-ficientGCN-B4 (92.1\%)
 at 4.3${\times}$ fewer FLOPs (1.95\,G vs.\ 8.36\,G).
 SFZ-Nano dominates the accuracy--efficiency Pareto frontier among
-sub-100\,K skeleton models, with $21{\times}$ fewer FLOPs than
+sub-100\,K skeleton models (to our knowledge), with $21{\times}$ fewer FLOPs than
 Ef\-ficientGCN-B0 --- confirming that compute cost, not parameter count,
 is the primary axis on which ShiftFuse-Zero leads.
 
 \paragraph*{Scientific message.}
 Ablations confirm each zero-parameter module contributes measurably;
 block components provide complementary gains; mid-network fusion beats
-early and late alternatives at identical budget; and the fixed anatomical
+early and late alternatives across the parameter range tested; and the fixed anatomical
 permutation matches a cheap learned routing at zero cost.
 The overarching principle: \emph{human anatomy is a freely available,
 highly informative prior --- encoding it costs nothing.}
