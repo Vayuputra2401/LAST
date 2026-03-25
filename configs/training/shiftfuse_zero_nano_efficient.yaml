@@ -4,25 +4,21 @@ training:
   lr: 0.1
   momentum: 0.9
   nesterov: true
-  weight_decay: 0.0001  # EfficientGCN-exact (was 0.0004 — 4× over-regularised)
+  weight_decay: 0.0001
 
   # Scheduler
   scheduler: cosine_warmup
   warmup_epochs: 10
   warmup_start_lr: 0.005
-  min_lr: 0.00001  # cosine floor — 1e-5 allows fine-tuning in last 50-100 epochs
+  min_lr: 0.00001
 
-  # Duration — 300ep: validated for nano (peaked ep288); small (267K) converges
-  # slightly faster than nano but Mixup α=0.1 keeps late-epoch gains — 300 is safe ceiling
   epochs: 300
   batch_size: 64
   gradient_accumulation_steps: 1
 
-  # Regularization — label_smoothing dropped (redundant with Mixup+CutMix)
   label_smoothing: 0.0
   gradient_clip: 1.0
 
-  # Augmentation — mixup=0.1 validated on nano; DS-TCN may benefit from slightly more
   mixup_alpha: 0.1
   cutmix_prob: 0.0
   cutmix_alpha: 1.0
@@ -49,13 +45,13 @@ training:
   # IB loss — disabled
   ib_loss_weight: 0.0
 
-  # TTA: spatial flip (original + mirrored → average logits) — enable for final eval
+  # TTA: enable for final eval
   tta_flip: false
 
   # Knowledge distillation — disabled by default
   use_kd: false
   teacher_checkpoint: ""
-  teacher_variant: "large"
+  teacher_variant: "large_b4_efficient"
   teacher_num_classes: 60
   kd_weight: 0.5
   kd_temperature: 4.0

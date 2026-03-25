@@ -4,27 +4,21 @@ training:
   lr: 0.1
   momentum: 0.9
   nesterov: true
-  weight_decay: 0.0001  # EfficientGCN-exact
+  weight_decay: 0.0001
 
   # Scheduler
   scheduler: cosine_warmup
   warmup_epochs: 5
   warmup_start_lr: 0.005
-  min_lr: 0.00001  # lower floor for larger model — more fine-grained late-epoch tuning
+  min_lr: 0.00001
 
-  # Duration — B4-exact: 70ep × (40320/16) = 176,400 gradient steps.
-  # warmup_epochs reduced to 5: batch=16 gradients are already noisy, long warmup wastes steps.
   epochs: 100
   batch_size: 16
   gradient_accumulation_steps: 1
 
-  # Regularization — B4-exact: no label smoothing, no augmentation.
-  # dropout=0.25 + drop_path=0.25 + WD=0.0001 is sufficient for 1.67M params.
   label_smoothing: 0.0
   gradient_clip: 1.0
 
-  # Augmentation — keep light: DropPath 0.20 + WD is already adequate for 1.1M params
-  # B4 used NO Mixup/CutMix and hit 92.1% in 70ep; heavy aug just slows 150ep budget
   mixup_alpha: 0.0
   cutmix_prob: 0.0
   cutmix_alpha: 1.0
@@ -51,13 +45,13 @@ training:
   # IB loss — disabled
   ib_loss_weight: 0.0
 
-  # TTA: spatial flip — enable for final eval
+  # TTA: enable for final eval
   tta_flip: false
 
   # Knowledge distillation — disabled by default
   use_kd: false
   teacher_checkpoint: ""
-  teacher_variant: "large"
+  teacher_variant: "large_b4_efficient"
   teacher_num_classes: 60
   kd_weight: 0.5
   kd_temperature: 4.0

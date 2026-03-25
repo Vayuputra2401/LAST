@@ -2,9 +2,11 @@
 ShiftFuse-Zero Training Script
 
 Usage:
-    python scripts/train.py --model shiftfuse_zero_nano --dataset ntu60
-    python scripts/train.py --model shiftfuse_zero_large --dataset ntu60 --amp
-    python scripts/train.py --model shiftfuse_zero_large_late --dataset ntu60 --resume <path>
+    python scripts/train.py --model shiftfuse_zero_nano_tiny_efficient --dataset ntu60 --amp
+    python scripts/train.py --model shiftfuse_zero_small_late_efficient --dataset ntu60 --amp
+    python scripts/train.py --model shiftfuse_zero_large_b4_efficient --dataset ntu60 --amp
+    python scripts/train.py --model shiftfuse_zero_nano_tiny_efficient --dataset ntu60 --amp \\
+        --teacher_checkpoint /path/to/large_best.pth --kd_weight 0.5
 """
 
 import sys
@@ -333,10 +335,10 @@ def main():
         model = build_shiftfuse_zero_late(variant=variant, **common)
     elif variant == 'large_b4_efficient':
         model = build_shiftfuse_zero_b4(**common)
-    elif variant == 'x_b4_efficient':
+    elif variant == 'x_efficient':
         model = build_shiftfuse_zero_x(**common)
     else:
-        # nano_tiny_efficient and any future single-backbone ShiftFuseZero variants
+        # nano_tiny_efficient and any future single-backbone variants
         model = build_shiftfuse_zero(variant=variant, **common)
 
     print(f"  Model created: {sum(p.numel() for p in model.parameters()):,} parameters")

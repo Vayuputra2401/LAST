@@ -1,6 +1,6 @@
 model:
   name: shiftfuse_zero_x_efficient
-  variant: x_b4_efficient
+  variant: x_efficient
   num_classes: 60
   drop_path_rate: 0.20
   dropout: 0.20

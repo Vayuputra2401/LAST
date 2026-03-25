@@ -87,7 +87,7 @@ class Trainer:
     def __init__(self, model, config, run_dir):
         """
         Args:
-            model:    LAST model instance (not yet .to(device) — done here)
+            model:    ShiftFuse-Zero model instance
             config:   Full merged config dict
             run_dir:  Path to this run's output folder
         """
@@ -119,9 +119,8 @@ class Trainer:
 
         # ── Knowledge Distillation teacher ──────────────────────────────────
         # Soft-label KD: loss = (1-α)·CE + α·T²·KL(student||teacher)
-        # Teacher is frozen and always runs in eval mode.
-        # Enable with: use_kd: true, teacher_checkpoint: <path>, kd_weight: 0.5,
-        #              kd_temperature: 4.0 in training config.
+        # Teacher is frozen and runs in eval mode.
+        # Enable via: use_kd: true, teacher_checkpoint: <path>, teacher_variant: <variant>
         self.teacher_model = None
         if self.train_cfg.get('use_kd', False):
             teacher_path = self.train_cfg.get('teacher_checkpoint', '')
@@ -129,37 +128,38 @@ class Trainer:
                 print(f"  KD: loading teacher from {teacher_path}")
                 ckpt = torch.load(teacher_path, map_location=self.device)
                 sd   = ckpt.get('model_state_dict', ckpt)
-                # Teacher is a ShiftFuse-Zero variant
-                from src.models.shiftfuse_zero import build_shiftfuse_zero
-                _var = self.train_cfg.get('teacher_variant', 'large')
+                from src.models.shiftfuse_zero import (
+                    build_shiftfuse_zero, build_shiftfuse_zero_late,
+                    build_shiftfuse_zero_b4, build_shiftfuse_zero_x,
+                )
+                _var = self.train_cfg.get('teacher_variant', 'large_b4_efficient')
                 _nc  = self.train_cfg.get('teacher_num_classes', 60)
-                teacher = build_shiftfuse_zero(variant=_var, num_classes=_nc)
+                _late = {'small_late_efficient_bb', 'medium_late_efficient_bb'}
+                if _var == 'large_b4_efficient':
+                    teacher = build_shiftfuse_zero_b4(num_classes=_nc)
+                elif _var == 'x_efficient':
+                    teacher = build_shiftfuse_zero_x(num_classes=_nc)
+                elif _var in _late:
+                    teacher = build_shiftfuse_zero_late(variant=_var, num_classes=_nc)
+                else:
+                    teacher = build_shiftfuse_zero(variant=_var, num_classes=_nc)
                 teacher.load_state_dict(sd, strict=False)
                 teacher.to(self.device).eval()
                 for p in teacher.parameters():
                     p.requires_grad = False
                 self.teacher_model = teacher
-                print(f"  KD: teacher loaded ({sum(p.numel() for p in teacher.parameters()):,} params), frozen.")
+                print(f"  KD: teacher '{_var}' loaded ({sum(p.numel() for p in teacher.parameters()):,} params), frozen.")
             else:
                 print(f"  KD: use_kd=true but teacher_checkpoint not found → KD disabled.")
 
         # ── Gradient Accumulation ───────────────────────────────────────────
-        # Effective batch = batch_size × accum_steps.
-        # Allows larger effective batches on VRAM-limited GPUs.
-        # For Kaggle 16GB: Base can use batch=32 directly; Large may need
-        # batch=16 + accum_steps=2 for effective batch=32.
         self.accum_steps = self.train_cfg.get('gradient_accumulation_steps', 1)
 
         # ── Optimizer ───────────────────────────────────────────────────────
-        # Two param groups:
-        #   decay:    conv/linear weights → weight_decay applied
-        #   no_decay: bias, BN/LN scale+bias, alpha gates, A_learned matrices
-        #             → weight_decay=0 (these should not be shrunk toward 0)
-        #
-        # BN gammas inside nn.Sequential are indexed by position (e.g.
-        # 'pw_conv.1.weight', 'expand_conv.1.weight') — the string 'bn' does
-        # NOT appear in those names, so name-based matching misses them.
-        # Fix: collect all BN/LN param ids via isinstance BEFORE the name loop.
+        # Two param groups: decay (conv/linear weights) and no_decay (biases,
+        # BN/LN params, gate scalars, learnable adjacency matrices).
+        # BN params inside nn.Sequential don't have 'bn' in their name, so we
+        # collect them by isinstance before the name loop.
         _bn_param_ids: set = set()
         for m in self.model.modules():
             if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d,
@@ -171,36 +171,19 @@ class Trainer:
         for name, param in self.model.named_parameters():
             if not param.requires_grad:
                 continue
-            # Exclude from weight decay:
-            #   - bias terms
-            #   - BN/LayerNorm scale+bias (bn, norm)
-            #   - ST_JointAtt alpha gates (zero-init, WD fights their growth)
-            #   - AdaptiveGraphConv A_learned matrices (WD fights edge learning)
-            #   - DirectionalGCNConv node_proj (dynamic adj embedding projection)
             if (
-                id(param) in _bn_param_ids   # catches BN/LN params in Sequential
+                id(param) in _bn_param_ids
                 or 'bias' in name
                 or 'bn' in name
                 or 'norm' in name
-                or 'alpha' in name          # ST_JointAtt alpha + alpha_dyn gate scalars
-                or 'A_learned' in name      # adaptive/directional graph learnable edges
-                or 'A_edge' in name         # B4-exact multiplicative edge weights (init=1)
-                or 'node_proj' in name      # dynamic adj embedding projection (E1)
-                or 'refine_gate' in name    # CTRLightGCNConv topology refinement gate (v2)
-                or 'pool_gate' in name      # Gated GAP+GMP head blend parameter
-                or 'freq_gate' in name      # FreqTemporalGate residual gate (v2)
-                or 'freq_mask' in name      # FrozenDCTGate learnable frequency mask (LAST-Lite)
-                or 'gate_logit' in name     # FrameDynamicsGate temporal position gate (LAST-Lite)
-                or 'je.embed' in name       # JointEmbedding semantic table
-                or 'A_group' in name        # CTRLightGCN per-group adjacency corrections
-                or 'edge' in name            # SpatialGCN edge importance
-                or 'stream_weights' in name  # StreamFusion blend logits
-                or 'class_prototypes' in name # IB loss class-conditional prototypes (v5)
-                or 'temporal_attn.' in name  # LightweightTemporalAttention (Q/K/V/proj + gate) (v7)
-                or 'bilateral.gate' in name  # BSE residual gate scalar (v5)
-                or '.gate' in name           # TLA + any future gated-residual scalars (v10)
-                or 'gcn_scale' in name       # per-block GCN output scale (shared GCN guard, v10)
-                or 'anchor_logits' in name   # TLA learnable temporal anchor positions
+                or 'alpha' in name          # ST_JointAtt / B4Block alpha gate scalars
+                or 'A_learned' in name      # learnable graph residuals (EfficientZeroBlock)
+                or 'A_edge' in name         # B4-exact multiplicative edge weights
+                or 'pool_gate' in name      # gated GAP+GMP blend parameter
+                or 'je.embed' in name       # JointEmbedding per-joint bias table
+                or 'stream_weights' in name # CrossStreamFusion blend logits
+                or '.gate' in name          # TLA gated-residual scalars
+                or 'anchor_logits' in name  # TLA learnable anchor positions
             ):
                 no_decay.append(param)
             else:

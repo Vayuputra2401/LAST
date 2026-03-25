@@ -1,12 +1,14 @@
 """
-ShiftFuse-Zero — Three-model family for NTU-60/120 skeleton action recognition.
+ShiftFuse-Zero — Five-model family for NTU-60/120 skeleton action recognition.
 
 Models:
-  nano_tiny_efficient   — single backbone, 4-stream early fusion, ~97K params
-  small_late_efficient  — 2-backbone late fusion (joint+vel / bone+bone_vel), ~240K
-  large_late_efficient  — B4-style mid-network fusion, 3 streams, ~1.09M params
+  nano_tiny_efficient    — single backbone, 3-stream early fusion,  ~94K params
+  small_late_efficient_bb  — 2-backbone late fusion (joint+vel / bone), ~284K
+  medium_late_efficient_bb — 2-backbone late fusion, B2-scale channels, ~594K
+  large_b4_efficient     — B4-style mid-network fusion, 3 streams, ~1.18M
+  x_efficient            — scaled B4-style, 3-stream mid-fusion, ~2.0M
 
-Block pipeline (EfficientZeroBlock):
+EfficientZero Block pipeline (Nano / Small / Medium):
     BRASP → SGPShift → JE(in_ch) → STCAttention(in_ch)
     → GCN: (1/K) Σ_k W_k(normalize(Ã_k + A_learned[k]) @ x)
     → DepthwiseSepTCN → DropPath → residual
@@ -34,10 +36,7 @@ from .graph import Graph, normalize_symdigraph_full, normalize_digraph
 # Variant configuration
 # ---------------------------------------------------------------------------
 ZERO_VARIANTS = {
-    # nano_tiny_efficient: single backbone, 3-stream early fusion. ~94K params.
-    # Redesigned: share_a_learned=True (saves 3,750) + stc_channel_se=False (saves 2,998)
-    # → from 100,650 → ~93,900 (<100K with 6K room).
-    # TLA enabled with reduce_ratio=16 (C_r=8) to stay sub-100K.
+    # nano: single backbone, 3-stream early fusion. ~94K params.
     'nano_tiny_efficient': {
         'stem_channels':       24,
         'channels':            [32, 64, 128],
@@ -50,17 +49,12 @@ ZERO_VARIANTS = {
         'use_tla':             True,
         'num_streams':         3,
         'stream_names':        ['joint', 'bone', 'velocity'],
-        # Redesign: redundancy removal
-        'share_a_learned':     True,   # 1 global A_learned set shared across all blocks
-        'stc_channel_se':      False,  # remove channel SE (tiny SE at C≤128 is noise)
-        'tcn_depth':           [1, 1, 1],  # depth per stage
-        'use_part_att':        [False, False, False],  # Part_Att per stage
+        'share_a_learned':     True,   # 1 global A_learned shared across all blocks
+        'stc_channel_se':      False,
+        'tcn_depth':           [1, 1, 1],
+        'use_part_att':        [False, False, False],
     },
-    # small_late_efficient_bb: per-backbone config for 2-backbone late fusion.
-    # Backbone A: joint+velocity (position+dynamics). Backbone B: bone (structural pose).
-    # Redesigned: remove channel SE (−10,252) + share A_learned stage1 (−3,750)
-    # + tcn_depth=2 at stage1 (+23,552) + Part_Att last stage (+12,288)
-    # → from 262,347 → ~284,185 (<290K ✓)
+    # small: 2-backbone late fusion (joint+vel / bone). ~284K params.
     'small_late_efficient_bb': {
         'stem_channels':       24,
         'channels':            [32, 64, 128],
@@ -71,17 +65,13 @@ ZERO_VARIANTS = {
         'tla_landmarks':       8,
         'tla_reduce_ratio':    8,
         'use_tla':             True,
-        # Redesign: redundancy removal + reinvestment
-        'stc_channel_se':      False,  # remove channel SE (saves 10,252 total)
-        'share_a_learned_stage': [False, True, False],  # share within stage1 only (2 same-res blocks at C=64)
-        'tcn_depth':           [1, 2, 1],  # tcn_depth=2 at C=64 stage
-        'use_part_att':        [False, False, True],  # Part_Att on last stage only
-        'part_att_reduce_ratio': 16,  # inner=8 at C=128 → ~6K params per backbone
+        'stc_channel_se':      False,
+        'share_a_learned_stage': [False, True, False],  # share A_learned within stage 1 (same resolution)
+        'tcn_depth':           [1, 2, 1],
+        'use_part_att':        [False, False, True],   # Part_Att on last stage only
+        'part_att_reduce_ratio': 16,
     },
-    # medium_late_efficient_bb: NEW 2-backbone late fusion, ~594K params.
-    # Backbone A: joint+velocity (position+dynamics). Backbone B: bone (structural pose).
-    # channels=[40,80,160], blocks=[1,2,1], tcn_depth=[1,2,1], Part_Att last stage.
-    # Target: 91.5–92.5% NTU-60 xsub (B2-level, ~560K).
+    # medium: 2-backbone late fusion, B2-scale channels. ~594K params.
     'medium_late_efficient_bb': {
         'stem_channels':       32,
         'channels':            [40, 80, 160],
@@ -92,10 +82,10 @@ ZERO_VARIANTS = {
         'tla_landmarks':       10,
         'tla_reduce_ratio':    8,
         'use_tla':             True,
-        'stc_channel_se':      True,   # medium can afford channel SE
+        'stc_channel_se':      True,
         'tcn_depth':           [1, 2, 1],
-        'use_part_att':        [False, False, True],  # Part_Att last stage
-        'part_att_reduce_ratio': 4,  # inner=40 at C=160
+        'use_part_att':        [False, False, True],
+        'part_att_reduce_ratio': 4,
     },
 }
 
