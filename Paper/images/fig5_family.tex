@@ -24,12 +24,12 @@
 ]
 
 %% ─── (a) Nano ──────────────────────────────────────────────────────────────
-\node[tit] (na_t) at (0, 0) {(a) SFZ-Nano\ \ 97\,K};
-\node[stem]   (na_sf)  at (0,-0.85)  {StreamFusion\\$4{\to}C_s{=}24$};
+\node[tit] (na_t) at (0, 0) {(a) SFZ-Nano\ \ 94\,K};
+\node[stem]   (na_sf)  at (0,-0.85)  {StreamFusion\\$3{\to}C_s{=}24$};
 \node[blk]    (na_s1)  at (0,-1.75)  {Stage 1 $\times$1\\$C{=}32$};
 \node[blk]    (na_s2)  at (0,-2.65)  {Stage 2 $\times$1\\$C{=}64,s{=}2$};
 \node[blk]    (na_s3)  at (0,-3.55)  {Stage 3 $\times$1\\$C{=}128,s{=}2$};
-\node[tlabox] (na_tla) at (0,-4.45)  {TLA $K{=}8, r{=}16$};
+\node[tlabox] (na_tla) at (0,-4.45)  {TLA $K{=}12, r{=}8$};
 \node[cls]    (na_cl)  at (0,-5.35)  {Pool-Gate + FC(60)};
 
 \foreach \a/\b in {na_t/na_sf, na_sf/na_s1, na_s1/na_s2,
@@ -37,15 +37,15 @@
   \draw[arr] (\a)--(\b);
 
 %% ─── (b) Small ─────────────────────────────────────────────────────────────
-\node[tit] (sm_t) at (5.0, 0) {(b) SFZ-Small\ \ 250\,K};
+\node[tit] (sm_t) at (5.0, 0) {(b) SFZ-Small\ \ 281\,K};
 
-\node[stem] (sm_sfA) at (3.8,-1.00) {Stem A\\J+B};
-\node[stem] (sm_sfB) at (6.2,-1.00) {Stem B\\V+BV};
+\node[stem] (sm_sfA) at (3.8,-1.00) {Stem A\\J+V};
+\node[stem] (sm_sfB) at (6.2,-1.00) {Stem B\\B+BV};
 \node[blk]  (sm_12a) at (3.8,-2.10) {S1-S2 $(1{+}2)$\\$C{=}32{\to}64$};
 \node[blk]  (sm_12b) at (6.2,-2.10) {S1-S2 $(1{+}2)$\\$C{=}32{\to}64$};
 \node[fus, minimum width=2.8cm]  (sm_csf) at (5.0,-3.30) {Cross-Stream\\Fusion (Eq.\,5)};
-\node[tlabox](sm_s3a) at (3.8,-4.50){S3 $\times$1 + TLA\\$C{=}128$};
-\node[tlabox](sm_s3b) at (6.2,-4.50){S3 $\times$1 + TLA\\$C{=}128$};
+\node[tlabox](sm_s3a) at (3.8,-4.50){S3 $\times$1 + PA + TLA\\$C{=}128$};
+\node[tlabox](sm_s3b) at (6.2,-4.50){S3 $\times$1 + PA + TLA\\$C{=}128$};
 \node[cls, minimum width=2.8cm]  (sm_cl)  at (5.0,-5.60) {Weighted avg + FC(60)};
 
 \draw[arr] (sm_t)--(sm_sfA);
@@ -60,19 +60,19 @@
 \draw[arr] (sm_s3b.south) -- (sm_s3b.south |- sm_cl.north);
 
 %% ─── (c) Large ─────────────────────────────────────────────────────────────
-\node[tit] (lg_t) at (11.0, 0) {(c) SFZ-Large\ \ 1.67\,M};
+\node[tit] (lg_t) at (11.0, 0) {(c) SFZ-Large\ \ 1.18\,M};
 
-\node[stem] (lg_sfJ) at ( 8.6,-0.85) {Stem J};
-\node[stem] (lg_sfB) at (11.0,-0.85) {Stem B};
-\node[stem] (lg_sfV) at (13.4,-0.85) {Stem V};
-\node[blk]  (lg_12J) at ( 8.6,-1.95) {S1-S2 $(1{+}2)$\\$C{=}48{\to}96$};
-\node[blk]  (lg_12B) at (11.0,-1.95) {S1-S2 $(1{+}2)$\\$C{=}48{\to}96$};
-\node[blk]  (lg_12V) at (13.4,-1.95) {S1-S2 $(1{+}2)$\\$C{=}48{\to}96$};
+\node[stem] (lg_sfJ) at ( 8.6,-0.85) {Stem J\\$3{\to}64$};
+\node[stem] (lg_sfB) at (11.0,-0.85) {Stem B\\$3{\to}64$};
+\node[stem] (lg_sfV) at (13.4,-0.85) {Stem V\\$3{\to}64$};
+\node[blk]  (lg_12J) at ( 8.6,-2.05) {Blk0+1\\$64{\to}96{\to}48$};
+\node[blk]  (lg_12B) at (11.0,-2.05) {Blk0+1\\$64{\to}96{\to}48$};
+\node[blk]  (lg_12V) at (13.4,-2.05) {Blk0+1\\$64{\to}96{\to}48$};
 \node[fus,minimum width=5.2cm] (lg_fc)
-                     at (11.0,-3.20) {FusionConv $288{\to}192$\\BN + Hardswish};
+                     at (11.0,-3.20) {Concat $3{\times}48{=}144$};
 \node[tlabox,minimum width=5.2cm]
-             (lg_s3) at (11.0,-4.40) {Shared Stage 3 $\times$4 + TLA\\$C{=}192,\,K{=}14$};
-\node[cls,minimum width=5.2cm]   (lg_cl) at (11.0,-5.50) {Pool-Gate + FC(60)};
+             (lg_s3) at (11.0,-4.40) {Shared Blk2+3: $144{\to}128{\to}272$\\stride\,2, TLA\,$K{=}14$};
+\node[cls,minimum width=5.2cm]   (lg_cl) at (11.0,-5.50) {GAP + Dropout + FC(60)};
 
 \draw[arr] (lg_t)--(lg_sfJ);
 \draw[arr] (lg_t)--(lg_sfB);
